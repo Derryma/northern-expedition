@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>《北伐風雲・1926》陣營操作板</title>
+<style>
+:root{--bg:#17130c;--pnl:#231d13;--pnl2:#1b160e;--ink:#f3ecdb;--mut:#b6a887;--line:#4a4128;--gold:#ffd23e}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:12px 18px;border-bottom:1px solid var(--line);background:#1d1810;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{margin:0;font-size:19px}
+header .sub{font-size:12px;color:var(--mut)}
+.tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+button{padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:#241f16;color:var(--ink);cursor:pointer;font-size:12.5px}
+button:hover{background:#3a3320}
+button.pri{background:var(--gold);color:#241a08;font-weight:800;border-color:var(--gold)}
+button.mini{padding:1px 6px;font-size:11px;border-radius:5px}
+#wrap{padding:14px 18px 60px;display:grid;grid-template-columns:repeat(auto-fit,minmax(560px,1fr));gap:14px}
+.board{background:var(--pnl);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.bhead{display:flex;align-items:center;gap:12px;padding:11px 13px;border-bottom:1px solid var(--line)}
+.bhead .flag{width:48px;height:32px;flex:none;border:1px solid #0008;border-radius:2px}
+.bhead h2{margin:0;font-size:17px;flex:1}
+.bhead .tag{font-size:11px;color:#111;padding:2px 8px;border-radius:9px;font-weight:800}
+.sec{padding:10px 13px;border-bottom:1px solid #33291a}
+.sec h3{margin:0 0 8px;font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:1px}
+.ppl{display:flex;flex-direction:column;gap:8px}
+.per{display:flex;gap:10px;background:var(--pnl2);border:1px solid #33291a;border-radius:9px;padding:8px}
+.per.leader{border-color:var(--gold);box-shadow:inset 0 0 0 1px #ffd23e22}
+.pic{width:56px;height:70px;flex:none;border-radius:6px;border:1px solid #4a4128;object-fit:cover;background:#2c2416;display:block}
+.picfb{width:56px;height:70px;flex:none;border-radius:6px;border:1px dashed #6b5c38;background:#2c2416;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#9a8a63;text-align:center}
+.picfb b{font-size:22px;color:#d9c79a;line-height:1}
+.picfb i{font-size:7.5px;font-style:normal;opacity:.8;word-break:break-all;padding:0 2px}
+.pinfo{flex:1;min-width:0}
+.pname{font-size:14px;font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pname .rk{font-size:10px;padding:1px 6px;border-radius:8px;background:#4a4128;color:#e8dcc0;font-weight:700}
+.pname .rk.ld{background:var(--gold);color:#241a08}
+.stat{font-size:11.5px;color:var(--mut);margin:3px 0}
+.stat b{color:var(--gold)}
+.abil{font-size:11.5px;color:#d7c9a6;line-height:1.45;margin:3px 0}
+.tr{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px}
+.tr label{font-size:10.5px;color:var(--mut);display:flex;align-items:center;gap:2px}
+.tr input{width:34px;background:#12100a;color:var(--ink);border:1px solid #4a4128;border-radius:5px;padding:2px 3px;font-size:11.5px;text-align:center}
+.tr .wr{color:#e8c07d}
+.adv{display:flex;gap:4px;align-items:center;margin-top:5px;flex-wrap:wrap}
+.adv select,.adv input{background:#12100a;color:var(--ink);border:1px solid #4a4128;border-radius:5px;padding:2px 4px;font-size:11px}
+.adv input.t{width:38px;text-align:center}
+.sp{margin-top:5px;font-size:11px}
+.sp .chip{display:inline-flex;align-items:center;gap:4px;background:#33291a;border:1px solid #5a4a2a;border-radius:12px;padding:1px 4px 1px 8px;margin:2px 3px 0 0;color:#e8c07d}
+.sp .chip button{border:none;background:transparent;color:#c58a8a;padding:0 3px;font-size:12px;cursor:pointer}
+.sp .add{display:flex;gap:3px;margin-top:4px}
+.sp .add input{background:#12100a;color:var(--ink);border:1px solid #4a4128;border-radius:5px;padding:2px 5px;font-size:11px}
+.sp .add input.nm{flex:1;min-width:80px}.sp .add input.q{width:34px;text-align:center}
+.eco{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.eco div{background:var(--pnl2);border:1px solid #33291a;border-radius:8px;padding:7px;text-align:center}
+.eco span{display:block;font-size:10.5px;color:var(--mut);margin-bottom:3px}
+.eco input{width:100%;background:transparent;border:none;color:var(--gold);font-size:18px;font-weight:800;text-align:center}
+.eco .debt input{color:#ef7b7b}
+.rel{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.rel div{text-align:center;background:var(--pnl2);border:1px solid #33291a;border-radius:8px;padding:5px 2px}
+.rel span{display:block;font-size:15px}
+.rel small{display:block;font-size:9.5px;color:var(--mut)}
+.rel input{width:100%;background:transparent;border:none;font-size:14px;font-weight:800;text-align:center}
+.relcn{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.relcn div{text-align:center;background:var(--pnl2);border:1px solid #33291a;border-radius:7px;padding:4px 2px}
+.relcn small{display:block;font-size:9.5px;color:var(--mut)}
+.relcn input{width:100%;background:transparent;border:none;font-size:13px;font-weight:700;text-align:center}
+table.bank{width:100%;border-collapse:collapse;font-size:11.5px}
+table.bank th,table.bank td{padding:4px 6px;border-bottom:1px solid #33291a;text-align:left}
+table.bank th{color:var(--mut);font-size:10.5px}
+td.ok{color:#9ccc65;font-weight:700} td.mid{color:#e8c07d} td.no{color:#ef7b7b;font-weight:700}
+.hint{font-size:11px;color:var(--mut);padding:8px 13px;line-height:1.6}
+.npcwrap{grid-column:1/-1}
+.dead{opacity:.38;filter:grayscale(1)}
+</style>
+</head>
+<body>
+<header>
+  <h1>《北伐風雲・1926》陣營操作板</h1>
+  <span class="sub">領袖／將領・部隊・特種單位・經濟負債・外交　一頁掌握</span>
+  <div class="tools">
+    <button class="pri" id="save">💾 儲存</button><button id="load">📂 讀取</button>
+    <button id="exp">⬇ 匯出 JSON</button><button id="imp">⬆ 匯入 JSON</button>
+    <button id="reset">↺ 重設為開局</button>
+  </div>
+</header>
+<div class="hint">
+  <b>肖像：</b>本檔案旁的 <b>portraits/</b> 資料夾放入以人名命名的圖檔（<b>張作霖.jpg</b>，亦支援 .png）即自動套用，缺圖時顯示姓氏徽章與應有檔名。
+  　<b>特種單位：</b>外購列強特製武器（如美製山砲營、克虜伯野戰砲營）請在該將領的「特種單位」欄新增。
+  　<b>負債：</b>向列強銀行借款時「金錢」與「負債」同增，詳見規則書 §4.5。
+</div>
+<div id="wrap"></div>
+<input type="file" id="file" accept="application/json" style="display:none">
+<script>
+// ================= 國旗 =================
+const sunRays=(cx,cy,rOut,rIn,n,fill)=>Array.from({length:n},(_,i)=>{const a=i*(360/n)*Math.PI/180,w=Math.PI/n*0.75;
+ return `<polygon points="${(cx+Math.cos(a)*rOut).toFixed(2)},${(cy+Math.sin(a)*rOut).toFixed(2)} ${(cx+Math.cos(a-w)*rIn).toFixed(2)},${(cy+Math.sin(a-w)*rIn).toFixed(2)} ${(cx+Math.cos(a+w)*rIn).toFixed(2)},${(cy+Math.sin(a+w)*rIn).toFixed(2)}" fill="${fill}"/>`}).join('');
+const FLAG={
+ // 五色旗（北洋）
+ wuse:`<svg viewBox="0 0 60 40">${['#d8322f','#f2c200','#1f4e9c','#ffffff','#1a1a1a'].map((c,i)=>`<rect y="${i*8}" width="60" height="8" fill="${c}"/>`).join('')}</svg>`,
+ // 青天白日旗（中華民國陸軍軍旗）：紅底、置中藍矩形、白日十二芒
+ roc:`<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#e60012"/><rect x="15" y="9" width="30" height="22" fill="#12279e"/>
+   ${sunRays(30,20,9.2,4.6,12,'#fff')}<circle cx="30" cy="20" r="4.4" fill="#fff"/></svg>`,
+ // 旭日旗（日本陸軍）
+ jp:`<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#fff"/>
+   <g>${Array.from({length:16},(_,i)=>{const a=i*22.5*Math.PI/180,w=Math.PI/32;
+   return `<polygon points="30,20 ${(30+Math.cos(a-w)*46).toFixed(1)},${(20+Math.sin(a-w)*46).toFixed(1)} ${(30+Math.cos(a+w)*46).toFixed(1)},${(20+Math.sin(a+w)*46).toFixed(1)}" fill="#bc002d"/>`}).join('')}</g>
+   <circle cx="30" cy="20" r="7.5" fill="#bc002d"/></svg>`,
+ // 星月旗（馬家軍）：紅色三角旗、白色新月與星
+ ma:`<svg viewBox="0 0 60 40"><polygon points="0,0 60,20 0,40" fill="#e60012"/>
+   <circle cx="15" cy="20" r="8.4" fill="#fff"/><circle cx="18.6" cy="20" r="6.9" fill="#e60012"/>
+   ${sunRays(24.5,17,3.6,1.5,5,'#fff')}</svg>`,
+ uk:`<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#012169"/>
+   <path d="M0,0 60,40 M60,0 0,40" stroke="#fff" stroke-width="8"/><path d="M0,0 60,40 M60,0 0,40" stroke="#C8102E" stroke-width="4"/>
+   <path d="M30,0 v40 M0,20 h60" stroke="#fff" stroke-width="13"/><path d="M30,0 v40 M0,20 h60" stroke="#C8102E" stroke-width="7"/></svg>`,
+ su:`<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#CE1126"/>
+   ${sunRays(13,11,6,2.4,5,'#FFD700')}
+   <g stroke="#FFD700" stroke-width="1.6" fill="none" transform="translate(13,25)"><path d="M-4,4 L4,-4"/><path d="M-4,-2 a6,6 0 0 1 8,4"/></g></svg>`,
+ us:`<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#fff"/>${Array.from({length:7},(_,i)=>`<rect y="${i*5.7}" width="60" height="2.85" fill="#B22234"/>`).join('')}
+   <rect width="26" height="20" fill="#3C3B6E"/>${Array.from({length:12},(_,i)=>`<circle cx="${3+(i%4)*7}" cy="${4+Math.floor(i/4)*6}" r="1.5" fill="#fff"/>`).join('')}</svg>`,
+ fr:`<svg viewBox="0 0 60 40"><rect width="20" height="40" fill="#0055A4"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#EF4135"/></svg>`,
+ de:`<svg viewBox="0 0 60 40"><rect width="60" height="13.3" fill="#000"/><rect y="13.3" width="60" height="13.3" fill="#DD0000"/><rect y="26.6" width="60" height="13.4" fill="#FFCE00"/></svg>`,
+};
+// ================= 銀行 =================
+const BANKS=[['英','uk','香港上海匯豐銀行',50,25],['美','us','花旗（萬國寶通）銀行',50,25],
+ ['日','jp','橫濱正金銀行',45,22],['法','fr','東方匯理銀行',35,18],['德','de','德華銀行',30,15]];
+function loanTerm(rel,hi,lo){
+ if(rel<=-8)return{c:'no',t:'停貸並立即催收'};
+ if(rel>3)return{c:'ok',t:`額度 ${hi}・6 回合分期`};
+ return{c:'mid',t:`額度 ${lo}・3 回合還清`};
+}
+// ================= 開局資料（同步規則書 §10 / §15）=================
+const T0={步:0,騎:0,機:0,砲:0};
+const mkT=o=>Object.assign({},T0,o);
+const BASE={
+ F:{name:'奉系（安國軍）',flag:'wuse',color:'#c62828',note:'五色旗・北洋正統｜工業與重裝最強，將領忠誠參差',
+  eco:{城市:8,工廠:5,砲台:0,金錢:25,負債:0,工業點:30},rel:{日:6,蘇:-4,英:1,美:1,法:0,德:0},
+  navy:{砲艇:2,驅逐艦:1,巡洋艦:0,運兵船:0},
+  people:[
+   {n:'張作霖',rank:'領袖',loy:10,val:50,ab:'東北王：控制北京時每 7 回合對各列強關係 +1；控制瀋陽時周邊所有工廠工業點 +2。',t:mkT({步:3,騎:1,機:2,砲:2})},
+   {n:'張學良',rank:'將領',loy:8,val:25,ab:'少帥：所部騎兵命中 +1，砲兵命中與攻擊 +1。',t:mkT({步:3,騎:1,機:1})},
+   {n:'楊宇霆',rank:'將領',loy:6,val:25,ab:'軍工樞紐：全陣營自產部隊工業點消耗 -1（下限 1）。',t:mkT({步:1,騎:2})},
+   {n:'張宗昌',rank:'將領',loy:3,val:23,ab:'狗肉將軍：專屬招募白俄旅（起始 1 營、每 5 回合 +1 營、上限 5 營）；陣營對蘇友好 ≥7 時白俄整批散夥。',
+    t:mkT({步:2,騎:1,機:1,砲:1}),wr:{白俄步:1,白俄騎:0,白俄機:0}},
+   {n:'李景林',rank:'將領',loy:5,val:20,ab:'直隸宿將：所部於城市守城時生命 +1（與城市加成疊加）。',t:mkT({步:1,機:1,砲:1})},
+   {n:'褚玉璞',rank:'將領',loy:4,val:17,ab:'直魯搭檔：與張宗昌同戰場時，雙方所部攻擊 +1。',t:mkT({步:1,騎:1,砲:1})},
+   {n:'(無將領部隊)',rank:'駐軍',loy:'—',val:'—',ab:'哈爾濱／長春／承德 等無將領城防（零散部隊，無中軍）。',t:mkT({步:2,騎:1})}]},
+ W:{name:'直系（十四省討賊聯軍）',flag:'wuse',color:'#6a1b9a',note:'五色旗・法統自居｜陸軍步兵最多、士氣高，外交彈性低',
+  eco:{城市:7,工廠:4,砲台:0,金錢:22,負債:0,工業點:22},rel:{日:0,蘇:-3,英:5,美:4,法:0,德:0},
+  navy:{砲艇:1,驅逐艦:0,巡洋艦:0,運兵船:0},
+  people:[
+   {n:'吳佩孚',rank:'領袖',loy:10,val:45,ab:'儒將：所部近戰命中 +1；招攬 NPC 軍閥對骰 +2；全員免疫認知作戰。',t:mkT({步:4,騎:1,機:1,砲:2})},
+   {n:'靳雲鶚',rank:'將領',loy:7,val:25,ab:'中原主力：同場步兵、砲兵各 ≥2 時，所部全體命中 +1（步砲協同）。',t:mkT({步:4,騎:1,機:2,砲:1})},
+   {n:'寇英傑',rank:'將領',loy:6,val:20,ab:'悍將：攻城時所部攻擊 +1；衝鋒近戰首擊命中 +1。',t:mkT({步:2,騎:1,機:1,砲:1})},
+   {n:'陳嘉謨',rank:'將領',loy:6,val:17,ab:'武漢守將：於長江沿岸城市守城時，所部生命再 +1。',t:mkT({步:1})},
+   {n:'劉玉春',rank:'將領',loy:7,val:20,ab:'死守不退：所部於城市守城時生命 +1（與城市加成疊加）。',t:mkT({步:2,騎:1,機:1})}]},
+ S:{name:'五省聯軍（孫傳芳）',flag:'wuse',color:'#2e7d32',note:'五色旗・保境安民｜錢最多、港口租界密集，外購最便宜',
+  eco:{城市:7,工廠:3,砲台:0,金錢:35,負債:0,工業點:18},rel:{日:2,蘇:-2,英:5,美:2,法:1,德:0},
+  navy:{砲艇:2,驅逐艦:0,巡洋艦:0,運兵船:0},
+  people:[
+   {n:'孫傳芳',rank:'領袖',loy:10,val:45,ab:'東南王：所控港口大城每回合金錢 +2；守城戰所部命中 +1；英日可同時維持友好。',t:mkT({步:2,騎:1,機:1,砲:1})},
+   {n:'盧香亭',rank:'將領',loy:6,val:22,ab:'前敵主力：所部步兵移動 +1。',t:mkT({步:3,機:2,砲:1})},
+   {n:'周蔭人',rank:'將領',loy:7,val:22,ab:'精銳師長：所部步兵命中 +1。',t:mkT({步:2,騎:1,砲:1})},
+   {n:'楊震東',rank:'將領',loy:5,val:17,ab:'地方實力：駐守城市時，黑幫動亂規模上限 -2、免疫「會黨滋事」。',t:mkT({步:2,騎:1})},
+   {n:'孟昭月',rank:'將領',loy:4,val:18,ab:'攻堅悍將：攻打港口城市時，所部攻擊 +1、命中 +1。',t:mkT({步:1,騎:1,機:1})}]},
+ N:{name:'國民革命軍',flag:'roc',color:'#f9a825',note:'青天白日旗・黨軍體制｜忠誠最高、量少質精，雙首長最耐斬首（蔣庇護黃埔＋桂軍；汪庇護政治／外交體系；粵軍陳濟棠、薛岳受雙重庇護。單一首長遇害只崩對應半邊，兩人俱亡才全陣營忠誠歸零）',
+  eco:{城市:5,工廠:2,砲台:0,金錢:15,負債:0,工業點:12},rel:{日:-3,蘇:7,英:-3,美:-2,法:-1,德:0},
+  navy:{砲艇:1,驅逐艦:0,巡洋艦:0,運兵船:0},
+  people:[
+   {n:'蔣介石',rank:'軍事領袖',loy:10,val:48,ab:'優勢在我：所部與黃埔嫡系（何應欽部）攻擊 +1；全員免疫認知作戰。',t:mkT({步:3,機:1,砲:1})},
+   {n:'汪精衛',rank:'政治領袖',loy:10,val:40,ab:'國共合作：外交關係修復對骰 +2；政治動員（步兵自產金錢 -1）；每回合工農獻金金錢 +2。',t:mkT({步:2})},
+   {n:'李宗仁',rank:'將領',loy:9,val:30,ab:'新桂系：所部全軍命中 +1。',t:mkT({步:1,騎:1})},
+   {n:'白崇禧',rank:'將領',loy:9,val:30,ab:'小諸葛：每回合可指定 3 單位額外行動一次（奇襲）；同場三兵種以上時全體命中 +1。',t:mkT({步:1,騎:1,機:1})},
+   {n:'何應欽',rank:'將領',loy:10,val:30,ab:'黃埔軍魂：所部全軍命中 +1。',t:mkT({步:2,砲:1})},
+   {n:'薛岳',rank:'將領',loy:9,val:30,ab:'薛老虎：所部全軍移動 +1。',t:mkT({步:1})},
+   {n:'陳濟棠',rank:'將領',loy:9,val:20,ab:'粵軍：廣東所有己方城市每回合金錢 +2；若統領全廣東則每回合再 +2。',t:mkT({步:1})}]},
+};
+const NPCBASE={
+ jin:{name:'晉系（閻錫山）',flag:'wuse',note:'太原兵工廠自給・閉關自守（7 營）',people:[
+  {n:'閻錫山',rank:'領袖',loy:10,val:40,ab:'山西王：所部本土守城生命 +1；窄軌鐵路（敵軍於大地圖上沿鐵路過境山西，該回合鐵路移動 -1）；兵工自給（控制太原時，太原周邊工廠每回合產能 +1）。',t:mkT({步:3,砲:1})},
+  {n:'傅作義',rank:'將領',loy:8,val:22,ab:'銅牆鐵壁：所部守城時生命 +1（與城市加成疊加），且命中 +1。',t:mkT({步:1,機:1})},
+  {n:'商震',rank:'將領',loy:6,val:22,ab:'晉軍宿將：所部步兵移動 +1。',t:mkT({步:1})},
+  {n:'徐永昌',rank:'將領',loy:7,val:18,ab:'參謀長：每回合可指定 5 單位額外行動一次。',t:mkT({騎:1})}]},
+ feng:{name:'西北軍／國民軍（馮玉祥）',flag:'wuse',note:'大刀近戰・親蘇・南口新敗（9 營）',people:[
+  {n:'馮玉祥',rank:'領袖',loy:10,val:38,ab:'西北親衛隊：所部全軍近戰命中 +1；基督將軍（西北軍全軍僅剩 1 營兵力時，可直接補充 2 個步兵營）。',t:mkT({步:3,騎:1})},
+  {n:'鹿鍾麟',rank:'將領',loy:7,val:20,ab:'主力戰將：所部步兵攻擊 +1。',t:mkT({步:1,砲:1})},
+  {n:'宋哲元',rank:'將領',loy:7,val:20,ab:'大刀隊：所部近戰命中 +1。',t:mkT({步:1})},
+  {n:'韓復榘',rank:'將領',loy:6,val:18,ab:'夜襲：每回合可指定 5 單位額外行動一次。',t:mkT({步:1})},
+  {n:'吉鴻昌',rank:'將領',loy:7,val:25,ab:'悍勇死戰：所部生命 +1。',t:mkT({機:1})},
+  {n:'張之江',rank:'將領',loy:7,val:23,ab:'大刀總教頭：其在場時全陣營近戰命中 +1。',t:mkT({騎:1})}]},
+ ma:{name:'西北馬家軍',flag:'ma',note:'回族騎兵集團・家族向心力高（4 營）',people:[
+  {n:'馬麒',rank:'領袖',loy:10,val:30,ab:'西寧鎮守使：所部回族騎兵移動 +1、衝鋒首擊命中 +1；原鄉守土戰命中 +1。',t:mkT({騎:1,步:2})},
+  {n:'馬福祥',rank:'將領',loy:8,val:20,ab:'寧夏鎮守：所部騎兵攻擊 +1。',t:mkT({騎:1})},
+  {n:'馬鴻賓',rank:'將領',loy:7,val:22,ab:'驍騎：所部騎兵命中 +1。',t:mkT({騎:1})},
+  {n:'馬麟',rank:'將領',loy:7,val:18,ab:'大哥沒有輸：與馬麒同戰場時，雙方騎兵移動 +1。',t:mkT({})}]},
+ xiang:{name:'湘軍（無領袖・可直接策反）',flag:'wuse',note:'南北要衝・北伐導火線（4 營）',people:[
+  {n:'唐生智',rank:'將領',loy:7,val:20,ab:'我才是正統：湖南本土作戰所部移動 +1。',t:mkT({步:3})},
+  {n:'趙恒惕',rank:'將領',loy:5,val:20,ab:'省憲舊主：所部於城市守城時生命 +1（與城市加成疊加）。',t:mkT({步:1})},
+  {n:'葉開鑫',rank:'將領',loy:5,val:20,ab:'湘軍宿將：所部步兵攻擊 +1。',t:mkT({機:1})},
+  {n:'何鍵',rank:'將領',loy:6,val:20,ab:'湘軍宿將：守城時所部命中 +1。',t:mkT({步:1})}]},
+ chuan:{name:'川軍（無領袖・可直接策反）',flag:'wuse',note:'防區制・投機觀望（9 營）',people:[
+  {n:'劉湘',rank:'將領',loy:4,val:20,ab:'天府之國：四川所有己方城市每回合金錢 +2；若統領全四川則每回合再 +2。',t:mkT({步:3,騎:1,砲:1})},
+  {n:'劉文輝',rank:'將領',loy:4,val:23,ab:'保定系：所部步兵、騎兵攻擊 +1。',t:mkT({步:2,機:1})},
+  {n:'楊森',rank:'將領',loy:3,val:17,ab:'悍將：所部衝鋒首擊命中 +1。',t:mkT({步:1})},
+  {n:'鄧錫侯',rank:'將領',loy:3,val:20,ab:'蜀道難：守城時所部命中 +1。',t:mkT({步:1})}]},
+ dian:{name:'滇系（唐繼堯）',flag:'wuse',note:'裝備落後・內部動盪（2 營）',people:[
+  {n:'唐繼堯',rank:'領袖',loy:10,val:28,ab:'雲南王（末期）：原鄉守土戰所部命中 +1；但內部離心（旗下將領忠誠上限 5）。',t:mkT({步:2})},
+  {n:'龍雲',rank:'將領',loy:4,val:22,ab:'四鎮之首：所部步兵移動 +1。',t:mkT({步:1})},
+  {n:'胡若愚',rank:'將領',loy:4,val:18,ab:'四鎮：所部步兵近戰命中 +1。',t:mkT({})},
+  {n:'張汝驥',rank:'將領',loy:4,val:17,ab:'四鎮：所部衝鋒首擊命中 +1。',t:mkT({})}]},
+ qian:{name:'黔（貴州・中立）',flag:'wuse',note:'地方部隊・可低價收編（1 營）',people:[
+  {n:'（黔軍地方部隊）',rank:'駐軍',loy:'—',val:'—',ab:'中立地方武力，鄰接者可付款收編。',t:mkT({步:2})}]},
+};
+// NPC 對列強的起始關係（史實傾向）
+const NPCREL0={
+ jin:{日:1,蘇:0,英:0,美:0,法:0,德:2},      // 閻錫山：購德日軍火、拒外干涉
+ feng:{日:-3,蘇:8,英:-3,美:0,法:0,德:0},   // 馮玉祥：親蘇、反帝
+ ma:{日:0,蘇:-2,英:0,美:0,法:0,德:0},      // 馬家軍：回族、反共
+ xiang:{日:1,蘇:0,英:1,美:0,法:0,德:0},    // 湘：英日在湘有航運礦產利益
+ chuan:{日:1,蘇:0,英:1,美:0,法:1,德:0},    // 川：列強在長江上游滲透
+ dian:{日:0,蘇:0,英:0,美:0,法:6,德:0},     // 滇：滇越鐵路、法國影響
+ qian:{日:0,蘇:0,英:0,美:0,法:0,德:0},     // 黔：中立
+};
+// 在野將領池（§10.7）——已下野、待出山的宿將；每人一局限出山一次
+const POOLBASE=[
+ {n:'段祺瑞',bg:'前皖系領袖，1920 年兵敗下野，寓居天津',loy:6,val:22,t:mkT({步:1,砲:1}),
+  ab:'前代軍閥：所部砲兵命中 +1。'},
+ {n:'盧永祥',bg:'前浙江督軍，1925 年下野，蟄居天津',loy:5,val:18,t:mkT({步:2}),
+  ab:'江浙舊部：於浙江境內作戰時，所部命中 +1。'},
+ {n:'李厚基',bg:'前福建督軍，1922 年被逐，寓居天津',loy:5,val:18,t:mkT({步:2}),
+  ab:'閩海舊人：於福建、浙江境內守城時，所部生命 +1。'},
+ {n:'陳炯明',bg:'前粵軍領袖，1925 年被逐，蟄居香港',loy:5,val:22,t:mkT({步:2}),
+  ab:'老革命家：所部生命 +1；對付共黨、黑幫、親蘇陣營（關係 ≥5）時近戰命中 +1。'},
+ {n:'王承斌',bg:'直系宿將，1925 年失勢賦閒',loy:6,val:22,t:mkT({步:2,騎:1}),
+  ab:'直系老臣：加入直系陣營時忠誠 +2；所部步兵攻擊 +1。'},
+ {n:'陸洪濤',bg:'前甘肅督軍，1924 年為國民軍所逐',loy:5,val:20,t:mkT({步:1,騎:1}),
+  ab:'隴上舊部：於甘肅、青海、陝西境內作戰時，所部移動 +1。'},
+ {n:'田中玉',bg:'前山東督軍，1923 年去職',loy:5,val:20,t:mkT({步:2,機:1}),
+  ab:'齊魯宿將：於山東境內守城時，所部命中 +1。'},
+];
+const CN=['奉','直','孫','國','晉','西北','湘','川','滇','馬','黔'];
+const CNSELF={F:'奉',W:'直',S:'孫',N:'國'};
+const ADVISORS=['—','🇷🇺蘇','🇯🇵日','🇩🇪德','🇬🇧英','🇺🇸美','🇫🇷法'];
+// 顧問效果（§12.4）；naval=true 者其加成作用於水軍，可掛在領袖旗下統籌全軍艦隊
+const ADVEFF={
+ '🇷🇺蘇':{t:'該將領忠誠 +2、所部砲兵命中 +1；解鎖政治動員（步兵自產金錢 -1）'},
+ '🇯🇵日':{t:'該將統帥步兵命中 +1；每回合可指定 3 單位額外行動一次（奇襲）'},
+ '🇩🇪德':{t:'所部步兵射擊與砲兵命中 +1、砲兵攻城時攻擊 +1（政治包袱最小，任何人可用）'},
+ '🇬🇧英':{t:'海軍／艦砲命中 +1；該將所部駐紮之港口城市每回合金錢 +1',naval:true},
+ '🇺🇸美':{t:'可挑選所部 3 個步兵營直接轉為霰彈槍兵；外購再折價 10%；該將所部駐紮之港口城市每回合金錢 +1'},
+ '🇫🇷法':{t:'所部砲兵命中 +1；該將守城時守方再 +1 生命（要塞化）'},
+};
+const advActive=p=>p.adv&&p.adv!=='—'&&(+p.advT>0);
+const FLAGEMO={日:'🇯🇵',蘇:'🇷🇺',英:'🇬🇧',美:'🇺🇸',法:'🇫🇷',德:'🇩🇪'};
+let ST,NPC,CNREL,AV,NPCREL,POOL;
+function fresh(){ST=JSON.parse(JSON.stringify(BASE));NPC=JSON.parse(JSON.stringify(NPCBASE));
+ POOL=JSON.parse(JSON.stringify(POOLBASE)).map(p=>Object.assign(p,{out:'',dead:false}));
+ CNREL={};Object.keys(ST).forEach(k=>{CNREL[k]={};CN.forEach(c=>{if(c!==CNSELF[k])CNREL[k][c]=0;});});
+ NPCREL=JSON.parse(JSON.stringify(NPCREL0));
+ AV={};Object.keys(NPC).forEach(k=>AV[k]=true);
+ // 忠誠度基準（loy0）：供事件變動後可「恢復原忠誠」、加入新陣營時回復
+ [ST,NPC].forEach(grp=>Object.keys(grp).forEach(k=>grp[k].people.forEach(p=>{if(typeof p.loy==='number'&&p.loy0===undefined)p.loy0=p.loy;})));
+ POOL.forEach(p=>{if(p.loy0===undefined)p.loy0=p.loy;});}
+fresh();
+// ================= 繪製 =================
+function pic(name){
+ if(name.startsWith('（')||name.startsWith('('))return `<div class="picfb"><b>—</b><i>駐軍</i></div>`;
+ return `<img class="pic" src="portraits/${name}.jpg" alt="${name}"
+   onerror="this.onerror=null;this.src='portraits/${name}.png';this.onerror=function(){this.outerHTML='<div class=\\'picfb\\'><b>${name[0]}</b><i>${name}.jpg</i></div>'}">`;
+}
+function troopInputs(scope,fk,pi,p){
+ let h=Object.keys(p.t).map(u=>`<label>${u}<input type="number" min="0" value="${p.t[u]}" data-s="${scope}" data-f="${fk}" data-p="${pi}" data-u="${u}" class="tin"></label>`).join('');
+ if(p.wr)h+=Object.keys(p.wr).map(u=>`<label class="wr">${u}<input type="number" min="0" value="${p.wr[u]}" data-s="${scope}" data-f="${fk}" data-p="${pi}" data-w="${u}" class="win"></label>`).join('');
+ return h;
+}
+function specialUnits(scope,fk,pi,p){
+ const list=(p.sp||[]).map((x,j)=>`<span class="chip">${x.n} ×<input type="number" min="0" value="${x.q}"
+   data-s="${scope}" data-f="${fk}" data-p="${pi}" data-j="${j}" class="spq"
+   style="width:32px;background:#12100a;color:#e8c07d;border:1px solid #5a4a2a;border-radius:4px;text-align:center;font-size:11px;padding:1px 2px">
+   <button data-s="${scope}" data-f="${fk}" data-p="${pi}" data-j="${j}" class="rmsp" title="刪除">×</button></span>`).join('');
+ return `<div class="sp"><div style="color:#b6a887;font-size:10.5px">特種單位（外購特製武器）</div>${list}
+  <div class="add"><input class="nm" placeholder="例：美製山砲營" data-s="${scope}" data-f="${fk}" data-p="${pi}">
+  <input class="q" type="number" min="1" value="1" data-s="${scope}" data-f="${fk}" data-p="${pi}">
+  <button class="mini addsp" data-s="${scope}" data-f="${fk}" data-p="${pi}">＋</button></div></div>`;
+}
+function person(scope,fk,p,i){
+ const _tot=Object.values(p.t).reduce((a,v)=>a+(+v||0),0)+(p.wr?Object.values(p.wr).reduce((a,v)=>a+(+v||0),0):0);
+ const _idle=p.rank==='將領'&&_tot===0;
+ const _grp=pickObj(scope,fk);
+ const _leader=(scope==='ST'&&fk==='N')?'蔣介石':((_grp.people.find(x=>String(x.rank).includes('領袖'))||{}).n||'領袖');
+ return `<div class="per ${String(p.rank).includes('領袖')?'leader':''}">${pic(p.n)}
+  <div class="pinfo">
+   <div class="pname">${p.n}<span class="rk ${String(p.rank).includes('領袖')?'ld':''}">${p.rank}</span>${_idle?`<span class="rk" style="background:#4a3f22;color:#ffd23e" title="無部隊，掛領袖旗下（狀態與領袖綁定；增兵後消失）">掛 ${_leader} 旗下</span>`:''}</div>
+   <div class="stat">忠誠 ${typeof p.loy==='number'?`<input class="loyin" type="number" min="0" max="10" value="${p.loy}" data-s="${scope}" data-f="${fk}" data-p="${i}" style="width:44px">${p.loy0!==undefined&&p.loy!==p.loy0?`<button class="loyrst" data-s="${scope}" data-f="${fk}" data-p="${i}" title="恢復原忠誠 ${p.loy0}" style="border:none;background:#3a3320;color:#ffd23e;border-radius:4px;cursor:pointer;padding:1px 5px;margin-left:2px">↺${p.loy0}</button>`:''}`:`<b>${p.loy}</b>`}　身價 <b>${p.val}</b>${typeof p.val==='number'?' 元':''}</div>
+   <div class="abil">${p.ab}</div>
+   <div class="tr">${troopInputs(scope,fk,i,p)}</div>
+   <div class="adv">顧問<select data-s="${scope}" data-f="${fk}" data-p="${i}" class="ain">${ADVISORS.map(a=>`<option ${p.adv===a?'selected':''}>${a}</option>`).join('')}</select>
+    剩餘<input class="t" type="number" min="0" max="10" value="${p.advT||0}" data-s="${scope}" data-f="${fk}" data-p="${i}" class="atin">回合</div>
+   ${advActive(p)?`<div style="margin-top:4px;font-size:11px;line-height:1.45;color:${ADVEFF[p.adv]&&ADVEFF[p.adv].naval?'#7fc8e8':'#9ccc65'};background:#12100a;border:1px solid #33291a;border-left:3px solid ${ADVEFF[p.adv]&&ADVEFF[p.adv].naval?'#5b86a6':'#5a7a2a'};border-radius:5px;padding:4px 6px">
+     ${ADVEFF[p.adv]&&ADVEFF[p.adv].naval?'⚓ ':'★ '}${p.adv} 顧問在任（剩 ${p.advT} 回合）：${(ADVEFF[p.adv]||{}).t||''}</div>`:''}
+   ${specialUnits(scope,fk,i,p)}
+  </div></div>`;
+}
+function landCount(f){return f.people.reduce((a,p)=>a+Object.values(p.t).reduce((x,v)=>x+(+v||0),0)+(p.wr?Object.values(p.wr).reduce((x,v)=>x+(+v||0),0):0),0);}
+function navyCount(f){return f.navy?Object.values(f.navy).reduce((a,v)=>a+(+v||0),0):0;}
+// 在野將領投效目標對照（操作板短名）
+const FKSHORT={F:'奉系',W:'直系',S:'孫傳芳',N:'國民革命軍',jin:'晉系',feng:'西北軍',xiang:'湘軍',chuan:'川軍',dian:'滇系',ma:'馬家軍'};
+// 取得已投效至某陣營、且尚未陣亡的在野將領（附原池索引）
+function joinedTo(fk){const nm=FKSHORT[fk];return POOL.map((p,i)=>({p,i})).filter(o=>o.p.out===nm&&!o.p.dead);}
+function joinedLand(fk){return joinedTo(fk).reduce((a,o)=>a+Object.values(o.p.t).reduce((x,v)=>x+(+v||0),0),0);}
+// 在野將領投效後於陣營板顯示的卡片（保留 poolout 選單以便改派／返池）
+function poolJoinCard(p,i){
+ const opts=['','奉系','直系','孫傳芳','國民革命軍','晉系','西北軍','湘軍','川軍','滇系','馬家軍'];
+ const troops=Object.keys(p.t).filter(u=>p.t[u]>0).map(u=>`${u}×${p.t[u]}`).join(' ')||'無';
+ return `<div class="per" style="border-left:3px solid #5a7a2a">${pic(p.n)}
+  <div class="pinfo">
+   <div class="pname">${p.n}<span class="rk">將領</span><span class="rk" style="background:#5a7a2a;color:#fff">在野投效</span></div>
+   <div class="stat">忠誠 <input class="loyin" type="number" min="0" max="10" value="${p.loy}" data-s="POOL" data-f="_" data-p="${i}" style="width:44px">${p.loy0!==undefined&&p.loy!==p.loy0?`<button class="loyrst" data-s="POOL" data-f="_" data-p="${i}" title="恢復原忠誠 ${p.loy0}" style="border:none;background:#3a3320;color:#ffd23e;border-radius:4px;cursor:pointer;padding:1px 5px;margin-left:2px">↺${p.loy0}</button>`:''}　身價 <b>${p.val}</b> 元</div>
+   <div class="abil" style="color:#e8c07d">${p.ab}</div>
+   <div class="tr">${troopInputs('POOL','_',i,p)}</div>
+   <div class="adv">改派／返池
+     <select data-i="${i}" class="poolout">${opts.map(o=>`<option value="${o}" ${p.out===o?'selected':''}>${o||'（返回在野池）'}</option>`).join('')}</select>
+     <label style="font-size:11px"><input type="checkbox" class="pooldead" data-i="${i}" ${p.dead?'checked':''}> 已陣亡／處決</label>
+   </div>
+  </div></div>`;
+}
+function board(fk){
+ const f=ST[fk];
+ const rel=Object.keys(f.rel).map(lab=>`<div><span>${FLAGEMO[lab]}</span>
+   <input type="number" min="-15" max="15" value="${f.rel[lab]}" data-f="${fk}" data-r="${lab}" class="rin"
+   style="color:${f.rel[lab]>0?'#9ccc65':f.rel[lab]<0?'#ef5350':'#f3ecdb'}"><small>${lab}</small></div>`).join('');
+ const eco=Object.keys(f.eco).map(k=>`<div class="${k==='負債'?'debt':''}"><span>${k}</span><input type="number" value="${f.eco[k]}" data-f="${fk}" data-e="${k}" class="ein"></div>`).join('');
+ const navy=Object.keys(f.navy).map(k=>`<label>${k}<input type="number" min="0" value="${f.navy[k]}" data-f="${fk}" data-n="${k}" class="nin"></label>`).join('');
+ const bank=BANKS.map(([lab,,bn,hi,lo])=>{const t=loanTerm(f.rel[lab],hi,lo);
+   return `<tr><td>${FLAGEMO[lab]} ${bn}</td><td style="text-align:center">${f.rel[lab]}</td><td class="${t.c}">${t.t}</td></tr>`}).join('');
+ return `<div class="board">
+  <div class="bhead"><div class="flag">${FLAG[f.flag]}</div><h2>${f.name}</h2>
+   <span class="tag" style="background:${f.color}">總兵力 ${landCount(f)+joinedLand(fk)+navyCount(f)}（陸 ${landCount(f)+joinedLand(fk)}＋水 ${navyCount(f)}）${joinedLand(fk)?`｜含在野投效 ${joinedLand(fk)}`:''}</span></div>
+  <div class="sec"><h3>領袖與將領（部隊以「營」為單位）</h3><div class="ppl">${f.people.map((p,i)=>person('ST',fk,p,i)).join('')}${joinedTo(fk).map(o=>poolJoinCard(o.p,o.i)).join('')}</div></div>
+  <div class="sec"><h3>水軍（中隊）</h3><div class="tr">${navy}</div>
+   ${(()=>{const na=f.people.filter(p=>advActive(p)&&ADVEFF[p.adv]&&ADVEFF[p.adv].naval);
+     if(!na.length)return '';
+     return `<div style="margin-top:7px;font-size:11.5px;line-height:1.5;color:#7fc8e8;background:#12100a;border:1px solid #33291a;border-left:3px solid #5b86a6;border-radius:6px;padding:6px 8px">
+      ⚓ <b>海軍顧問加成生效中</b>：${na.map(p=>`${p.adv}（掛於 <b>${p.n}</b>${String(p.rank).includes('領袖')?'・領袖統籌全軍艦隊':''}，剩 ${p.advT} 回合）`).join('；')}<br>
+      → 全軍海軍／艦砲命中 +1；該將所在港口城市每回合金錢 +1</div>`;})()}
+  </div>
+  <div class="sec"><h3>經濟</h3><div class="eco">${eco}</div></div>
+  <div class="sec"><h3>列強銀行貸款方案（依關係自動判定・§4.5）</h3>
+   <table class="bank"><tr><th>銀行</th><th>關係</th><th>可用方案</th></tr>${bank}
+   <tr><td>🇷🇺 （蘇聯）</td><td style="text-align:center">${f.rel.蘇}</td><td class="no">不承作商業放款</td></tr></table></div>
+  <div class="sec"><h3>列強關係（-15 ～ 15）</h3><div class="rel">${rel}</div></div>
+  <div class="hint" style="padding:8px 0 0">${f.note}</div></div>`;
+}
+function npcBoard(k){
+ const f=NPC[k];
+ return `<div class="board ${AV[k]?'':'dead'}" id="npc_${k}">
+  <div class="bhead"><div class="flag">${FLAG[f.flag]}</div><h2>${f.name}</h2>
+   <span class="tag" style="background:#78909c">總兵力 ${landCount(f)+joinedLand(k)+navyCount(f)}${navyCount(f)?`（陸 ${landCount(f)+joinedLand(k)}＋水 ${navyCount(f)}）`:' 營'}${joinedLand(k)?`｜含在野投效 ${joinedLand(k)}`:''}</span>
+   <label style="font-size:11.5px"><input type="checkbox" class="avin" data-k="${k}" ${AV[k]?'checked':''}> 在場</label></div>
+  <div class="sec"><div class="ppl">${f.people.map((p,i)=>person('NPC',k,p,i)).join('')}${joinedTo(k).map(o=>poolJoinCard(o.p,o.i)).join('')}</div></div>
+  <div class="sec"><h3>與列強關係（影響事件觸發・§8.4C）</h3><div class="rel">
+   ${Object.keys(NPCREL[k]).map(lab=>`<div><span>${FLAGEMO[lab]}</span>
+     <input type="number" min="-15" max="15" value="${NPCREL[k][lab]}" data-k="${k}" data-r="${lab}" class="nrin"
+     style="color:${NPCREL[k][lab]>0?'#9ccc65':NPCREL[k][lab]<0?'#ef5350':'#f3ecdb'}"><small>${lab}</small></div>`).join('')}
+  </div></div>
+  <div class="hint" style="padding:8px 13px">${f.note}</div></div>`;
+}
+function poolBoard(){
+ const opts=['','奉系','直系','孫傳芳','國民革命軍','晉系','西北軍','湘軍','川軍','滇系','馬家軍'];
+ // 已投效者已移入其陣營板；此處僅列仍在池中或已陣亡者
+ const cards=POOL.map((p,i)=>({p,i})).filter(o=>!o.p.out).map(({p,i})=>{
+  const gone=p.dead;
+  const troops=Object.keys(p.t).filter(u=>p.t[u]>0).map(u=>`${u}×${p.t[u]}`).join(' ')||'無';
+  return `<div class="per ${gone?'dead':''}" style="background:var(--pnl2)">
+   ${pic(p.n)}
+   <div class="pinfo">
+    <div class="pname">${p.n}<span class="rk">在野</span>${p.dead?'<span class="rk" style="background:#7a2a2a;color:#fff">已陣亡/處決</span>':''}</div>
+    <div class="stat">忠誠 <b>${p.loy}</b>　身價 <b>${p.val}</b> 元　自帶部隊 <b>${troops}</b></div>
+    <div class="abil">${p.bg}</div>
+    <div class="abil" style="color:#e8c07d">${p.ab}</div>
+    <div class="adv">出山投效
+      <select data-i="${i}" class="poolout">${opts.map(o=>`<option value="${o}" ${p.out===o?'selected':''}>${o||'（仍在池中）'}</option>`).join('')}</select>
+      <label style="font-size:11px"><input type="checkbox" class="pooldead" data-i="${i}" ${p.dead?'checked':''}> 已陣亡／處決</label>
+    </div>
+   </div></div>`;}).join('');
+ const joined=POOL.map((p,i)=>({p,i})).filter(o=>o.p.out&&!o.p.dead);
+ const joinedNote=joined.length?`<div class="hint" style="padding:6px 13px 0;color:#9ccc65">已投效並移入陣營板：${joined.map(o=>`${o.p.n}→${o.p.out}`).join('、')}</div>`:'';
+ const left=POOL.filter(p=>!p.out&&!p.dead).length;
+ return `<div class="board npcwrap">
+  <div class="bhead"><div class="flag">${FLAG.wuse}</div><h2>在野將領池（§10.7）</h2>
+   <span class="tag" style="background:#8d6e63">池中尚有 ${left} / ${POOL.length} 人</span></div>
+  <div class="hint" style="padding:8px 13px 0">已下野、待出山的宿將，不屬於任何勢力。經《舊部來投》（隨機）或《在野名將投效》（指定並付半價）出山，出山即帶自有部隊加入該陣營，且<b>一局限出山一次</b>。池空時該事件改為獲步兵 ×2。<b>選定投效陣營後，該將領即自本池移入該陣營操作板</b>。</div>
+  ${joinedNote}
+  <div class="sec"><div class="ppl">${cards||'<div class="hint" style="padding:4px 13px">在野池已空（全部投效或陣亡）。</div>'}</div></div></div>`;
+}
+// 列強將領（§12.6）
+const POWGEN=[
+ {n:'武藤信義',f:'jp',role:'關東軍司令官',ab:'關東軍統帥：所部步兵近戰命中 +1；每回合可指定 3 單位額外行動一次（奇襲）。'},
+ {n:'森岡守成',f:'jp',role:'朝鮮軍司令官',ab:'朝鮮軍：於朝鮮本土作戰時，所部步兵近戰傷害 +1。'},
+ {n:'安滿欽一',f:'jp',role:'第三師團長（駐名古屋）',ab:'天皇陛下萬歲：所部步兵與騎兵近戰命中 +1；每回合可指定 3 單位額外行動一次（奇襲）。'},
+ {n:'伯德伍德',f:'uk',role:'印度英軍總司令 William Birdwood',ab:'帝國陸軍：所部步兵射擊命中 +1；坦克單位攻城時攻擊 +1。'},
+ {n:'金文泰',f:'uk',role:'香港總督 Sir Cecil Clementi',ab:'天佑吾皇：於租界城市以及香港守備時，所部生命 +1 且艦砲支援命中 +1。'},
+ {n:'布留赫爾',f:'su',role:'加倫將軍 Vasily Blyukher',ab:'紅軍教頭：所部砲兵命中 +1；同場坦克與步兵各 ≥2 時全體命中 +1。'},
+ {n:'倫納德·伍德',f:'us',role:'菲律賓總督 Leonard Wood',ab:'參謀典範：所部機槍兵射擊命中 +1（美軍不派正規軍軍援，僅自衛／懲戒時生效）。'},
+ {n:'瓦倫',f:'fr',role:'法屬印度支那總督 Alexandre Varenne',ab:'殖民地總督：外籍兵團步兵近戰命中再 +1；於印度支那本土防衛時全體生命 +1。'},
+];
+function powGenBoard(){
+ const cards=POWGEN.map(g=>`<div class="per" style="background:var(--pnl2)">
+   ${pic(g.n)}
+   <div class="pinfo">
+    <div class="pname">${g.n}<span class="rk" style="background:#455a64;color:#fff">列強將領</span></div>
+    <div class="stat"><span style="display:inline-block;width:24px;height:16px;vertical-align:-3px;border:1px solid #0008;margin-right:5px">${FLAG[g.f]}</span>${g.role}</div>
+    <div class="abil" style="color:#e8c07d">${g.ab}</div>
+   </div></div>`).join('');
+ return `<div class="board npcwrap">
+  <div class="bhead"><div class="flag">${FLAG.jp}</div><h2>列強將領（§12.6）</h2>
+   <span class="tag" style="background:#455a64">不可策反／招降／暗殺</span></div>
+  <div class="hint" style="padding:8px 13px 0">只統帥該列強部隊，不能指揮中國軍隊，也不會借給玩家。<b>被俘後僅能軟禁或處決</b>——軟禁保留和談空間；<b>處決視同向該列強宣戰</b>，觸發 §11.7(A) 不可停止的全面報復。</div>
+  <div class="sec"><div class="ppl">${cards}</div></div></div>`;
+}
+function powerBoard(){
+ const rows=[['jp','日本','關東軍・朝鮮軍・台灣軍・第三師團；海軍最強'],['su','蘇聯','遠東紅軍・外蒙駐軍；坦克與重砲，不放款'],
+  ['uk','英國','英屬香港（在華砲艇／遠東艦隊）・印緬陸軍'],['us','美國','駐菲陸軍・亞洲艦隊；唯一不派正規軍軍援'],
+  ['fr','法國','法屬印度支那・外籍兵團'],['de','德國（威瑪共和）','無駐軍；僅售特色武器與派顧問（政治中立）']];
+ return `<div class="board npcwrap"><div class="bhead"><div class="flag">${FLAG.uk}</div><h2>列強一覽</h2>
+   <span class="tag" style="background:#455a64">關係值於各陣營面板調整</span></div>
+  <div class="sec" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+   ${rows.map(([k,n,d])=>`<div style="background:var(--pnl2);border:1px solid #33291a;border-radius:9px;padding:9px">
+    <h4 style="margin:0 0 5px;font-size:13.5px;display:flex;align-items:center;gap:7px"><span style="width:26px;height:17px;display:inline-block;border:1px solid #0008">${FLAG[k]}</span>${n}</h4>
+    <div class="abil">${d}</div></div>`).join('')}</div></div>`;
+}
+function render(){
+ document.getElementById('wrap').innerHTML=
+  Object.keys(ST).map(board).join('')+
+  `<div class="board npcwrap"><div class="bhead"><div class="flag">${FLAG.wuse}</div><h2>NPC 勢力（取消「在場」＝已被消滅，事件卡同步失效）</h2></div></div>`+
+  Object.keys(NPC).map(npcBoard).join('')+poolBoard()+powGenBoard()+powerBoard();
+ bind();
+}
+function pickObj(s,f){return s==='ST'?ST[f]:s==='POOL'?{people:POOL}:NPC[f];}
+function bind(){
+ document.querySelectorAll('.tin').forEach(el=>el.onchange=e=>{const d=e.target.dataset;pickObj(d.s,d.f).people[d.p].t[d.u]=+e.target.value;render();});
+ document.querySelectorAll('.win').forEach(el=>el.onchange=e=>{const d=e.target.dataset;pickObj(d.s,d.f).people[d.p].wr[d.w]=+e.target.value;render();});
+ document.querySelectorAll('.loyin').forEach(el=>el.onchange=e=>{const d=e.target.dataset;pickObj(d.s,d.f).people[d.p].loy=Math.max(0,Math.min(10,+e.target.value));render();});
+ document.querySelectorAll('.loyrst').forEach(el=>el.onclick=e=>{const d=e.target.dataset,p=pickObj(d.s,d.f).people[d.p];if(p.loy0!==undefined)p.loy=p.loy0;render();});
+ document.querySelectorAll('.nin').forEach(el=>el.onchange=e=>{const d=e.target.dataset;ST[d.f].navy[d.n]=+e.target.value;});
+ document.querySelectorAll('.ein').forEach(el=>el.onchange=e=>{const d=e.target.dataset;ST[d.f].eco[d.e]=+e.target.value;});
+ document.querySelectorAll('.rin').forEach(el=>el.onchange=e=>{const d=e.target.dataset;ST[d.f].rel[d.r]=Math.max(-15,Math.min(15,+e.target.value));render();});
+ document.querySelectorAll('.ain').forEach(el=>el.onchange=e=>{const d=e.target.dataset,p=pickObj(d.s,d.f).people[d.p];
+   p.adv=e.target.value;if(e.target.value!=='—'&&!p.advT)p.advT=10;if(e.target.value==='—')p.advT=0;render();});
+ document.querySelectorAll('input.t').forEach(el=>el.onchange=e=>{const d=e.target.dataset;pickObj(d.s,d.f).people[d.p].advT=+e.target.value;});
+ document.querySelectorAll('.addsp').forEach(el=>el.onclick=e=>{const d=e.target.dataset,box=e.target.parentNode;
+   const nm=box.querySelector('.nm').value.trim(),q=+box.querySelector('.q').value||1;if(!nm)return;
+   const p=pickObj(d.s,d.f).people[d.p];(p.sp=p.sp||[]).push({n:nm,q});render();});
+ document.querySelectorAll('.spq').forEach(el=>el.onchange=e=>{const d=e.target.dataset,p=pickObj(d.s,d.f).people[d.p];
+   const q=+e.target.value;if(q<=0)p.sp.splice(+d.j,1);else p.sp[+d.j].q=q;render();});
+ document.querySelectorAll('.rmsp').forEach(el=>el.onclick=e=>{const d=e.target.dataset;
+   pickObj(d.s,d.f).people[d.p].sp.splice(+d.j,1);render();});
+ document.querySelectorAll('.nrin').forEach(el=>el.onchange=e=>{const d=e.target.dataset;
+   NPCREL[d.k][d.r]=Math.max(-15,Math.min(15,+e.target.value));render();});
+ document.querySelectorAll('.poolout').forEach(el=>el.onchange=e=>{POOL[+e.target.dataset.i].out=e.target.value;render();});
+ document.querySelectorAll('.pooldead').forEach(el=>el.onchange=e=>{POOL[+e.target.dataset.i].dead=e.target.checked;render();});
+ document.querySelectorAll('.avin').forEach(el=>el.onchange=e=>{AV[e.target.dataset.k]=e.target.checked;
+   document.getElementById('npc_'+e.target.dataset.k).classList.toggle('dead',!e.target.checked);});
+}
+// ================= 存檔 =================
+const KEY='beifa_dashboard_v2';
+const snap=()=>({ST,NPC,CNREL,AV,NPCREL,POOL});
+document.getElementById('save').onclick=()=>{try{localStorage.setItem(KEY,JSON.stringify(snap()));alert('已儲存到瀏覽器。');}
+ catch(e){alert('此瀏覽器不允許本機儲存，請改用「匯出 JSON」。');}};
+document.getElementById('load').onclick=()=>{try{const d=localStorage.getItem(KEY);if(!d)return alert('沒有找到存檔。');
+ const o=JSON.parse(d);ST=o.ST;NPC=o.NPC||NPC;CNREL=o.CNREL;AV=o.AV;NPCREL=o.NPCREL||NPCREL;POOL=o.POOL||POOL;render();}catch(e){alert('讀取失敗。');}};
+document.getElementById('exp').onclick=()=>{const b=new Blob([JSON.stringify(snap(),null,1)],{type:'application/json'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='北伐風雲_戰況.json';a.click();};
+document.getElementById('imp').onclick=()=>document.getElementById('file').click();
+document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+ r.onload=()=>{try{const o=JSON.parse(r.result);ST=o.ST;NPC=o.NPC||NPC;CNREL=o.CNREL;AV=o.AV;NPCREL=o.NPCREL||NPCREL;POOL=o.POOL||POOL;render();}catch(x){alert('檔案格式錯誤。');}};r.readAsText(f);};
+document.getElementById('reset').onclick=()=>{if(confirm('確定重設為開局狀態？')){fresh();render();}};
+render();
+</script>
+</body>
+</html>
