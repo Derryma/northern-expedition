@@ -1,0 +1,138 @@
+{
+  "version": "experimental-0.1",
+  "great_general_id": "chiang_kai_shek",
+  "generals": {
+    "chiang_kai_shek": {
+      "id": "chiang_kai_shek",
+      "name": "Chiang Kai-shek",
+      "role": "great_general",
+      "faction": "中央軍",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "command_cap": 80,
+      "traits": ["shock_column_leader"],
+      "skills": [],
+      "units": {
+        "infantry": 18,
+        "cavalry": 2,
+        "artillery": 3,
+        "machine_gun": 4
+      },
+      "parent_id": null,
+      "subordinate_slots": 3,
+      "subordinates": ["he_yingqin", "bai_chongxi", "tang_shengzhi"],
+      "status": "active"
+    },
+    "he_yingqin": {
+      "id": "he_yingqin",
+      "name": "He Yingqin",
+      "role": "lieutenant_general",
+      "faction": "中央軍",
+      "core_faction": true,
+      "loyalty": 8,
+      "loyalty_exempt": false,
+      "command_cap": 42,
+      "traits": ["steady_drillmaster"],
+      "skills": [],
+      "units": {
+        "infantry": 14,
+        "cavalry": 2,
+        "artillery": 2,
+        "machine_gun": 4
+      },
+      "parent_id": "chiang_kai_shek",
+      "subordinate_slots": 2,
+      "subordinates": ["xue_yue"],
+      "status": "active"
+    },
+    "bai_chongxi": {
+      "id": "bai_chongxi",
+      "name": "Bai Chongxi",
+      "role": "lieutenant_general",
+      "faction": "桂系",
+      "core_faction": false,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "command_cap": 40,
+      "traits": ["fire_support_savant"],
+      "skills": [],
+      "units": {
+        "infantry": 12,
+        "cavalry": 2,
+        "artillery": 2,
+        "machine_gun": 3
+      },
+      "parent_id": "chiang_kai_shek",
+      "subordinate_slots": 2,
+      "subordinates": ["li_zongren"],
+      "status": "active"
+    },
+    "tang_shengzhi": {
+      "id": "tang_shengzhi",
+      "name": "Tang Shengzhi",
+      "role": "lieutenant_general",
+      "faction": "湘系",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "command_cap": 34,
+      "traits": ["local_supply_boss"],
+      "skills": [],
+      "units": {
+        "infantry": 10,
+        "cavalry": 3,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "chiang_kai_shek",
+      "subordinate_slots": 2,
+      "subordinates": [],
+      "status": "active"
+    },
+    "xue_yue": {
+      "id": "xue_yue",
+      "name": "Xue Yue",
+      "role": "major_general",
+      "faction": "中央軍",
+      "core_faction": true,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "command_cap": 20,
+      "traits": ["layered_defender"],
+      "skills": ["fortress_builder"],
+      "units": {
+        "infantry": 8,
+        "cavalry": 0,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "he_yingqin",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "li_zongren": {
+      "id": "li_zongren",
+      "name": "Li Zongren",
+      "role": "major_general",
+      "faction": "桂系",
+      "core_faction": false,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "command_cap": 24,
+      "traits": ["cavalry_screen_commander"],
+      "skills": [],
+      "units": {
+        "infantry": 9,
+        "cavalry": 2,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "bai_chongxi",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

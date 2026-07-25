@@ -1,9 +1,16 @@
 import unittest
 
-from combat import TACTICS, simulate_battle
+from combat import TACTICS, calculate_force_strength, simulate_battle
 
 
 class CombatSimulationTests(unittest.TestCase):
+    def test_force_strength_uses_force_points_not_attack(self):
+        strength = calculate_force_strength(
+            {"infantry": 5, "cavalry": 3, "machine_gun": 2, "artillery": 1}
+        )
+
+        self.assertEqual(strength, 16.0)
+
     def test_artillery_rolls_to_next_priority_after_artillery_flees(self):
         result = simulate_battle(
             {

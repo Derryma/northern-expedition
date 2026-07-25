@@ -3,25 +3,25 @@
   "units": {
     "infantry": {
       "hp": 3.0,
-      "attack": 1.0,
+      "force_points": 1.0,
       "section": "line",
       "notes": "Cheap line troops. Shares line HP with machine guns."
     },
     "cavalry": {
       "hp": 3.0,
-      "attack": 1.0,
+      "force_points": 1.0,
       "section": "cavalry",
       "notes": "Durable mobile arm. Enables pursuit casualties after victory."
     },
     "artillery": {
       "hp": 2.0,
-      "attack": 4.0,
+      "force_points": 4.0,
       "section": "artillery",
       "notes": "High firepower. Prioritizes enemy artillery, then line troops."
     },
     "machine_gun": {
       "hp": 3.0,
-      "attack": 2.0,
+      "force_points": 2.0,
       "section": "line",
       "notes": "Line firepower. Shares line HP with infantry."
     }

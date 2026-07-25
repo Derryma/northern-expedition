@@ -1,0 +1,23 @@
+{
+  "version": "experimental-0.1",
+  "skills": {
+    "pontoon_bridge": {
+      "name": "Pontoon Bridge",
+      "type": "engineering",
+      "natural_acquisition": false,
+      "notes": "Build a temporary bridge on a river so an army can cross."
+    },
+    "fortress_builder": {
+      "name": "Fortress Builder",
+      "type": "engineering",
+      "natural_acquisition": false,
+      "notes": "Build a fortress that shelters units and reduces incoming harm."
+    },
+    "fortress_buster": {
+      "name": "Fortress Buster",
+      "type": "siege",
+      "natural_acquisition": false,
+      "notes": "Ignore the defender's fortress harm-reduction multiplier."
+    }
+  }
+}

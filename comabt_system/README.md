@@ -6,7 +6,7 @@ This folder contains Owen's experimental battle mechanism. It resolves whole arm
 
 ## Files
 
-- `combat.py` contains the callable combat function and experimental unit stats.
+- `combat.py` contains the callable combat function, experimental unit HP, attack matrix, and force points.
 - `test_combat.py` contains regression tests for targeting priority, tactics, reinforcements, and cavalry pursuit.
 - `examples/` contains sample army JSON files and a runnable JSON loading example.
 - `data/` contains editable JSON references for unit stats, tactics, and general traits.
@@ -75,14 +75,16 @@ Aliases such as `inf`, `cav`, `art`, `mg`, `步兵`, `騎兵`, `砲兵`, and `�
 
 ## Experimental Stats
 
-Current coarse battalion HP:
+Current coarse battalion HP and force points:
 
-| Unit | HP |
-|---|---:|
-| infantry | 3 |
-| cavalry | 3 |
-| artillery | 2 |
-| machine_gun | 3 |
+| Unit | HP | Force Points |
+|---|---:|---:|
+| infantry | 3 | 1 |
+| cavalry | 3 | 1 |
+| artillery | 2 | 4 |
+| machine_gun | 3 | 2 |
+
+Force points are not attack damage. They measure army size for later systems such as command caps, recruitment minimums, relative strength, logistics, and economy.
 
 Current attack matrix, meaning damage dealt by one battalion of the source unit when harming each target unit type:
 
@@ -101,10 +103,11 @@ Design notes:
 - Cavalry is better at chasing cavalry and artillery than charging machine guns.
 - Target priority still decides which section is attacked first. These matrix numbers are direct attack values, not damage-spread ratios.
 - If damage is allocated across a mixed line, each allocated part uses its own source-vs-target value. For example, artillery harming a line uses artillery-to-infantry damage for the infantry share and artillery-to-machine-gun damage for the machine-gun share.
+- There is no plain unit `attack` stat anymore. Every attack lookup uses this matrix.
 
 These numbers are placeholders for playtesting. The core goal is to validate the logic before balancing values.
 
-The same values are listed in `data/unit_stats.json` so they can later be loaded by a UI or external balancing tool.
+The same values are listed in `data/unit_stats.json` so they can later be loaded by a UI or external balancing tool. Python callers can use `calculate_force_strength(units)` to total force points for an army JSON unit block.
 
 ## Target Priority
 

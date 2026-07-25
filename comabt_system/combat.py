@@ -85,13 +85,14 @@ ATTACK_PRIORITY = {
     "artillery": ("artillery", "line", "cavalry"),
 }
 
-# Experimental battalion stats.  These are deliberately simple and should be
-# playtested before becoming final board-game values.
+# Experimental battalion stats. These are deliberately simple and should be
+# playtested before becoming final board-game values. Attack values live only
+# in ATTACK_MATRIX because each source unit hits each target unit differently.
 BASE_STATS = {
-    "infantry": {"hp": 3.0, "attack": 1.0},
-    "cavalry": {"hp": 3.0, "attack": 1.0},
-    "artillery": {"hp": 2.0, "attack": 4.0},
-    "machine_gun": {"hp": 3.0, "attack": 2.0},
+    "infantry": {"hp": 3.0, "force_points": 1.0},
+    "cavalry": {"hp": 3.0, "force_points": 1.0},
+    "artillery": {"hp": 2.0, "force_points": 4.0},
+    "machine_gun": {"hp": 3.0, "force_points": 2.0},
 }
 
 ATTACK_MATRIX = {
@@ -122,6 +123,8 @@ ATTACK_MATRIX = {
 }
 
 DEFAULT_BREAK_THRESHOLD = 0.20
+
+FORCE_POINTS = {unit: stats["force_points"] for unit, stats in BASE_STATS.items()}
 
 TACTICS = {
     "normal_advance": {
@@ -166,7 +169,6 @@ class ArmyState:
     current_hp: Dict[UnitName, float]
     initial_hp: Dict[UnitName, float]
     unit_hp: Dict[UnitName, float]
-    unit_attack: Dict[UnitName, float]
     thresholds: Dict[str, float]
     section_state: Dict[str, str]
     focus_armies: Tuple[str, ...]
@@ -301,7 +303,6 @@ def _build_army(payload: ArmyJson, *, fallback_name: str) -> ArmyState:
 
     modifiers = list(payload.get("modifiers", []))
     unit_hp = {}
-    unit_attack = {}
     counts = {unit: float(units.get(unit, 0)) for unit in UNITS}
 
     for unit in UNITS:
@@ -311,7 +312,6 @@ def _build_army(payload: ArmyJson, *, fallback_name: str) -> ArmyState:
             stat="hp",
             unit=unit,
         )
-        unit_attack[unit] = BASE_STATS[unit]["attack"]
 
     initial_hp = {unit: counts[unit] * unit_hp[unit] for unit in UNITS}
     thresholds = {}
@@ -330,7 +330,6 @@ def _build_army(payload: ArmyJson, *, fallback_name: str) -> ArmyState:
         current_hp=deepcopy(initial_hp),
         initial_hp=initial_hp,
         unit_hp=unit_hp,
-        unit_attack=unit_attack,
         thresholds=thresholds,
         section_state={section: "fighting" for section in SECTION_UNITS},
         focus_armies=_clean_focus_armies(payload),
@@ -350,6 +349,13 @@ def _clean_counts(units: Mapping[str, Any]) -> Dict[UnitName, float]:
             raise ValueError(f"unit count cannot be negative: {raw_name}={raw_count}")
         clean[unit] += count
     return clean
+
+
+def calculate_force_strength(units: Mapping[str, Any]) -> float:
+    """Return total force strength using the current unit force-point table."""
+
+    counts = _clean_counts(units)
+    return sum(counts[unit] * FORCE_POINTS[unit] for unit in UNITS)
 
 
 def _clean_focus_armies(payload: ArmyJson) -> Tuple[str, ...]:
@@ -583,7 +589,10 @@ def _army_modified_incoming_harm(army: ArmyState, damage: float, target_unit: Un
 
 
 def _base_attack(source_unit: UnitName, target_unit: UnitName) -> float:
-    return ATTACK_MATRIX.get(source_unit, {}).get(target_unit, BASE_STATS[source_unit]["attack"])
+    try:
+        return ATTACK_MATRIX[source_unit][target_unit]
+    except KeyError as exc:
+        raise ValueError(f"missing attack matrix value for {source_unit} attacking {target_unit}") from exc
 
 
 def _choose_target_section(
