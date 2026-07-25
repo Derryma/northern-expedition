@@ -88,10 +88,10 @@ Current attack matrix, meaning damage dealt by one battalion of the source unit 
 
 | Source / Target | infantry | cavalry | artillery | machine_gun |
 |---|---:|---:|---:|---:|
-| infantry | 0.35 | 0.35 | 0.35 | 0.35 |
-| cavalry | 0.25 | 0.45 | 0.50 | 0.15 |
-| artillery | 0.55 | 0.20 | 0.75 | 0.70 |
-| machine_gun | 0.50 | 0.80 | 0.20 | 0.35 |
+| infantry | 1 | 1 | 1 | 1 |
+| cavalry | 1 | 2 | 3 | 1 |
+| artillery | 2 | 1 | 3 | 3 |
+| machine_gun | 2 | 3 | 2 | 2 |
 
 Design notes:
 
@@ -99,8 +99,8 @@ Design notes:
 - Machine guns are strongest into cavalry.
 - Artillery is weak into cavalry, strong into enemy guns and static line targets.
 - Cavalry is better at chasing cavalry and artillery than charging machine guns.
-- Target priority still decides which section is attacked first. The matrix only changes damage once that target unit type is being harmed.
-- If damage is allocated across a mixed line, each allocated part uses its own source-vs-target value. For example, artillery harming a line uses artillery-vs-infantry for the infantry share and artillery-vs-machine-gun for the machine-gun share.
+- Target priority still decides which section is attacked first. These matrix numbers are direct attack values, not damage-spread ratios.
+- If damage is allocated across a mixed line, each allocated part uses its own source-vs-target value. For example, artillery harming a line uses artillery-to-infantry damage for the infantry share and artillery-to-machine-gun damage for the machine-gun share.
 
 These numbers are placeholders for playtesting. The core goal is to validate the logic before balancing values.
 

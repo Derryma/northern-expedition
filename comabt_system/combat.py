@@ -96,28 +96,28 @@ BASE_STATS = {
 
 ATTACK_MATRIX = {
     "infantry": {
-        "infantry": 0.35,
-        "cavalry": 0.35,
-        "artillery": 0.35,
-        "machine_gun": 0.35,
+        "infantry": 1.0,
+        "cavalry": 1.0,
+        "artillery": 1.0,
+        "machine_gun": 1.0,
     },
     "cavalry": {
-        "infantry": 0.25,
-        "cavalry": 0.45,
-        "artillery": 0.50,
-        "machine_gun": 0.15,
+        "infantry": 1.0,
+        "cavalry": 2.0,
+        "artillery": 3.0,
+        "machine_gun": 1.0,
     },
     "artillery": {
-        "infantry": 0.55,
-        "cavalry": 0.20,
-        "artillery": 0.75,
-        "machine_gun": 0.70,
+        "infantry": 2.0,
+        "cavalry": 1.0,
+        "artillery": 3.0,
+        "machine_gun": 3.0,
     },
     "machine_gun": {
-        "infantry": 0.50,
-        "cavalry": 0.80,
-        "artillery": 0.20,
-        "machine_gun": 0.35,
+        "infantry": 2.0,
+        "cavalry": 3.0,
+        "artillery": 2.0,
+        "machine_gun": 2.0,
     },
 }
 

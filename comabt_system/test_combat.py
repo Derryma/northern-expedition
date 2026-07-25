@@ -91,7 +91,7 @@ class CombatSimulationTests(unittest.TestCase):
             for attack in result["log"][1]["attacks"]
             if attack["attacker_army"] == "Allied MG Corps"
         ]
-        self.assertEqual(allied_attacks[0]["damage"], 1.4)
+        self.assertEqual(allied_attacks[0]["damage"], 5.6)
 
     def test_default_fire_spreads_evenly_across_enemy_armies(self):
         result = simulate_battle(
@@ -104,8 +104,8 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 59.725)
-        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 59.725)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 59.0)
+        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 59.0)
         artillery_attack = [
             attack
             for attack in result["log"][0]["attacks"]
@@ -129,7 +129,7 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 58.9)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 56.0)
         self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 60.0)
 
         focused_attacks = [
@@ -153,13 +153,13 @@ class CombatSimulationTests(unittest.TestCase):
 
         artillery_attack = result["log"][0]["attacks"][0]
         self.assertEqual(artillery_attack["target_section"], "line")
-        self.assertEqual(artillery_attack["damage"], 0.975)
+        self.assertEqual(artillery_attack["damage"], 4.0)
         damage_by_unit = {
             target["unit"]: target["damage"]
             for target in artillery_attack["damage_by_target"]
         }
-        self.assertEqual(damage_by_unit["infantry"], 0.275)
-        self.assertEqual(damage_by_unit["machine_gun"], 0.7)
+        self.assertEqual(damage_by_unit["infantry"], 1.0)
+        self.assertEqual(damage_by_unit["machine_gun"], 3.0)
 
     def test_attack_matrix_makes_machine_guns_better_than_artillery_against_cavalry(self):
         mg_result = simulate_battle(
@@ -177,8 +177,8 @@ class CombatSimulationTests(unittest.TestCase):
         art_damage = art_result["log"][0]["attacks"][0]["damage"]
 
         self.assertGreater(mg_damage, art_damage)
-        self.assertEqual(mg_damage, 0.8)
-        self.assertEqual(art_damage, 0.2)
+        self.assertEqual(mg_damage, 3.0)
+        self.assertEqual(art_damage, 1.0)
 
     def test_last_stand_holds_longer_than_layered_delaying(self):
         layered = TACTICS["layered_delaying"]["threshold"] / TACTICS["layered_delaying"]["harm_taken_multiplier"]
