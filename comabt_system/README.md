@@ -84,7 +84,7 @@ Current coarse battalion HP:
 | artillery | 2 |
 | machine_gun | 3 |
 
-Current attack matrix:
+Current attack matrix, meaning damage dealt by one battalion of the source unit when harming each target unit type:
 
 | Source / Target | infantry | cavalry | artillery | machine_gun |
 |---|---:|---:|---:|---:|
@@ -99,6 +99,8 @@ Design notes:
 - Machine guns are strongest into cavalry.
 - Artillery is weak into cavalry, strong into enemy guns and static line targets.
 - Cavalry is better at chasing cavalry and artillery than charging machine guns.
+- Target priority still decides which section is attacked first. The matrix only changes damage once that target unit type is being harmed.
+- If damage is allocated across a mixed line, each allocated part uses its own source-vs-target value. For example, artillery harming a line uses artillery-vs-infantry for the infantry share and artillery-vs-machine-gun for the machine-gun share.
 
 These numbers are placeholders for playtesting. The core goal is to validate the logic before balancing values.
 
@@ -234,6 +236,12 @@ Each attack log records the actual target armies:
 
 ```python
 result["log"][0]["attacks"][0]["target_armies"]
+```
+
+It also records per-target damage allocations:
+
+```python
+result["log"][0]["attacks"][0]["damage_by_target"]
 ```
 
 ## Reinforcements

@@ -496,20 +496,16 @@ def _plan_army_attacks(
         if not target_section:
             continue
         target_units = _living_fighting_units(defender, target_section, target_army_names=target_army_names)
-        attack_value = count * _target_weighted_attack(
-            attacker,
-            defender,
-            unit,
-            target_units,
+        damage_by_target = _target_damage_allocations(
+            attacker=attacker,
+            defender=defender,
+            source_unit=unit,
+            source_count=count,
+            target_units=target_units,
+            attack_multiplier=tactic["attack_multiplier"],
             target_army_names=target_army_names,
         )
-        attack_value *= tactic["attack_multiplier"]
-        attack_value = _modified_incoming_harm(
-            defender,
-            attack_value,
-            target_units,
-            target_army_names=target_army_names,
-        )
+        attack_value = sum(target["damage"] for target in damage_by_target)
         if attack_value <= 0:
             continue
         attacks.append(
@@ -523,6 +519,10 @@ def _plan_army_attacks(
                 "target_armies": _target_army_names(defender, target_units, target_army_names=target_army_names),
                 "focus": list(attacker.focus_armies),
                 "damage": round(attack_value, 4),
+                "damage_by_target": [
+                    {**target, "damage": round(target["damage"], 4)}
+                    for target in damage_by_target
+                ],
             }
         )
     return attacks
@@ -539,25 +539,33 @@ def _valid_focus_armies(attacker: ArmyState, defender: SideState, source_unit: U
     return ()
 
 
-def _modified_incoming_harm(
-    side: SideState,
-    damage: float,
-    target_units: Iterable[UnitName],
+def _target_damage_allocations(
     *,
+    attacker: ArmyState,
+    defender: SideState,
+    source_unit: UnitName,
+    source_count: float,
+    target_units: Iterable[UnitName],
+    attack_multiplier: float,
     target_army_names: Tuple[str, ...] = (),
-) -> float:
-    targets = set(target_units)
-    weights = _target_weights(side, targets, target_army_names=target_army_names)
-    total_weight = sum(weight for _, _, weight in weights)
-    if total_weight <= 0:
-        return 0.0
+) -> List[Dict[str, Any]]:
+    weights = _target_weights(defender, set(target_units), target_army_names=target_army_names)
+    allocations = []
 
-    adjusted = 0.0
-    for army, unit, weight in weights:
-        share = damage * (weight / total_weight)
-        share *= TACTICS[army.tactic]["harm_taken_multiplier"]
-        adjusted += _army_modified_incoming_harm(army, share, unit)
-    return adjusted
+    for army, target_unit, weight in weights:
+        attack = _modified_stat(
+            base=_base_attack(source_unit, target_unit),
+            modifiers=attacker.modifiers,
+            stat="attack",
+            unit=source_unit,
+            target=target_unit,
+        )
+        damage = source_count * weight * attack * attack_multiplier
+        damage *= TACTICS[army.tactic]["harm_taken_multiplier"]
+        damage = _army_modified_incoming_harm(army, damage, target_unit)
+        if damage > 0:
+            allocations.append({"army": army.name, "unit": target_unit, "damage": damage})
+    return allocations
 
 
 def _army_modified_incoming_harm(army: ArmyState, damage: float, target_unit: UnitName) -> float:
@@ -572,35 +580,6 @@ def _army_modified_incoming_harm(army: ArmyState, damage: float, target_unit: Un
         adjusted += float(modifier.get("add", 0.0))
         adjusted *= 1.0 + float(modifier.get("add_pct", 0.0))
     return adjusted
-
-
-def _target_weighted_attack(
-    attacker: ArmyState,
-    defender: SideState,
-    source_unit: UnitName,
-    target_units: Iterable[UnitName],
-    *,
-    target_army_names: Tuple[str, ...] = (),
-) -> float:
-    weights = {
-        unit: _side_unit_count(defender, unit, fighting_only=True, target_army_names=target_army_names)
-        for unit in target_units
-    }
-    total_weight = sum(weights.values())
-    if total_weight <= 0:
-        return 0.0
-
-    weighted_attack = 0.0
-    for target_unit, weight in weights.items():
-        attack = _modified_stat(
-            base=_base_attack(source_unit, target_unit),
-            modifiers=attacker.modifiers,
-            stat="attack",
-            unit=source_unit,
-            target=target_unit,
-        )
-        weighted_attack += attack * (weight / total_weight)
-    return weighted_attack
 
 
 def _base_attack(source_unit: UnitName, target_unit: UnitName) -> float:
@@ -636,19 +615,12 @@ def _living_fighting_units(
 
 
 def _apply_damage(defender: SideState, attack: Mapping[str, Any]) -> None:
-    weights = _target_weights(
-        defender,
-        set(attack["target_units"]),
-        target_army_names=tuple(attack.get("target_armies", ())),
-    )
-    total_weight = sum(weight for _, _, weight in weights)
-    if total_weight <= 0:
-        return
-
-    damage = float(attack["damage"])
-    for army, unit, weight in weights:
-        share = damage * (weight / total_weight)
-        army.current_hp[unit] = max(0.0, army.current_hp[unit] - share)
+    for target in attack.get("damage_by_target", ()):
+        army = _find_army(defender, str(target["army"]))
+        unit = str(target["unit"])
+        if not army or unit not in UNITS:
+            continue
+        army.current_hp[unit] = max(0.0, army.current_hp[unit] - float(target["damage"]))
 
 
 def _time_to_breakdown(side: SideState, incoming_attacks: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -658,16 +630,9 @@ def _time_to_breakdown(side: SideState, incoming_attacks: Iterable[Mapping[str, 
         section = str(attack["target_section"])
         damage = float(attack["damage"])
         incoming_by_section[section] += damage
-        weights = _target_weights(
-            side,
-            set(attack["target_units"]),
-            target_army_names=tuple(attack.get("target_armies", ())),
-        )
-        total_weight = sum(weight for _, _, weight in weights)
-        for army, _, weight in weights:
-            share = damage * (weight / total_weight) if total_weight > 0 else 0.0
-            incoming_by_army_section.setdefault(army.name, {}).setdefault(section, 0.0)
-            incoming_by_army_section[army.name][section] += share
+        for target in attack.get("damage_by_target", ()):
+            incoming_by_army_section.setdefault(str(target["army"]), {}).setdefault(section, 0.0)
+            incoming_by_army_section[str(target["army"])][section] += float(target["damage"])
 
     aggregate: Dict[str, Optional[float]] = {}
     by_army: Dict[str, Dict[str, Optional[float]]] = {}

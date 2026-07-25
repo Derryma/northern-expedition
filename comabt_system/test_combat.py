@@ -154,6 +154,12 @@ class CombatSimulationTests(unittest.TestCase):
         artillery_attack = result["log"][0]["attacks"][0]
         self.assertEqual(artillery_attack["target_section"], "line")
         self.assertEqual(artillery_attack["damage"], 0.975)
+        damage_by_unit = {
+            target["unit"]: target["damage"]
+            for target in artillery_attack["damage_by_target"]
+        }
+        self.assertEqual(damage_by_unit["infantry"], 0.275)
+        self.assertEqual(damage_by_unit["machine_gun"], 0.7)
 
     def test_attack_matrix_makes_machine_guns_better_than_artillery_against_cavalry(self):
         mg_result = simulate_battle(
