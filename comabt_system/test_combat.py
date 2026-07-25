@@ -187,6 +187,35 @@ class CombatSimulationTests(unittest.TestCase):
         self.assertEqual(mg_damage, 3.0)
         self.assertEqual(art_damage, 1.0)
 
+    def test_cavalry_contact_forces_artillery_to_fire_at_cavalry(self):
+        result = simulate_battle(
+            {"name": "A Screen", "units": {"cavalry": 1, "artillery": 1}},
+            {"name": "B Guns", "units": {"artillery": 1}},
+            max_rounds=1,
+        )
+
+        contacts = result["log"][0]["artillery_contacts"]
+        self.assertEqual(contacts["B"]["B Guns"], ("A Screen",))
+
+        a_artillery_attack = [
+            attack
+            for attack in result["log"][0]["attacks"]
+            if attack["attacker"] == "A" and attack["source_unit"] == "artillery"
+        ][0]
+        b_artillery_attack = [
+            attack
+            for attack in result["log"][0]["attacks"]
+            if attack["attacker"] == "B" and attack["source_unit"] == "artillery"
+        ][0]
+
+        self.assertEqual(a_artillery_attack["target_section"], "artillery")
+        self.assertFalse(a_artillery_attack["forced_contact"])
+        self.assertEqual(b_artillery_attack["target_section"], "cavalry")
+        self.assertTrue(b_artillery_attack["forced_contact"])
+        self.assertEqual(b_artillery_attack["target_armies"], ["A Screen"])
+        self.assertEqual(result["remaining"]["A"]["raw_hp"]["artillery"], 2.0)
+        self.assertEqual(result["remaining"]["A"]["raw_hp"]["cavalry"], 2.0)
+
     def test_last_stand_holds_longer_than_layered_delaying(self):
         layered = TACTICS["layered_delaying"]["threshold"] / TACTICS["layered_delaying"]["harm_taken_multiplier"]
         last_stand = TACTICS["last_stand"]["threshold"] / TACTICS["last_stand"]["harm_taken_multiplier"]

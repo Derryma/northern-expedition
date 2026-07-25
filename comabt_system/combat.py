@@ -239,8 +239,12 @@ def simulate_battle(
             winner = _winner_label(a, b)
             break
 
-        attacks_a = _plan_side_attacks(attacker=a, defender=b)
-        attacks_b = _plan_side_attacks(attacker=b, defender=a)
+        artillery_contacts = {
+            "A": _artillery_contact_map(contacting_side=b, artillery_side=a),
+            "B": _artillery_contact_map(contacting_side=a, artillery_side=b),
+        }
+        attacks_a = _plan_side_attacks(attacker=a, defender=b, artillery_contacts=artillery_contacts["A"])
+        attacks_b = _plan_side_attacks(attacker=b, defender=a, artillery_contacts=artillery_contacts["B"])
 
         for attack in attacks_a:
             _apply_damage(b, attack)
@@ -250,6 +254,7 @@ def simulate_battle(
         _refresh_side(a)
         _refresh_side(b)
 
+        round_log["artillery_contacts"] = artillery_contacts
         round_log["attacks"] = attacks_a + attacks_b
         round_log["remaining"] = {"A": _side_snapshot(a), "B": _side_snapshot(b)}
         round_log["time_to_breakdown"] = {
@@ -474,10 +479,22 @@ def _winner_label(a: SideState, b: SideState) -> Optional[str]:
     return None
 
 
-def _plan_side_attacks(*, attacker: SideState, defender: SideState) -> List[Dict[str, Any]]:
+def _plan_side_attacks(
+    *,
+    attacker: SideState,
+    defender: SideState,
+    artillery_contacts: Mapping[str, Tuple[str, ...]],
+) -> List[Dict[str, Any]]:
     attacks = []
     for army in attacker.armies:
-        attacks.extend(_plan_army_attacks(attacker=army, defender=defender, attacker_label=attacker.label))
+        attacks.extend(
+            _plan_army_attacks(
+                attacker=army,
+                defender=defender,
+                attacker_label=attacker.label,
+                artillery_contacts=artillery_contacts,
+            )
+        )
     return attacks
 
 
@@ -486,6 +503,7 @@ def _plan_army_attacks(
     attacker: ArmyState,
     defender: SideState,
     attacker_label: str,
+    artillery_contacts: Mapping[str, Tuple[str, ...]],
 ) -> List[Dict[str, Any]]:
     tactic = TACTICS[attacker.tactic]
     attacks = []
@@ -495,9 +513,19 @@ def _plan_army_attacks(
         count = _hp_to_count(attacker.current_hp[unit], attacker.unit_hp[unit])
         if count <= 0:
             continue
+        forced_contact = False
         target_section = _choose_target_section(unit, defender)
         target_army_names = _valid_focus_armies(attacker, defender, unit)
-        if target_army_names:
+        if unit == "artillery":
+            contacting_cavalry = _valid_contacting_cavalry_armies(
+                defender,
+                artillery_contacts.get(attacker.name, ()),
+            )
+            if contacting_cavalry:
+                forced_contact = True
+                target_section = "cavalry"
+                target_army_names = contacting_cavalry
+        if target_army_names and not forced_contact:
             target_section = _choose_target_section(unit, defender, target_army_names=target_army_names)
         if not target_section:
             continue
@@ -524,6 +552,7 @@ def _plan_army_attacks(
                 "target_units": target_units,
                 "target_armies": _target_army_names(defender, target_units, target_army_names=target_army_names),
                 "focus": list(attacker.focus_armies),
+                "forced_contact": forced_contact,
                 "damage": round(attack_value, 4),
                 "damage_by_target": [
                     {**target, "damage": round(target["damage"], 4)}
@@ -532,6 +561,45 @@ def _plan_army_attacks(
             }
         )
     return attacks
+
+
+def _artillery_contact_map(*, contacting_side: SideState, artillery_side: SideState) -> Dict[str, Tuple[str, ...]]:
+    contacts: Dict[str, List[str]] = {}
+    for army in contacting_side.armies:
+        if army.section_state["cavalry"] != "fighting":
+            continue
+        if _hp_to_count(army.current_hp["cavalry"], army.unit_hp["cavalry"]) <= 0:
+            continue
+        target_army_names = _valid_focus_armies(army, artillery_side, "cavalry")
+        target_section = _choose_target_section("cavalry", artillery_side)
+        if target_army_names:
+            target_section = _choose_target_section("cavalry", artillery_side, target_army_names=target_army_names)
+        if target_section != "artillery":
+            continue
+        target_units = _living_fighting_units(
+            artillery_side,
+            "artillery",
+            target_army_names=target_army_names,
+        )
+        for target_army in _target_army_names(artillery_side, target_units, target_army_names=target_army_names):
+            contacts.setdefault(target_army, [])
+            if army.name not in contacts[target_army]:
+                contacts[target_army].append(army.name)
+    return {army_name: tuple(contacting_armies) for army_name, contacting_armies in contacts.items()}
+
+
+def _valid_contacting_cavalry_armies(defender: SideState, army_names: Iterable[str]) -> Tuple[str, ...]:
+    valid = []
+    for army_name in army_names:
+        army = _find_army(defender, str(army_name))
+        if not army:
+            continue
+        if army.section_state["cavalry"] != "fighting":
+            continue
+        if _hp_to_count(army.current_hp["cavalry"], army.unit_hp["cavalry"]) <= 0:
+            continue
+        valid.append(army.name)
+    return tuple(valid)
 
 
 def _valid_focus_armies(attacker: ArmyState, defender: SideState, source_unit: UnitName) -> Tuple[str, ...]:

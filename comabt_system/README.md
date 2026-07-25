@@ -124,6 +124,21 @@ Attack priority:
 
 If a target section reaches its casualty threshold and starts fleeing, attackers roll to the next valid priority.
 
+## Cavalry Artillery Contact
+
+Cavalry can force artillery to protect itself.
+
+At the start of each round, if a fighting cavalry unit's priority lets it reach enemy artillery, that enemy artillery army is marked as contacted. Contacted artillery must pour its fire into the contacting cavalry for that round instead of freely using its normal artillery -> line -> cavalry priority.
+
+This means cavalry may fail to break enemy artillery, but still buy time:
+
+- friendly cavalry contacts enemy artillery
+- enemy artillery fires into that cavalry
+- friendly artillery remains free to pound enemy artillery
+- line troops can keep progressing without that enemy artillery choosing them first
+
+Each round log includes `artillery_contacts`, and each attack records `forced_contact: true` when artillery was forced to fire at cavalry.
+
 ## Casualty Threshold
 
 Each section begins in `fighting` state. Once casualties reach the section threshold, that section becomes `fleeing` and no longer attacks or receives normal targeting priority.
