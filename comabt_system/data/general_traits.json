@@ -1,0 +1,109 @@
+{
+  "version": "experimental-0.1",
+  "traits": {
+    "steady_drillmaster": {
+      "name": "Steady Drillmaster",
+      "background": "A Whampoa-style trainer who turns raw infantry into dependable line troops.",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "fire_support_savant": {
+      "name": "Fire Support Savant",
+      "background": "A staff officer who knows how to concentrate guns against enemy strongpoints.",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "target": "machine_gun",
+          "multiplier": 1.25
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "target": "infantry",
+          "multiplier": 1.15
+        }
+      ]
+    },
+    "cavalry_screen_commander": {
+      "name": "Cavalry Screen Commander",
+      "background": "A northern plains commander who uses cavalry screens to protect the army and hunt broken enemies.",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "unit": "cavalry",
+          "multiplier": 1.2
+        }
+      ]
+    },
+    "entrenched_warlord": {
+      "name": "Entrenched Warlord",
+      "background": "A defensive regional commander with prepared trench lines and local guides.",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 0.9
+        },
+        {
+          "stat": "harm_taken",
+          "unit": "machine_gun",
+          "multiplier": 0.9
+        }
+      ]
+    },
+    "shock_column_leader": {
+      "name": "Shock Column Leader",
+      "background": "A bold assault leader who drives infantry and cavalry into the weak point.",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.15
+        },
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.15
+        },
+        {
+          "stat": "harm_taken",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "local_supply_boss": {
+      "name": "Local Supply Boss",
+      "background": "A provincial fixer who keeps food, ammunition, and replacements flowing just long enough.",
+      "modifiers": [
+        {
+          "stat": "threshold",
+          "unit": "infantry",
+          "add": 0.05
+        },
+        {
+          "stat": "threshold",
+          "unit": "machine_gun",
+          "add": 0.05
+        }
+      ]
+    },
+    "foreign_gunnery_advisor": {
+      "name": "Foreign Gunnery Advisor",
+      "background": "An imported artillery instructor whose methods make counter-battery fire sharper.",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "target": "artillery",
+          "multiplier": 1.2
+        }
+      ]
+    }
+  }
+}

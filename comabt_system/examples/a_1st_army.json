@@ -1,0 +1,33 @@
+{
+  "name": "A 1st Army",
+  "general": "local_supply_boss",
+  "units": {
+    "infantry": 20,
+    "cavalry": 3,
+    "artillery": 2,
+    "machine_gun": 5
+  },
+  "tactic": "probing_attack",
+  "focus": "B 1st Army",
+  "modifiers": [
+    {
+      "stat": "attack",
+      "unit": "infantry",
+      "multiplier": 1.1
+    },
+    {
+      "stat": "harm_taken",
+      "multiplier": 0.5
+    },
+    {
+      "stat": "threshold",
+      "unit": "infantry",
+      "add": 0.2
+    },
+    {
+      "stat": "threshold",
+      "unit": "machine_gun",
+      "add": 0.2
+    }
+  ]
+}

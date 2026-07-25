@@ -1,0 +1,33 @@
+{
+  "name": "B 1st Army",
+  "general": "entrenched_warlord",
+  "units": {
+    "infantry": 35,
+    "cavalry": 5,
+    "artillery": 3,
+    "machine_gun": 8
+  },
+  "tactic": "probing_attack",
+  "modifiers": [
+    {
+      "stat": "harm_taken",
+      "unit": "infantry",
+      "multiplier": 0.9
+    },
+    {
+      "stat": "harm_taken",
+      "unit": "machine_gun",
+      "multiplier": 0.9
+    },
+    {
+      "stat": "threshold",
+      "unit": "infantry",
+      "add": 0.1
+    },
+    {
+      "stat": "threshold",
+      "unit": "machine_gun",
+      "add": 0.1
+    }
+  ]
+}

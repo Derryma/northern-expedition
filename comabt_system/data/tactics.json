@@ -1,0 +1,41 @@
+{
+  "version": "experimental-0.1",
+  "tactics": {
+    "normal_advance": {
+      "attack_multiplier": 1.0,
+      "harm_taken_multiplier": 1.0,
+      "threshold": 0.2,
+      "notes": "Default balanced attack."
+    },
+    "probing_attack": {
+      "attack_multiplier": 0.5,
+      "harm_taken_multiplier": 0.6,
+      "threshold": 0.2,
+      "notes": "Lower damage output, but safer. Useful for testing enemy strength."
+    },
+    "layered_delaying": {
+      "attack_multiplier": 0.7,
+      "harm_taken_multiplier": 0.75,
+      "threshold": 0.25,
+      "notes": "Defensive delay. Takes less harm and holds slightly longer."
+    },
+    "all_out_offense": {
+      "attack_multiplier": 1.4,
+      "harm_taken_multiplier": 1.25,
+      "threshold": 0.2,
+      "notes": "Aggressive assault. More firepower, more casualties."
+    },
+    "last_stand": {
+      "attack_multiplier": 1.0,
+      "harm_taken_multiplier": 1.5,
+      "threshold": 0.4,
+      "notes": "Holds the line longer but bleeds heavily."
+    },
+    "pinning_attack": {
+      "attack_multiplier": 0.8,
+      "harm_taken_multiplier": 0.85,
+      "threshold": 0.2,
+      "notes": "Keeps pressure while reducing exposure."
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "A 2nd Army",
+  "general": "fire_support_savant",
+  "units": {
+    "infantry": 10,
+    "cavalry": 1,
+    "artillery": 3,
+    "machine_gun": 2
+  },
+  "tactic": "pinning_attack",
+  "focus": "B 1st Army",
+  "modifiers": [
+    {
+      "stat": "attack",
+      "unit": "artillery",
+      "target": "machine_gun",
+      "multiplier": 1.25
+    },
+    {
+      "stat": "attack",
+      "unit": "artillery",
+      "target": "infantry",
+      "multiplier": 1.15
+    }
+  ]
+}

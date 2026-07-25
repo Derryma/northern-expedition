@@ -8,6 +8,8 @@ This folder contains Owen's experimental battle mechanism. It resolves whole arm
 
 - `combat.py` contains the callable combat function and experimental unit stats.
 - `test_combat.py` contains regression tests for targeting priority, tactics, reinforcements, and cavalry pursuit.
+- `examples/` contains sample army JSON files and a runnable JSON loading example.
+- `data/` contains editable JSON references for unit stats, tactics, and general traits.
 
 ## Basic Usage
 
@@ -39,6 +41,20 @@ army_b = {
 result = simulate_battle(army_a, army_b, max_rounds=5)
 ```
 
+You can also run the bundled JSON example:
+
+```bash
+python3 comabt_system/examples/run_example.py
+```
+
+That example loads:
+
+- `examples/a_1st_army.json`
+- `examples/a_2nd_army.json`
+- `examples/b_1st_army.json`
+
+`A 1st Army` begins the battle, and `A 2nd Army` joins as an allied reinforcement on round 2.
+
 The result includes:
 
 - `winner`: `A`, `B`, `draw`, `stalemate`, or `undecided`.
@@ -69,6 +85,8 @@ Current coarse battalion stats:
 | machine_gun | 1 | 3 |
 
 These numbers are placeholders for playtesting. The core goal is to validate the logic before balancing values.
+
+The same values are listed in `data/unit_stats.json` so they can later be loaded by a UI or external balancing tool.
 
 ## Target Priority
 
@@ -113,6 +131,8 @@ army = {
 }
 ```
 
+The same tactic values are listed in `data/tactics.json`.
+
 ## Modifiers
 
 Modifiers are designed for generals, terrain, tactics, events, and future special rules.
@@ -143,6 +163,16 @@ Supported operations:
 - `add_pct`: add a percentage as decimal, such as `0.10` for +10%.
 
 Use `unit: "all"` or omit `unit` to affect every unit. Use `target` for target-specific attack bonuses, such as artillery being better against machine guns.
+
+`data/general_traits.json` contains seven low-complexity trait examples:
+
+- `steady_drillmaster`: infantry attack +10%.
+- `fire_support_savant`: artillery hits infantry and machine guns harder.
+- `cavalry_screen_commander`: cavalry HP +20%.
+- `entrenched_warlord`: infantry and machine guns take 10% less harm.
+- `shock_column_leader`: infantry and cavalry attack harder, but the army takes more harm.
+- `local_supply_boss`: line troops hold longer before fleeing.
+- `foreign_gunnery_advisor`: artillery is better at counter-battery fire.
 
 ## Focus Fire
 
