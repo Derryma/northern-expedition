@@ -1,5 +1,6 @@
 Owen:
-1. combat mechaism
-2. 
+1. unit combat mechaism
+2. general tree and loyalty
+3. 
 
 DerrY;
