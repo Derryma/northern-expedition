@@ -23,7 +23,9 @@ Expected army JSON shape:
 }
 
 Call ``simulate_battle(army_a, army_b)`` to get per-round logs and the
-remaining armies.
+remaining sides. Each side contains one or more armies; reinforcements join as
+separate allied armies with their own JSON, tactic, modifiers, HP, and
+casualty state.
 """
 
 from __future__ import annotations
@@ -141,6 +143,12 @@ class ArmyState:
     section_state: Dict[str, str]
 
 
+@dataclass
+class SideState:
+    label: str
+    armies: List[ArmyState]
+
+
 def simulate_battle(
     army_a: ArmyJson,
     army_b: ArmyJson,
@@ -151,18 +159,28 @@ def simulate_battle(
 ) -> Dict[str, Any]:
     """Resolve a battle and return progress plus remaining armies.
 
-    ``reinforcements`` may contain entries like:
+    ``reinforcements`` may contain allied army entries like:
 
-    {"round": 3, "side": "A", "army": {"units": {"infantry": 2}}}
+    {
+        "round": 3,
+        "side": "A",
+        "army": {
+            "name": "Allied 2nd Army",
+            "units": {"infantry": 2},
+            "tactic": "probing_attack",
+            "modifiers": [{"stat": "attack", "unit": "infantry", "multiplier": 1.10}]
+        }
+    }
 
-    Reinforcements join before that round's attacks.
+    Reinforcing armies keep their own tactic, modifiers, thresholds, HP, and
+    casualty state. They join before that round's attacks.
     """
 
     if max_rounds < 1:
         raise ValueError("max_rounds must be at least 1")
 
-    a = _build_army(army_a, fallback_name="A")
-    b = _build_army(army_b, fallback_name="B")
+    a = SideState(label="A", armies=[_build_army(army_a, fallback_name="A main army")])
+    b = SideState(label="B", armies=[_build_army(army_b, fallback_name="B main army")])
     events = _index_reinforcements(reinforcements or [])
     log: List[Dict[str, Any]] = []
     winner: Optional[str] = None
@@ -170,33 +188,39 @@ def simulate_battle(
     for round_no in range(1, max_rounds + 1):
         round_log: Dict[str, Any] = {"round": round_no, "reinforcements": [], "attacks": []}
 
-        for side, army in (("A", a), ("B", b)):
-            for reinforcement in events.get((round_no, side), []):
-                _add_reinforcement(army, reinforcement)
+        for side_label, side in (("A", a), ("B", b)):
+            for index, reinforcement in enumerate(events.get((round_no, side_label), []), start=1):
+                army = _build_army(reinforcement, fallback_name=f"{side_label} reinforcement {index}")
+                side.armies.append(army)
                 round_log["reinforcements"].append(
-                    {"side": side, "army": army.name, "units": _clean_counts(reinforcement.get("units", {}))}
+                    {
+                        "side": side_label,
+                        "army": army.name,
+                        "tactic": army.tactic,
+                        "units": _clean_counts(reinforcement.get("units", {})),
+                    }
                 )
 
-        _refresh_sections(a)
-        _refresh_sections(b)
+        _refresh_side(a)
+        _refresh_side(b)
 
-        if not _has_fighting_sections(a) or not _has_fighting_sections(b):
+        if not _side_has_fighting_sections(a) or not _side_has_fighting_sections(b):
             winner = _winner_label(a, b)
             break
 
-        attacks_a = _plan_attacks(attacker=a, defender=b, attacker_label="A", defender_label="B")
-        attacks_b = _plan_attacks(attacker=b, defender=a, attacker_label="B", defender_label="A")
+        attacks_a = _plan_side_attacks(attacker=a, defender=b)
+        attacks_b = _plan_side_attacks(attacker=b, defender=a)
 
         for attack in attacks_a:
             _apply_damage(b, attack)
         for attack in attacks_b:
             _apply_damage(a, attack)
 
-        _refresh_sections(a)
-        _refresh_sections(b)
+        _refresh_side(a)
+        _refresh_side(b)
 
         round_log["attacks"] = attacks_a + attacks_b
-        round_log["remaining"] = {"A": _army_snapshot(a), "B": _army_snapshot(b)}
+        round_log["remaining"] = {"A": _side_snapshot(a), "B": _side_snapshot(b)}
         round_log["time_to_breakdown"] = {
             "A": _time_to_breakdown(a, attacks_b),
             "B": _time_to_breakdown(b, attacks_a),
@@ -236,7 +260,7 @@ def simulate_battle(
         "winner": winner or "undecided",
         "rounds": len([entry for entry in log if "round" in entry]),
         "log": log,
-        "remaining": {"A": _army_snapshot(a), "B": _army_snapshot(b)},
+        "remaining": {"A": _side_snapshot(a), "B": _side_snapshot(b)},
     }
 
 
@@ -258,12 +282,7 @@ def _build_army(payload: ArmyJson, *, fallback_name: str) -> ArmyState:
             stat="hp",
             unit=unit,
         )
-        unit_attack[unit] = _modified_stat(
-            base=BASE_STATS[unit]["attack"],
-            modifiers=modifiers,
-            stat="attack",
-            unit=unit,
-        )
+        unit_attack[unit] = BASE_STATS[unit]["attack"]
 
     initial_hp = {unit: counts[unit] * unit_hp[unit] for unit in UNITS}
     thresholds = {}
@@ -368,16 +387,6 @@ def _index_reinforcements(events: Iterable[Mapping[str, Any]]) -> Dict[Tuple[int
     return indexed
 
 
-def _add_reinforcement(army: ArmyState, payload: Mapping[str, Any]) -> None:
-    units = _clean_counts(payload.get("units", {}))
-    for unit, count in units.items():
-        hp = count * army.unit_hp[unit]
-        army.counts[unit] += count
-        army.current_hp[unit] += hp
-        army.initial_hp[unit] += hp
-    _refresh_sections(army)
-
-
 def _refresh_sections(army: ArmyState) -> None:
     for section, units in SECTION_UNITS.items():
         initial = sum(army.initial_hp[unit] for unit in units)
@@ -390,13 +399,22 @@ def _refresh_sections(army: ArmyState) -> None:
         army.section_state[section] = "fleeing" if casualties >= break_hp else "fighting"
 
 
-def _has_fighting_sections(army: ArmyState) -> bool:
-    return any(state == "fighting" for state in army.section_state.values())
+def _refresh_side(side: SideState) -> None:
+    for army in side.armies:
+        _refresh_sections(army)
 
 
-def _winner_label(a: ArmyState, b: ArmyState) -> Optional[str]:
-    a_fights = _has_fighting_sections(a)
-    b_fights = _has_fighting_sections(b)
+def _side_has_fighting_sections(side: SideState) -> bool:
+    return any(
+        state == "fighting"
+        for army in side.armies
+        for state in army.section_state.values()
+    )
+
+
+def _winner_label(a: SideState, b: SideState) -> Optional[str]:
+    a_fights = _side_has_fighting_sections(a)
+    b_fights = _side_has_fighting_sections(b)
     if a_fights and not b_fights:
         return "A"
     if b_fights and not a_fights:
@@ -406,12 +424,18 @@ def _winner_label(a: ArmyState, b: ArmyState) -> Optional[str]:
     return None
 
 
-def _plan_attacks(
+def _plan_side_attacks(*, attacker: SideState, defender: SideState) -> List[Dict[str, Any]]:
+    attacks = []
+    for army in attacker.armies:
+        attacks.extend(_plan_army_attacks(attacker=army, defender=defender, attacker_label=attacker.label))
+    return attacks
+
+
+def _plan_army_attacks(
     *,
     attacker: ArmyState,
-    defender: ArmyState,
+    defender: SideState,
     attacker_label: str,
-    defender_label: str,
 ) -> List[Dict[str, Any]]:
     tactic = TACTICS[attacker.tactic]
     attacks = []
@@ -427,14 +451,14 @@ def _plan_attacks(
         target_units = _living_fighting_units(defender, target_section)
         attack_value = count * _target_weighted_attack(attacker, defender, unit, target_units)
         attack_value *= tactic["attack_multiplier"]
-        attack_value *= TACTICS[defender.tactic]["harm_taken_multiplier"]
         attack_value = _modified_incoming_harm(defender, attack_value, target_units)
         if attack_value <= 0:
             continue
         attacks.append(
             {
                 "attacker": attacker_label,
-                "defender": defender_label,
+                "attacker_army": attacker.name,
+                "defender": defender.label,
                 "source_unit": unit,
                 "target_section": target_section,
                 "target_units": target_units,
@@ -444,14 +468,28 @@ def _plan_attacks(
     return attacks
 
 
-def _modified_incoming_harm(army: ArmyState, damage: float, target_units: Iterable[UnitName]) -> float:
-    adjusted = damage
+def _modified_incoming_harm(side: SideState, damage: float, target_units: Iterable[UnitName]) -> float:
     targets = set(target_units)
+    weights = _target_weights(side, targets)
+    total_weight = sum(weight for _, _, weight in weights)
+    if total_weight <= 0:
+        return 0.0
+
+    adjusted = 0.0
+    for army, unit, weight in weights:
+        share = damage * (weight / total_weight)
+        share *= TACTICS[army.tactic]["harm_taken_multiplier"]
+        adjusted += _army_modified_incoming_harm(army, share, unit)
+    return adjusted
+
+
+def _army_modified_incoming_harm(army: ArmyState, damage: float, target_unit: UnitName) -> float:
+    adjusted = damage
     for modifier in army.modifiers:
         if modifier.get("stat") != "harm_taken":
             continue
         mod_unit = _normalize_optional_unit(modifier.get("unit", "all"))
-        if mod_unit != "all" and mod_unit not in targets:
+        if mod_unit not in ("all", target_unit):
             continue
         adjusted *= float(modifier.get("multiplier", 1.0))
         adjusted += float(modifier.get("add", 0.0))
@@ -461,14 +499,11 @@ def _modified_incoming_harm(army: ArmyState, damage: float, target_units: Iterab
 
 def _target_weighted_attack(
     attacker: ArmyState,
-    defender: ArmyState,
+    defender: SideState,
     source_unit: UnitName,
     target_units: Iterable[UnitName],
 ) -> float:
-    weights = {
-        unit: _hp_to_count(defender.current_hp[unit], defender.unit_hp[unit])
-        for unit in target_units
-    }
+    weights = {unit: _side_unit_count(defender, unit, fighting_only=True) for unit in target_units}
     total_weight = sum(weights.values())
     if total_weight <= 0:
         return 0.0
@@ -486,65 +521,96 @@ def _target_weighted_attack(
     return weighted_attack
 
 
-def _choose_target_section(source_unit: UnitName, defender: ArmyState) -> Optional[str]:
+def _choose_target_section(source_unit: UnitName, defender: SideState) -> Optional[str]:
     for section in ATTACK_PRIORITY[source_unit]:
-        if defender.section_state[section] == "fighting" and _section_hp(defender, section) > 0:
+        if _side_section_state(defender, section) == "fighting" and _side_section_hp(defender, section) > 0:
             return section
     return None
 
 
-def _living_fighting_units(army: ArmyState, section: str) -> List[UnitName]:
+def _living_fighting_units(side: SideState, section: str) -> List[UnitName]:
     return [
         unit
         for unit in SECTION_UNITS[section]
-        if army.current_hp[unit] > 0 and army.section_state[section] == "fighting"
+        if _side_unit_count(side, unit, fighting_only=True) > 0
     ]
 
 
-def _apply_damage(defender: ArmyState, attack: Mapping[str, Any]) -> None:
-    target_units = list(attack["target_units"])
-    if not target_units:
-        return
-    damage = float(attack["damage"])
-    weights = {unit: _hp_to_count(defender.current_hp[unit], defender.unit_hp[unit]) for unit in target_units}
-    total_weight = sum(weights.values())
+def _apply_damage(defender: SideState, attack: Mapping[str, Any]) -> None:
+    weights = _target_weights(defender, set(attack["target_units"]))
+    total_weight = sum(weight for _, _, weight in weights)
     if total_weight <= 0:
         return
-    for unit in target_units:
-        share = damage * (weights[unit] / total_weight)
-        defender.current_hp[unit] = max(0.0, defender.current_hp[unit] - share)
+
+    damage = float(attack["damage"])
+    for army, unit, weight in weights:
+        share = damage * (weight / total_weight)
+        army.current_hp[unit] = max(0.0, army.current_hp[unit] - share)
 
 
-def _time_to_breakdown(army: ArmyState, incoming_attacks: Iterable[Mapping[str, Any]]) -> Dict[str, Optional[float]]:
+def _time_to_breakdown(side: SideState, incoming_attacks: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     incoming_by_section = {section: 0.0 for section in SECTION_UNITS}
     for attack in incoming_attacks:
         incoming_by_section[str(attack["target_section"])] += float(attack["damage"])
 
-    result: Dict[str, Optional[float]] = {}
+    aggregate: Dict[str, Optional[float]] = {}
+    by_army: Dict[str, Dict[str, Optional[float]]] = {}
+
     for section, units in SECTION_UNITS.items():
-        if army.section_state[section] != "fighting":
-            result[section] = 0.0
+        fighting = [army for army in side.armies if army.section_state[section] == "fighting"]
+        if not fighting:
+            aggregate[section] = 0.0
             continue
+
         incoming = incoming_by_section[section]
         if incoming <= 0:
-            result[section] = None
+            aggregate[section] = None
             continue
-        initial = sum(army.initial_hp[unit] for unit in units)
-        current = sum(army.current_hp[unit] for unit in units)
-        remaining_break_hp = max(0.0, (initial * army.thresholds[section]) - (initial - current))
-        result[section] = round(remaining_break_hp / incoming, 4)
-    return result
+
+        section_weights = [
+            (army, sum(_hp_to_count(army.current_hp[unit], army.unit_hp[unit]) for unit in units))
+            for army in fighting
+        ]
+        total_weight = sum(weight for _, weight in section_weights)
+        times = []
+        for army, weight in section_weights:
+            army_incoming = incoming * (weight / total_weight) if total_weight > 0 else 0.0
+            army_time = _army_time_to_breakdown(army, section, army_incoming)
+            by_army.setdefault(army.name, {})[section] = army_time
+            if army_time is not None:
+                times.append(army_time)
+        aggregate[section] = min(times) if times else None
+
+    for army in side.armies:
+        by_army.setdefault(army.name, {})
+        for section in SECTION_UNITS:
+            if section not in by_army[army.name]:
+                by_army[army.name][section] = 0.0 if army.section_state[section] != "fighting" else None
+
+    return {"aggregate": aggregate, "armies": by_army}
+
+
+def _army_time_to_breakdown(army: ArmyState, section: str, incoming: float) -> Optional[float]:
+    if army.section_state[section] != "fighting":
+        return 0.0
+    if incoming <= 0:
+        return None
+    units = SECTION_UNITS[section]
+    initial = sum(army.initial_hp[unit] for unit in units)
+    current = sum(army.current_hp[unit] for unit in units)
+    remaining_break_hp = max(0.0, (initial * army.thresholds[section]) - (initial - current))
+    return round(remaining_break_hp / incoming, 4)
 
 
 def _apply_cavalry_pursuit(
     *,
-    loser: ArmyState,
-    winner: ArmyState,
+    loser: SideState,
+    winner: SideState,
     loser_label: str,
     winner_label: str,
     casualty_per_cavalry: float,
 ) -> Dict[str, Any]:
-    cavalry_count = _display_count(winner.current_hp["cavalry"], winner.unit_hp["cavalry"])
+    cavalry_count = _side_display_count(winner, "cavalry")
     if cavalry_count <= 0:
         return {
             "phase": "pursuit",
@@ -552,16 +618,17 @@ def _apply_cavalry_pursuit(
             "loser": loser_label,
             "cavalry": 0,
             "casualty_multiplier": 1.0,
-            "remaining": _army_snapshot(loser),
+            "remaining": _side_snapshot(loser),
         }
 
     survivor_multiplier = max(0.0, 1.0 - casualty_per_cavalry * cavalry_count)
-    before = _army_snapshot(loser)["units"]
-    for unit in UNITS:
-        remaining_count = _display_count(loser.current_hp[unit], loser.unit_hp[unit])
-        pursued_count = _round_half_down(remaining_count * survivor_multiplier)
-        loser.current_hp[unit] = max(0.0, pursued_count * loser.unit_hp[unit])
-    _refresh_sections(loser)
+    before = _side_snapshot(loser)
+    for army in loser.armies:
+        for unit in UNITS:
+            remaining_count = _display_count(army.current_hp[unit], army.unit_hp[unit])
+            pursued_count = _round_half_down(remaining_count * survivor_multiplier)
+            army.current_hp[unit] = max(0.0, pursued_count * army.unit_hp[unit])
+    _refresh_side(loser)
 
     return {
         "phase": "pursuit",
@@ -570,12 +637,51 @@ def _apply_cavalry_pursuit(
         "cavalry": cavalry_count,
         "casualty_multiplier": round(survivor_multiplier, 4),
         "before": before,
-        "after": _army_snapshot(loser)["units"],
+        "after": _side_snapshot(loser),
     }
 
 
 def _section_hp(army: ArmyState, section: str) -> float:
     return sum(army.current_hp[unit] for unit in SECTION_UNITS[section])
+
+
+def _side_section_hp(side: SideState, section: str) -> float:
+    return sum(
+        _section_hp(army, section)
+        for army in side.armies
+        if army.section_state[section] == "fighting"
+    )
+
+
+def _side_section_state(side: SideState, section: str) -> str:
+    states = [army.section_state[section] for army in side.armies]
+    if any(state == "fighting" for state in states):
+        return "fighting"
+    if any(state == "fleeing" for state in states):
+        return "fleeing"
+    return "gone"
+
+
+def _side_unit_count(side: SideState, unit: UnitName, *, fighting_only: bool) -> float:
+    total = 0.0
+    for army in side.armies:
+        if fighting_only and army.section_state[UNIT_SECTION[unit]] != "fighting":
+            continue
+        total += _hp_to_count(army.current_hp[unit], army.unit_hp[unit])
+    return total
+
+
+def _target_weights(side: SideState, target_units: Iterable[UnitName]) -> List[Tuple[ArmyState, UnitName, float]]:
+    targets = set(target_units)
+    weights: List[Tuple[ArmyState, UnitName, float]] = []
+    for army in side.armies:
+        for unit in targets:
+            if army.section_state[UNIT_SECTION[unit]] != "fighting":
+                continue
+            count = _hp_to_count(army.current_hp[unit], army.unit_hp[unit])
+            if count > 0:
+                weights.append((army, unit, count))
+    return weights
 
 
 def _hp_to_count(hp: float, unit_hp: float) -> float:
@@ -586,6 +692,10 @@ def _hp_to_count(hp: float, unit_hp: float) -> float:
 
 def _display_count(hp: float, unit_hp: float) -> int:
     return _round_half_down(_hp_to_count(hp, unit_hp))
+
+
+def _side_display_count(side: SideState, unit: UnitName) -> int:
+    return sum(_display_count(army.current_hp[unit], army.unit_hp[unit]) for army in side.armies)
 
 
 def _round_half_down(value: float) -> int:
@@ -604,6 +714,19 @@ def _army_snapshot(army: ArmyState) -> Dict[str, Any]:
         "units": {unit: _display_count(army.current_hp[unit], army.unit_hp[unit]) for unit in UNITS},
         "raw_hp": {unit: round(army.current_hp[unit], 4) for unit in UNITS},
         "sections": dict(army.section_state),
+    }
+
+
+def _side_snapshot(side: SideState) -> Dict[str, Any]:
+    return {
+        "label": side.label,
+        "units": {unit: _side_display_count(side, unit) for unit in UNITS},
+        "raw_hp": {
+            unit: round(sum(army.current_hp[unit] for army in side.armies), 4)
+            for unit in UNITS
+        },
+        "sections": {section: _side_section_state(side, section) for section in SECTION_UNITS},
+        "armies": [_army_snapshot(army) for army in side.armies],
     }
 
 

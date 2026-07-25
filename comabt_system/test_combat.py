@@ -55,24 +55,43 @@ class CombatSimulationTests(unittest.TestCase):
         self.assertEqual(probing_damage, normal_damage * 0.5)
         self.assertEqual(damage_taken_by_probe, normal_damage * 0.6)
 
-    def test_reinforcements_join_before_round_attacks(self):
+    def test_reinforcements_join_as_separate_allied_armies(self):
         result = simulate_battle(
             {
+                "name": "Main A",
                 "units": {"infantry": 10},
                 "modifiers": [{"stat": "harm_taken", "multiplier": 0.01}],
             },
             {
-                "units": {"infantry": 10},
-                "modifiers": [{"stat": "harm_taken", "multiplier": 0.01}],
+                "name": "Main B",
+                "units": {"infantry": 100},
             },
             max_rounds=2,
             reinforcements=[
-                {"round": 2, "side": "A", "army": {"units": {"machine_gun": 1}}},
+                {
+                    "round": 2,
+                    "side": "A",
+                    "army": {
+                        "name": "Allied MG Corps",
+                        "units": {"machine_gun": 1},
+                        "tactic": "all_out_offense",
+                        "modifiers": [{"stat": "attack", "unit": "machine_gun", "multiplier": 2.0}],
+                    },
+                },
             ],
         )
 
         self.assertEqual(result["log"][1]["reinforcements"][0]["side"], "A")
-        self.assertIn("machine_gun", result["remaining"]["A"]["units"])
+        army_names = [army["name"] for army in result["remaining"]["A"]["armies"]]
+        self.assertIn("Main A", army_names)
+        self.assertIn("Allied MG Corps", army_names)
+
+        allied_attacks = [
+            attack
+            for attack in result["log"][1]["attacks"]
+            if attack["attacker_army"] == "Allied MG Corps"
+        ]
+        self.assertEqual(allied_attacks[0]["damage"], 8.4)
 
     def test_target_specific_modifier_works_inside_line_pool(self):
         result = simulate_battle(

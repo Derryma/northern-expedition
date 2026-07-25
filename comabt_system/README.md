@@ -44,7 +44,7 @@ The result includes:
 - `winner`: `A`, `B`, `draw`, `stalemate`, or `undecided`.
 - `rounds`: number of combat rounds resolved.
 - `log`: per-round attacks, reinforcements, time-to-breakdown estimates, and pursuit.
-- `remaining`: each side's remaining units, raw HP, and fighting/fleeing section states.
+- `remaining`: each side's aggregate remaining units plus each participating army's own remaining units, raw HP, tactic, and fighting/fleeing section states.
 
 ## Unit Types
 
@@ -146,6 +146,8 @@ Use `unit: "all"` or omit `unit` to affect every unit. Use `target` for target-s
 
 ## Reinforcements
 
+Reinforcements are not merged into the original army. A reinforcement is another allied army joining the same side with its own commander/general modifiers, tactic, unit stats, HP pool, threshold state, and remaining casualties.
+
 Reinforcements join before attacks in their listed round.
 
 ```python
@@ -153,13 +155,40 @@ result = simulate_battle(
     army_a,
     army_b,
     reinforcements=[
-        {"round": 3, "side": "A", "army": {"units": {"infantry": 2}}},
-        {"round": 4, "side": "B", "army": {"units": {"cavalry": 1}}},
+        {
+            "round": 3,
+            "side": "A",
+            "army": {
+                "name": "Allied 2nd Army",
+                "units": {"infantry": 2, "machine_gun": 1},
+                "tactic": "probing_attack",
+                "modifiers": [
+                    {"stat": "attack", "unit": "machine_gun", "multiplier": 1.25}
+                ],
+            },
+        },
+        {
+            "round": 4,
+            "side": "B",
+            "army": {
+                "name": "Relief Cavalry Corps",
+                "units": {"cavalry": 2},
+                "tactic": "all_out_offense",
+            },
+        },
     ],
 )
 ```
 
-This allows allied armies to enter mid-battle, increase friendly HP, and add firepower from that round onward.
+This allows allied armies to enter mid-battle, increase friendly HP, average out incoming damage across the side's live formations, and add their own firepower from that round onward.
+
+The returned side snapshot keeps them separate:
+
+```python
+result["remaining"]["A"]["armies"]
+```
+
+Each entry in that list is one army's own remaining units and state. The top-level `result["remaining"]["A"]["units"]` is only the aggregate side total.
 
 ## Cavalry Pursuit
 
