@@ -1,6 +1,9 @@
 Owen:
 1. unit combat mechaism
 2. general tree and loyalty
-3. 
+3. unit maneuvering
 
-DerrY;
+Derry:
+1. event + cards design
+2. NPC warloads design
+3. econimics + troops cost 
