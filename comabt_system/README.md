@@ -44,7 +44,7 @@ The result includes:
 - `winner`: `A`, `B`, `draw`, `stalemate`, or `undecided`.
 - `rounds`: number of combat rounds resolved.
 - `log`: per-round attacks, reinforcements, time-to-breakdown estimates, and pursuit.
-- `remaining`: each side's aggregate remaining units plus each participating army's own remaining units, raw HP, tactic, and fighting/fleeing section states.
+- `remaining`: each side's aggregate remaining units plus each participating army's own remaining units, raw HP, tactic, focus target, and fighting/fleeing section states.
 
 ## Unit Types
 
@@ -144,9 +144,53 @@ Supported operations:
 
 Use `unit: "all"` or omit `unit` to affect every unit. Use `target` for target-specific attack bonuses, such as artillery being better against machine guns.
 
+## Focus Fire
+
+By default, if a side is fighting multiple enemy armies, incoming damage is spread evenly across all valid enemy armies in the targeted section. This represents general battlefield pressure.
+
+An army may instead focus its firepower on one named enemy army:
+
+```python
+army = {
+    "name": "A First Army",
+    "units": {"artillery": 2, "infantry": 8},
+    "focus": "B Front Army",
+}
+```
+
+Multiple friendly armies can choose the same focus:
+
+```python
+army_a = {
+    "name": "A First Army",
+    "units": {"artillery": 1},
+    "focus": "B Front Army",
+}
+
+reinforcements = [
+    {
+        "round": 1,
+        "side": "A",
+        "army": {
+            "name": "A Second Army",
+            "units": {"artillery": 1},
+            "focus": "B Front Army",
+        },
+    },
+]
+```
+
+If the focused enemy army has already fled, is gone, or has no valid target for that attacking unit's priority, the attack falls back to normal spread against other valid enemy armies.
+
+Each attack log records the actual target armies:
+
+```python
+result["log"][0]["attacks"][0]["target_armies"]
+```
+
 ## Reinforcements
 
-Reinforcements are not merged into the original army. A reinforcement is another allied army joining the same side with its own commander/general modifiers, tactic, unit stats, HP pool, threshold state, and remaining casualties.
+Reinforcements are not merged into the original army. A reinforcement is another allied army joining the same side with its own commander/general modifiers, tactic, focus target, unit stats, HP pool, threshold state, and remaining casualties.
 
 Reinforcements join before attacks in their listed round.
 
@@ -162,6 +206,7 @@ result = simulate_battle(
                 "name": "Allied 2nd Army",
                 "units": {"infantry": 2, "machine_gun": 1},
                 "tactic": "probing_attack",
+                "focus": "B Front Army",
                 "modifiers": [
                     {"stat": "attack", "unit": "machine_gun", "multiplier": 1.25}
                 ],

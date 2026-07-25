@@ -14,6 +14,7 @@ Expected army JSON shape:
         "artillery": 1,
         "machine_gun": 3
     },
+    "focus": "Enemy Front Army",
     "tactic": "normal_advance",
     "modifiers": [
         {"stat": "attack", "unit": "infantry", "multiplier": 1.10},
@@ -141,6 +142,7 @@ class ArmyState:
     unit_attack: Dict[UnitName, float]
     thresholds: Dict[str, float]
     section_state: Dict[str, str]
+    focus_armies: Tuple[str, ...]
 
 
 @dataclass
@@ -304,6 +306,7 @@ def _build_army(payload: ArmyJson, *, fallback_name: str) -> ArmyState:
         unit_attack=unit_attack,
         thresholds=thresholds,
         section_state={section: "fighting" for section in SECTION_UNITS},
+        focus_armies=_clean_focus_armies(payload),
     )
     _refresh_sections(army)
     return army
@@ -320,6 +323,20 @@ def _clean_counts(units: Mapping[str, Any]) -> Dict[UnitName, float]:
             raise ValueError(f"unit count cannot be negative: {raw_name}={raw_count}")
         clean[unit] += count
     return clean
+
+
+def _clean_focus_armies(payload: ArmyJson) -> Tuple[str, ...]:
+    focus = payload.get("focus", payload.get("focus_fire", payload.get("target_army")))
+    if not focus:
+        return ()
+    if isinstance(focus, str):
+        return (focus,)
+    if isinstance(focus, Mapping):
+        army = focus.get("army", focus.get("target_army", focus.get("name")))
+        return (str(army),) if army else ()
+    if isinstance(focus, Iterable):
+        return tuple(str(item) for item in focus if str(item))
+    return (str(focus),)
 
 
 def _modified_stat(
@@ -446,12 +463,26 @@ def _plan_army_attacks(
         if count <= 0:
             continue
         target_section = _choose_target_section(unit, defender)
+        target_army_names = _valid_focus_armies(attacker, defender, unit)
+        if target_army_names:
+            target_section = _choose_target_section(unit, defender, target_army_names=target_army_names)
         if not target_section:
             continue
-        target_units = _living_fighting_units(defender, target_section)
-        attack_value = count * _target_weighted_attack(attacker, defender, unit, target_units)
+        target_units = _living_fighting_units(defender, target_section, target_army_names=target_army_names)
+        attack_value = count * _target_weighted_attack(
+            attacker,
+            defender,
+            unit,
+            target_units,
+            target_army_names=target_army_names,
+        )
         attack_value *= tactic["attack_multiplier"]
-        attack_value = _modified_incoming_harm(defender, attack_value, target_units)
+        attack_value = _modified_incoming_harm(
+            defender,
+            attack_value,
+            target_units,
+            target_army_names=target_army_names,
+        )
         if attack_value <= 0:
             continue
         attacks.append(
@@ -462,15 +493,34 @@ def _plan_army_attacks(
                 "source_unit": unit,
                 "target_section": target_section,
                 "target_units": target_units,
+                "target_armies": _target_army_names(defender, target_units, target_army_names=target_army_names),
+                "focus": list(attacker.focus_armies),
                 "damage": round(attack_value, 4),
             }
         )
     return attacks
 
 
-def _modified_incoming_harm(side: SideState, damage: float, target_units: Iterable[UnitName]) -> float:
+def _valid_focus_armies(attacker: ArmyState, defender: SideState, source_unit: UnitName) -> Tuple[str, ...]:
+    if not attacker.focus_armies:
+        return ()
+    focused = tuple(name for name in attacker.focus_armies if _find_army(defender, name))
+    if not focused:
+        return ()
+    if _choose_target_section(source_unit, defender, target_army_names=focused):
+        return focused
+    return ()
+
+
+def _modified_incoming_harm(
+    side: SideState,
+    damage: float,
+    target_units: Iterable[UnitName],
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> float:
     targets = set(target_units)
-    weights = _target_weights(side, targets)
+    weights = _target_weights(side, targets, target_army_names=target_army_names)
     total_weight = sum(weight for _, _, weight in weights)
     if total_weight <= 0:
         return 0.0
@@ -502,8 +552,13 @@ def _target_weighted_attack(
     defender: SideState,
     source_unit: UnitName,
     target_units: Iterable[UnitName],
+    *,
+    target_army_names: Tuple[str, ...] = (),
 ) -> float:
-    weights = {unit: _side_unit_count(defender, unit, fighting_only=True) for unit in target_units}
+    weights = {
+        unit: _side_unit_count(defender, unit, fighting_only=True, target_army_names=target_army_names)
+        for unit in target_units
+    }
     total_weight = sum(weights.values())
     if total_weight <= 0:
         return 0.0
@@ -521,23 +576,40 @@ def _target_weighted_attack(
     return weighted_attack
 
 
-def _choose_target_section(source_unit: UnitName, defender: SideState) -> Optional[str]:
+def _choose_target_section(
+    source_unit: UnitName,
+    defender: SideState,
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> Optional[str]:
     for section in ATTACK_PRIORITY[source_unit]:
-        if _side_section_state(defender, section) == "fighting" and _side_section_hp(defender, section) > 0:
+        if (
+            _side_section_state(defender, section, target_army_names=target_army_names) == "fighting"
+            and _side_section_hp(defender, section, target_army_names=target_army_names) > 0
+        ):
             return section
     return None
 
 
-def _living_fighting_units(side: SideState, section: str) -> List[UnitName]:
+def _living_fighting_units(
+    side: SideState,
+    section: str,
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> List[UnitName]:
     return [
         unit
         for unit in SECTION_UNITS[section]
-        if _side_unit_count(side, unit, fighting_only=True) > 0
+        if _side_unit_count(side, unit, fighting_only=True, target_army_names=target_army_names) > 0
     ]
 
 
 def _apply_damage(defender: SideState, attack: Mapping[str, Any]) -> None:
-    weights = _target_weights(defender, set(attack["target_units"]))
+    weights = _target_weights(
+        defender,
+        set(attack["target_units"]),
+        target_army_names=tuple(attack.get("target_armies", ())),
+    )
     total_weight = sum(weight for _, _, weight in weights)
     if total_weight <= 0:
         return
@@ -550,8 +622,21 @@ def _apply_damage(defender: SideState, attack: Mapping[str, Any]) -> None:
 
 def _time_to_breakdown(side: SideState, incoming_attacks: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     incoming_by_section = {section: 0.0 for section in SECTION_UNITS}
+    incoming_by_army_section: Dict[str, Dict[str, float]] = {}
     for attack in incoming_attacks:
-        incoming_by_section[str(attack["target_section"])] += float(attack["damage"])
+        section = str(attack["target_section"])
+        damage = float(attack["damage"])
+        incoming_by_section[section] += damage
+        weights = _target_weights(
+            side,
+            set(attack["target_units"]),
+            target_army_names=tuple(attack.get("target_armies", ())),
+        )
+        total_weight = sum(weight for _, _, weight in weights)
+        for army, _, weight in weights:
+            share = damage * (weight / total_weight) if total_weight > 0 else 0.0
+            incoming_by_army_section.setdefault(army.name, {}).setdefault(section, 0.0)
+            incoming_by_army_section[army.name][section] += share
 
     aggregate: Dict[str, Optional[float]] = {}
     by_army: Dict[str, Dict[str, Optional[float]]] = {}
@@ -567,14 +652,9 @@ def _time_to_breakdown(side: SideState, incoming_attacks: Iterable[Mapping[str, 
             aggregate[section] = None
             continue
 
-        section_weights = [
-            (army, sum(_hp_to_count(army.current_hp[unit], army.unit_hp[unit]) for unit in units))
-            for army in fighting
-        ]
-        total_weight = sum(weight for _, weight in section_weights)
         times = []
-        for army, weight in section_weights:
-            army_incoming = incoming * (weight / total_weight) if total_weight > 0 else 0.0
+        for army in fighting:
+            army_incoming = incoming_by_army_section.get(army.name, {}).get(section, 0.0)
             army_time = _army_time_to_breakdown(army, section, army_incoming)
             by_army.setdefault(army.name, {})[section] = army_time
             if army_time is not None:
@@ -645,16 +725,26 @@ def _section_hp(army: ArmyState, section: str) -> float:
     return sum(army.current_hp[unit] for unit in SECTION_UNITS[section])
 
 
-def _side_section_hp(side: SideState, section: str) -> float:
+def _side_section_hp(
+    side: SideState,
+    section: str,
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> float:
     return sum(
         _section_hp(army, section)
-        for army in side.armies
+        for army in _targetable_armies(side, target_army_names)
         if army.section_state[section] == "fighting"
     )
 
 
-def _side_section_state(side: SideState, section: str) -> str:
-    states = [army.section_state[section] for army in side.armies]
+def _side_section_state(
+    side: SideState,
+    section: str,
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> str:
+    states = [army.section_state[section] for army in _targetable_armies(side, target_army_names)]
     if any(state == "fighting" for state in states):
         return "fighting"
     if any(state == "fleeing" for state in states):
@@ -662,26 +752,78 @@ def _side_section_state(side: SideState, section: str) -> str:
     return "gone"
 
 
-def _side_unit_count(side: SideState, unit: UnitName, *, fighting_only: bool) -> float:
+def _side_unit_count(
+    side: SideState,
+    unit: UnitName,
+    *,
+    fighting_only: bool,
+    target_army_names: Tuple[str, ...] = (),
+) -> float:
     total = 0.0
-    for army in side.armies:
+    for army in _targetable_armies(side, target_army_names):
         if fighting_only and army.section_state[UNIT_SECTION[unit]] != "fighting":
             continue
         total += _hp_to_count(army.current_hp[unit], army.unit_hp[unit])
     return total
 
 
-def _target_weights(side: SideState, target_units: Iterable[UnitName]) -> List[Tuple[ArmyState, UnitName, float]]:
+def _target_weights(
+    side: SideState,
+    target_units: Iterable[UnitName],
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> List[Tuple[ArmyState, UnitName, float]]:
     targets = set(target_units)
     weights: List[Tuple[ArmyState, UnitName, float]] = []
-    for army in side.armies:
+    eligible_armies = []
+    for army in _targetable_armies(side, target_army_names):
+        army_total = 0.0
+        for unit in targets:
+            if army.section_state[UNIT_SECTION[unit]] != "fighting":
+                continue
+            army_total += _hp_to_count(army.current_hp[unit], army.unit_hp[unit])
+        if army_total > 0:
+            eligible_armies.append((army, army_total))
+
+    if not eligible_armies:
+        return weights
+
+    army_share = 1.0 / len(eligible_armies)
+    for army, army_total in eligible_armies:
         for unit in targets:
             if army.section_state[UNIT_SECTION[unit]] != "fighting":
                 continue
             count = _hp_to_count(army.current_hp[unit], army.unit_hp[unit])
             if count > 0:
-                weights.append((army, unit, count))
+                weights.append((army, unit, army_share * (count / army_total)))
     return weights
+
+
+def _target_army_names(
+    side: SideState,
+    target_units: Iterable[UnitName],
+    *,
+    target_army_names: Tuple[str, ...] = (),
+) -> List[str]:
+    names = []
+    for army, _, _ in _target_weights(side, target_units, target_army_names=target_army_names):
+        if army.name not in names:
+            names.append(army.name)
+    return names
+
+
+def _targetable_armies(side: SideState, target_army_names: Tuple[str, ...] = ()) -> List[ArmyState]:
+    if not target_army_names:
+        return list(side.armies)
+    wanted = set(target_army_names)
+    return [army for army in side.armies if army.name in wanted]
+
+
+def _find_army(side: SideState, name: str) -> Optional[ArmyState]:
+    for army in side.armies:
+        if army.name == name:
+            return army
+    return None
 
 
 def _hp_to_count(hp: float, unit_hp: float) -> float:
@@ -711,6 +853,7 @@ def _army_snapshot(army: ArmyState) -> Dict[str, Any]:
     return {
         "name": army.name,
         "tactic": army.tactic,
+        "focus": list(army.focus_armies),
         "units": {unit: _display_count(army.current_hp[unit], army.unit_hp[unit]) for unit in UNITS},
         "raw_hp": {unit: round(army.current_hp[unit], 4) for unit in UNITS},
         "sections": dict(army.section_state),

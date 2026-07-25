@@ -93,6 +93,52 @@ class CombatSimulationTests(unittest.TestCase):
         ]
         self.assertEqual(allied_attacks[0]["damage"], 8.4)
 
+    def test_default_fire_spreads_evenly_across_enemy_armies(self):
+        result = simulate_battle(
+            {"name": "A Artillery", "units": {"artillery": 1}},
+            {"name": "B Front", "units": {"infantry": 20}},
+            max_rounds=1,
+            reinforcements=[
+                {"round": 1, "side": "B", "army": {"name": "B Reserve", "units": {"infantry": 20}}},
+            ],
+        )
+
+        b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
+        self.assertEqual(b_armies["B Front"]["raw_hp"]["infantry"], 18.0)
+        self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 18.0)
+        artillery_attack = [
+            attack
+            for attack in result["log"][0]["attacks"]
+            if attack["attacker_army"] == "A Artillery" and attack["source_unit"] == "artillery"
+        ][0]
+        self.assertEqual(artillery_attack["target_armies"], ["B Front", "B Reserve"])
+
+    def test_focus_fire_concentrates_on_named_enemy_army(self):
+        result = simulate_battle(
+            {"name": "A First Army", "units": {"artillery": 1}, "focus": "B Front"},
+            {"name": "B Front", "units": {"infantry": 20}},
+            max_rounds=1,
+            reinforcements=[
+                {
+                    "round": 1,
+                    "side": "A",
+                    "army": {"name": "A Second Army", "units": {"artillery": 1}, "focus": "B Front"},
+                },
+                {"round": 1, "side": "B", "army": {"name": "B Reserve", "units": {"infantry": 20}}},
+            ],
+        )
+
+        b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
+        self.assertEqual(b_armies["B Front"]["raw_hp"]["infantry"], 12.0)
+        self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 20.0)
+
+        focused_attacks = [
+            attack
+            for attack in result["log"][0]["attacks"]
+            if attack["attacker"] == "A" and attack["source_unit"] == "artillery"
+        ]
+        self.assertEqual([attack["target_armies"] for attack in focused_attacks], [["B Front"], ["B Front"]])
+
     def test_target_specific_modifier_works_inside_line_pool(self):
         result = simulate_battle(
             {
