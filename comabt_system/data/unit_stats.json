@@ -2,28 +2,54 @@
   "version": "experimental-0.1",
   "units": {
     "infantry": {
-      "hp": 1.0,
+      "hp": 3.0,
       "attack": 1.0,
       "section": "line",
       "notes": "Cheap line troops. Shares line HP with machine guns."
     },
     "cavalry": {
-      "hp": 2.0,
+      "hp": 3.0,
       "attack": 1.0,
       "section": "cavalry",
       "notes": "Durable mobile arm. Enables pursuit casualties after victory."
     },
     "artillery": {
-      "hp": 1.0,
+      "hp": 2.0,
       "attack": 4.0,
       "section": "artillery",
       "notes": "High firepower. Prioritizes enemy artillery, then line troops."
     },
     "machine_gun": {
-      "hp": 1.0,
-      "attack": 3.0,
+      "hp": 3.0,
+      "attack": 2.0,
       "section": "line",
       "notes": "Line firepower. Shares line HP with infantry."
+    }
+  },
+  "attack_matrix": {
+    "infantry": {
+      "infantry": 0.35,
+      "cavalry": 0.35,
+      "artillery": 0.35,
+      "machine_gun": 0.35
+    },
+    "cavalry": {
+      "infantry": 0.25,
+      "cavalry": 0.45,
+      "artillery": 0.5,
+      "machine_gun": 0.15
+    },
+    "artillery": {
+      "infantry": 0.55,
+      "cavalry": 0.2,
+      "artillery": 0.75,
+      "machine_gun": 0.7
+    },
+    "machine_gun": {
+      "infantry": 0.5,
+      "cavalry": 0.8,
+      "artillery": 0.2,
+      "machine_gun": 0.35
     }
   }
 }

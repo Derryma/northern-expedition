@@ -88,10 +88,37 @@ ATTACK_PRIORITY = {
 # Experimental battalion stats.  These are deliberately simple and should be
 # playtested before becoming final board-game values.
 BASE_STATS = {
-    "infantry": {"hp": 1.0, "attack": 1.0},
-    "cavalry": {"hp": 2.0, "attack": 1.0},
-    "artillery": {"hp": 1.0, "attack": 4.0},
-    "machine_gun": {"hp": 1.0, "attack": 3.0},
+    "infantry": {"hp": 3.0, "attack": 1.0},
+    "cavalry": {"hp": 3.0, "attack": 1.0},
+    "artillery": {"hp": 2.0, "attack": 4.0},
+    "machine_gun": {"hp": 3.0, "attack": 2.0},
+}
+
+ATTACK_MATRIX = {
+    "infantry": {
+        "infantry": 0.35,
+        "cavalry": 0.35,
+        "artillery": 0.35,
+        "machine_gun": 0.35,
+    },
+    "cavalry": {
+        "infantry": 0.25,
+        "cavalry": 0.45,
+        "artillery": 0.50,
+        "machine_gun": 0.15,
+    },
+    "artillery": {
+        "infantry": 0.55,
+        "cavalry": 0.20,
+        "artillery": 0.75,
+        "machine_gun": 0.70,
+    },
+    "machine_gun": {
+        "infantry": 0.50,
+        "cavalry": 0.80,
+        "artillery": 0.20,
+        "machine_gun": 0.35,
+    },
 }
 
 DEFAULT_BREAK_THRESHOLD = 0.20
@@ -119,8 +146,8 @@ TACTICS = {
     },
     "last_stand": {
         "attack_multiplier": 1.00,
-        "harm_taken_multiplier": 1.50,
-        "threshold": 0.40,
+        "harm_taken_multiplier": 1.35,
+        "threshold": 0.60,
     },
     "pinning_attack": {
         "attack_multiplier": 0.80,
@@ -566,7 +593,7 @@ def _target_weighted_attack(
     weighted_attack = 0.0
     for target_unit, weight in weights.items():
         attack = _modified_stat(
-            base=attacker.unit_attack[source_unit],
+            base=_base_attack(source_unit, target_unit),
             modifiers=attacker.modifiers,
             stat="attack",
             unit=source_unit,
@@ -574,6 +601,10 @@ def _target_weighted_attack(
         )
         weighted_attack += attack * (weight / total_weight)
     return weighted_attack
+
+
+def _base_attack(source_unit: UnitName, target_unit: UnitName) -> float:
+    return ATTACK_MATRIX.get(source_unit, {}).get(target_unit, BASE_STATS[source_unit]["attack"])
 
 
 def _choose_target_section(

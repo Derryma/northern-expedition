@@ -75,14 +75,30 @@ Aliases such as `inf`, `cav`, `art`, `mg`, `步兵`, `騎兵`, `砲兵`, and `�
 
 ## Experimental Stats
 
-Current coarse battalion stats:
+Current coarse battalion HP:
 
-| Unit | HP | Attack |
-|---|---:|---:|
-| infantry | 1 | 1 |
-| cavalry | 2 | 1 |
-| artillery | 1 | 4 |
-| machine_gun | 1 | 3 |
+| Unit | HP |
+|---|---:|
+| infantry | 3 |
+| cavalry | 3 |
+| artillery | 2 |
+| machine_gun | 3 |
+
+Current attack matrix:
+
+| Source / Target | infantry | cavalry | artillery | machine_gun |
+|---|---:|---:|---:|---:|
+| infantry | 0.35 | 0.35 | 0.35 | 0.35 |
+| cavalry | 0.25 | 0.45 | 0.50 | 0.15 |
+| artillery | 0.55 | 0.20 | 0.75 | 0.70 |
+| machine_gun | 0.50 | 0.80 | 0.20 | 0.35 |
+
+Design notes:
+
+- Infantry is uniform into all targets.
+- Machine guns are strongest into cavalry.
+- Artillery is weak into cavalry, strong into enemy guns and static line targets.
+- Cavalry is better at chasing cavalry and artillery than charging machine guns.
 
 These numbers are placeholders for playtesting. The core goal is to validate the logic before balancing values.
 
@@ -119,7 +135,7 @@ Built-in tactics:
 | `probing_attack` | 50% | 60% | 20% |
 | `layered_delaying` | 70% | 75% | 25% |
 | `all_out_offense` | 140% | 125% | 20% |
-| `last_stand` | 100% | 150% | 40% |
+| `last_stand` | 100% | 135% | 60% |
 | `pinning_attack` | 80% | 85% | 20% |
 
 Example:
@@ -132,6 +148,8 @@ army = {
 ```
 
 The same tactic values are listed in `data/tactics.json`.
+
+For simple holding-duration math, compare `threshold / harm_taken_multiplier`. `last_stand` is intentionally higher than `layered_delaying`, even though it takes more raw harm.
 
 ## Modifiers
 

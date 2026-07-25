@@ -27,9 +27,9 @@
     },
     "last_stand": {
       "attack_multiplier": 1.0,
-      "harm_taken_multiplier": 1.5,
-      "threshold": 0.4,
-      "notes": "Holds the line longer but bleeds heavily."
+      "harm_taken_multiplier": 1.35,
+      "threshold": 0.6,
+      "notes": "Holds the line the longest, but bleeds heavily."
     },
     "pinning_attack": {
       "attack_multiplier": 0.8,
