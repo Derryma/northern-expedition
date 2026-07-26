@@ -1,0 +1,41 @@
+{
+  "version": "experimental-0.2",
+  "draw_timing": {
+    "event_cards": {
+      "scope": "global",
+      "draw": "automatic",
+      "frequency": "each turn",
+      "resolution": "resolve as China-wide/world event unless card text targets a specific faction"
+    },
+    "function_cards": {
+      "scope": "per_player",
+      "draw": "each player draws individually",
+      "frequency": "each turn",
+      "hand_rule": "hold until used or discarded by future rule"
+    }
+  },
+  "dynamic_pool_rules": [
+    {
+      "trigger": "function_card_used",
+      "effect": "append listed generated_event_cards into the event pool"
+    },
+    {
+      "trigger": "player_decision_on_event",
+      "effect": "append or unlock consequence events listed by the event/card effect"
+    },
+    {
+      "trigger": "war_outcome",
+      "effect": "append aftermath events such as punitive demands, rebellions, or foreign intervention pressure"
+    }
+  ],
+  "body_guard_state": {
+    "storage": "general.body_guard_level",
+    "valid_values": [
+      null,
+      "low",
+      "high"
+    ],
+    "low_defense_bonus_against_assassination": 3,
+    "high_defense_bonus_against_assassination": 6
+  }
+}

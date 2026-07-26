@@ -1,0 +1,226 @@
+{
+  "version": "experimental-0.2",
+  "count": 18,
+  "cards": [
+    {
+      "id": "wang_yaqiao_assassination",
+      "name": "王亞樵來投",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "entry_requirement": "已收買黑金",
+      "cost": "two opposed d30 rolls; pay sum of both rolls regardless of result",
+      "effect": "透過斧頭幫進行一次暗殺行動，連續與對手對擲 d30 勝利兩次即成功。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "du_yuesheng_gamble",
+      "name": "杜月笙的豪賭",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "entry_requirement": "已收買黑金",
+      "cost": 25,
+      "effect": "獲得 10 個營青幫人力（步兵），可投放至江蘇、浙江、安徽、湖北、河南境內一個或多個城市發動黑幫暴亂。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "hongmen_uprising",
+      "name": "洪門起義",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "entry_requirement": "已收買黑金",
+      "cost": 25,
+      "effect": "獲得 10 個營洪門人力（步兵），可投放至江西、湖南、福建、廣東、廣西境內一個或多個城市發動黑幫暴亂。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "qing_gang_blockade",
+      "name": "結盟青幫",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "entry_requirement": "已收買黑金",
+      "cost": 15,
+      "effect": "封鎖上海到漢口間所有長江港口貿易 5 回合，期間無法透過被影響港口購買武器且無港口收入加成。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "behind_enemy_lines_sabotage",
+      "name": "敵後破壞",
+      "deck_type": "function",
+      "category": "sabotage",
+      "holdable": true,
+      "cost": 15,
+      "effect": "指定炸毀敵方兩座工廠，該兩座工廠停工三回合搶修。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "railway_saboteur",
+      "name": "崩鐵玩家",
+      "deck_type": "function",
+      "category": "sabotage",
+      "holdable": true,
+      "cost": 15,
+      "effect": "指定癱瘓一段中國黑色鐵路：京奉、京漢、津浦、膠濟、正太、隴海、滬寧、粵漢；停運三回合搶修。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "port_bombing",
+      "name": "大港開炸",
+      "deck_type": "function",
+      "category": "sabotage",
+      "holdable": true,
+      "cost": 15,
+      "effect": "指定炸毀敵方兩座港口城市的軍港，停工三回合搶修；期間不可生產艦艇。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "information_broker",
+      "name": "情報販子",
+      "deck_type": "function",
+      "category": "intelligence",
+      "holdable": true,
+      "cost": 15,
+      "effect": "去除指定省份戰爭迷霧五回合。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "intelligence_bureau",
+      "name": "情報局成立",
+      "deck_type": "function",
+      "category": "intelligence",
+      "holdable": true,
+      "cost": 30,
+      "effect": "成立情報局；此後每過五回合可花 10 元與敵方對骰 d30，勝利即可指定去除敵境一省戰爭迷霧五回合。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "red_urban_cell",
+      "name": "赤化",
+      "deck_type": "function",
+      "category": "comintern",
+      "holdable": true,
+      "entry_requirement": "對蘇關係 >= 7",
+      "effect": "指定一座城市出現共產黨游擊隊；與對方對骰兩次 d30，出現兵力為我方總點數 - 對方總點數。",
+      "generated_event_cards": [
+        {
+          "id": "anti_red_joint_statement",
+          "name": "四國反赤共同聲明",
+          "copies": 1,
+          "reason": "公開赤化行動刺激英美日法要求剿共。"
+        }
+      ]
+    },
+    {
+      "id": "rural_surrounds_city",
+      "name": "鄉村包圍城市",
+      "deck_type": "function",
+      "category": "comintern",
+      "holdable": true,
+      "entry_requirement": "對蘇關係 >= 7",
+      "effect": "指定一個省的非城市地區出現共產黨游擊隊；與對方對骰三次 d30，兵力為我方總點數 - 對方總點數。",
+      "generated_event_cards": [
+        {
+          "id": "anti_red_joint_statement",
+          "name": "四國反赤共同聲明",
+          "copies": 1,
+          "reason": "農村游擊擴大後觸發反赤國際壓力。"
+        }
+      ]
+    },
+    {
+      "id": "peoples_anger",
+      "name": "人民之怒",
+      "deck_type": "function",
+      "category": "comintern",
+      "holdable": true,
+      "entry_requirement": "對蘇關係 >= 7",
+      "effect": "指定敵方兩座工廠發動罷工，停工兩回合。",
+      "generated_event_cards": [
+        {
+          "id": "red_labor_infiltration",
+          "name": "赤色工運滲透",
+          "copies": 1,
+          "reason": "工運擴大會提高赤色工運類事件進入公共事件池的機率。"
+        }
+      ]
+    },
+    {
+      "id": "unit_promotion",
+      "name": "部隊晉升",
+      "deck_type": "function",
+      "category": "command",
+      "holdable": true,
+      "cost": 15,
+      "effect": "指定一我方將領忠誠 +2，且可選擇將其職位上升一級。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "anti_war_speech",
+      "name": "反戰演講",
+      "deck_type": "function",
+      "category": "political_warfare",
+      "holdable": true,
+      "cost": 15,
+      "effect": "指定敵方三個營自主逃兵；僅適用中方勢力。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "local_autonomy_agitation",
+      "name": "鼓吹地方自治",
+      "deck_type": "function",
+      "category": "political_warfare",
+      "holdable": true,
+      "cost": 15,
+      "effect": "指定一敵方非嫡系將領忠誠 -2。",
+      "generated_event_cards": [
+        {
+          "id": "local_autonomy_movement",
+          "name": "地方自治運動",
+          "copies": 1,
+          "reason": "自治宣傳會讓公共事件池更容易出現地方自治運動。"
+        }
+      ]
+    },
+    {
+      "id": "japanese_debt_for_firearms",
+      "name": "日本債款換械",
+      "deck_type": "function",
+      "category": "foreign_credit",
+      "holdable": true,
+      "suggested_owner": "奉系 / 張作霖",
+      "entry_requirement": "對日關係 >= 6 或控制滿洲",
+      "effect": "立即取得日械採購折扣或軍火到貨；同時增加對日債務與政治代價。",
+      "generated_event_cards": [
+        {
+          "id": "north_manchuria_railway_concession_demand",
+          "name": "要求北滿鐵路特許權",
+          "copies": 1,
+          "reason": "日本債款換械後，日本要求北滿鐵路/礦權/通行特許權作為代價。"
+        }
+      ]
+    },
+    {
+      "id": "special_service_guard_low",
+      "name": "特勤衛隊：普通",
+      "deck_type": "function",
+      "category": "body_guard",
+      "holdable": true,
+      "status": "modelled_on_general",
+      "effect": "不再用獨立兵種卡堆疊；使用後將指定將領 body_guard_level 設為 low。遭遇暗殺時提供 +3 防禦。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "special_service_guard_high",
+      "name": "特勤衛隊：菁英",
+      "deck_type": "function",
+      "category": "body_guard",
+      "holdable": true,
+      "status": "modelled_on_general",
+      "effect": "不再用機槍營/菁英衛隊等冗餘字段；使用後將指定將領 body_guard_level 設為 high。遭遇暗殺時提供 +6 防禦。",
+      "generated_event_cards": []
+    }
+  ]
+}

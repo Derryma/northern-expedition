@@ -1,0 +1,148 @@
+{
+  "version": "experimental-0.2",
+  "source": "北伐風雲遊戲修改.md + PJ Boardgame/北伐風雲_地圖.html",
+  "major_playable_factions": [
+    {
+      "code": "S",
+      "name": "五省聯軍",
+      "leader": "孫傳芳"
+    },
+    {
+      "code": "W",
+      "name": "直系",
+      "leader": "吳佩孚"
+    },
+    {
+      "code": "F",
+      "name": "奉系",
+      "leader": "張作霖"
+    },
+    {
+      "code": "N",
+      "name": "國民革命軍",
+      "leader": "蔣中正"
+    }
+  ],
+  "npc_rules": {
+    "growth_every_3_turns": {
+      "per_general_hq": {
+        "infantry": 1
+      }
+    },
+    "autonomous_action": false,
+    "action_driver": "events only",
+    "when_attacked": "passive combat only",
+    "mobilization_when_attacked": false,
+    "player_control_when_attacked": false
+  },
+  "npc_factions": [
+    {
+      "code": "Y",
+      "id": "jin",
+      "name": "晉系",
+      "leader": "閻錫山",
+      "core_region": "山西",
+      "generals": [
+        "閻錫山",
+        "傅作義",
+        "商震",
+        "徐永昌"
+      ]
+    },
+    {
+      "code": "G",
+      "id": "feng",
+      "name": "西北軍",
+      "leader": "馮玉祥",
+      "core_region": "綏遠/甘肅/陝西邊緣",
+      "generals": [
+        "馮玉祥",
+        "鹿鍾麟",
+        "宋哲元",
+        "韓復榘",
+        "吉鴻昌",
+        "張之江"
+      ]
+    },
+    {
+      "code": "M",
+      "id": "ma",
+      "name": "西北馬家軍",
+      "leader": "馬麒",
+      "core_region": "甘青",
+      "generals": [
+        "馬麒",
+        "馬福祥",
+        "馬鴻賓",
+        "馬麟"
+      ]
+    },
+    {
+      "code": "H",
+      "id": "xiang",
+      "name": "湘軍",
+      "leader": null,
+      "core_region": "湖南",
+      "generals": [
+        "唐生智",
+        "趙恒惕",
+        "葉開鑫",
+        "何鍵"
+      ]
+    },
+    {
+      "code": "C",
+      "id": "chuan",
+      "name": "川軍",
+      "leader": null,
+      "core_region": "四川",
+      "generals": [
+        "劉湘",
+        "劉文輝",
+        "楊森",
+        "鄧錫侯"
+      ]
+    },
+    {
+      "code": "D",
+      "id": "dian",
+      "name": "滇系",
+      "leader": "唐繼堯",
+      "core_region": "雲南",
+      "generals": [
+        "唐繼堯",
+        "龍雲",
+        "胡若愚",
+        "張汝驥"
+      ]
+    },
+    {
+      "code": "Q",
+      "id": "qian",
+      "name": "黔軍/貴州地方部隊",
+      "leader": null,
+      "core_region": "貴州",
+      "generals": [
+        "黔軍地方部隊"
+      ]
+    },
+    {
+      "code": "x",
+      "id": "xinjiang",
+      "name": "新疆",
+      "leader": "楊增新",
+      "core_region": "新疆",
+      "generals": [
+        "楊增新"
+      ]
+    },
+    {
+      "code": "t",
+      "id": "tibet",
+      "name": "西藏",
+      "leader": null,
+      "core_region": "西藏",
+      "generals": []
+    }
+  ]
+}

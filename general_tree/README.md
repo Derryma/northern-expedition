@@ -42,6 +42,7 @@ Each general is keyed by id:
   "core_faction": false,
   "loyalty": 6,
   "loyalty_exempt": false,
+  "body_guard_level": null,
   "command_cap": 40,
   "traits": ["fire_support_savant"],
   "skills": [],
@@ -59,6 +60,16 @@ Each general is keyed by id:
 ```
 
 Traits are normal general modifiers and can appear on multiple generals. Skills are special promotion-only powers. Only one starting general should begin with the engineering skill if the scenario wants that rarity.
+
+`body_guard_level` replaces older separate guard-state ideas such as tracking extra machine-gun camps or elite-guard labels. It defaults to `null`; valid values are `null`, `low`, and `high`.
+
+```python
+from general_tree import set_body_guard_level
+
+set_body_guard_level(tree, "bai_chongxi", "low")
+set_body_guard_level(tree, "bai_chongxi", "high")
+set_body_guard_level(tree, "bai_chongxi", None)
+```
 
 ## Force Points
 

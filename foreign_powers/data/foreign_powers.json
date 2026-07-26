@@ -1,0 +1,137 @@
+{
+  "version": "experimental-0.2",
+  "source": "北伐風雲遊戲修改.md + PJ Boardgame/北伐風雲_地圖.html",
+  "global_rules": {
+    "concession_garrisons": "removed",
+    "direct_military_support": "removed",
+    "player_may_attack_foreign_powers_when_not_at_war": false,
+    "player_foreign_combat_only_when": "foreign punitive expedition is active",
+    "punitive_war_controller": "opponent player controls foreign side as an independent turn",
+    "punitive_occupation_province_cap": 3,
+    "mediation_indemnity_by_foreign_reach": [
+      {
+        "province_range": "0-1",
+        "money": 15
+      },
+      {
+        "province_range": "1-2",
+        "money": 30
+      },
+      {
+        "province_range": "2-3",
+        "money": 45
+      }
+    ],
+    "foreign_growth_every_3_turns": {
+      "per_general_hq": {
+        "infantry": 2
+      }
+    },
+    "removed_assets": [
+      "Philippines US forces",
+      "Leonard Wood",
+      "all concession garrison status markers"
+    ]
+  },
+  "powers": {
+    "japan": {
+      "display_name": "日本",
+      "map_codes": [
+        "J",
+        "K",
+        "T"
+      ],
+      "relations_key": "jp",
+      "territories": [
+        "日本",
+        "朝鮮（日）",
+        "台灣（日）",
+        "關東州/旅順·大連"
+      ],
+      "notes": [
+        "Japanese forces are ordinary foreign units, never concession garrisons."
+      ]
+    },
+    "soviet_union": {
+      "display_name": "蘇聯",
+      "map_codes": [
+        "V"
+      ],
+      "relations_key": "su",
+      "territories": [
+        "蘇聯遠東",
+        "海參崴"
+      ],
+      "notes": [
+        "庫倫守軍改回外蒙古所屬; Soviet punitive events may still involve Far Eastern forces."
+      ]
+    },
+    "outer_mongolia": {
+      "display_name": "外蒙古",
+      "map_codes": [
+        "O"
+      ],
+      "relations_key": "su",
+      "territories": [
+        "庫倫",
+        "外蒙古"
+      ],
+      "commander": "霍爾洛·喬巴山",
+      "notes": [
+        "親蘇列強側勢力; 庫倫守軍與外蒙古地區蒙古騎兵由喬巴山統帥."
+      ]
+    },
+    "britain": {
+      "display_name": "英國",
+      "map_codes": [
+        "B",
+        "b"
+      ],
+      "relations_key": "uk",
+      "territories": [
+        "英屬香港",
+        "英屬印緬",
+        "印度"
+      ],
+      "notes": [
+        "No direct military support cards; punitive expedition only."
+      ]
+    },
+    "united_states": {
+      "display_name": "美國",
+      "map_codes": [],
+      "relations_key": "us",
+      "territories": [],
+      "notes": [
+        "菲律賓美軍與倫納德·伍德已移除; US remains a diplomatic/economic power unless future rules add assets."
+      ]
+    },
+    "france": {
+      "display_name": "法國",
+      "map_codes": [
+        "I"
+      ],
+      "relations_key": "fr",
+      "territories": [
+        "法屬印度支那",
+        "河內"
+      ],
+      "notes": [
+        "No concession garrisons; Indochina forces are ordinary foreign units."
+      ]
+    },
+    "thailand": {
+      "display_name": "泰國",
+      "map_codes": [
+        "TH"
+      ],
+      "relations_key": null,
+      "territories": [
+        "泰國"
+      ],
+      "notes": [
+        "中立且受英法保護; not an active lending/support power."
+      ]
+    }
+  }
+}

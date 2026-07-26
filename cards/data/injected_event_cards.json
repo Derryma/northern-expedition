@@ -1,0 +1,33 @@
+{
+  "version": "experimental-0.2",
+  "count": 2,
+  "cards": [
+    {
+      "id": "north_manchuria_railway_concession_demand",
+      "name": "要求北滿鐵路特許權",
+      "deck_type": "event",
+      "category": "foreign_power",
+      "foreign_power": "🇯🇵日",
+      "status": "injectable",
+      "source": "北伐風雲遊戲修改.md / function card chain",
+      "effect": "日方要求取得北滿鐵路、礦權或護路通行特許權。接受：日 +2，立即緩解債務或獲一次性軍火/工業收益；代價為相關鐵路沿線城市收入 -1 且日本調度/懲戒事件對滿洲效果加倍。拒絕：日 -3，並將日本懲戒、護路隊擴編類事件權重提高。",
+      "base_weight": 0,
+      "enters_pool_when": [
+        "function_card:japanese_debt_for_firearms"
+      ]
+    },
+    {
+      "id": "black_gold_backlash",
+      "name": "黑金坐大",
+      "deck_type": "event",
+      "category": "security",
+      "status": "injectable",
+      "source": "function card chain",
+      "effect": "多次動用黑金後，指定一座已收買黑金城市治安惡化；若拒絕追加付款，該城本回合收入 -3 並可能出現幫會火拼。",
+      "base_weight": 0,
+      "enters_pool_when": [
+        "any black_gold function card is used twice by same player"
+      ]
+    }
+  ]
+}

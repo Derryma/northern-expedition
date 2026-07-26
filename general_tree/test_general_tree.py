@@ -14,6 +14,7 @@ from general_tree import (
     loyalty_report,
     record_battle_loss,
     recruit_general,
+    set_body_guard_level,
     validate_tree,
 )
 
@@ -110,6 +111,14 @@ class GeneralTreeTests(unittest.TestCase):
 
         add_loyalty(tree, "bai_chongxi", -99)
         self.assertEqual(tree["generals"]["bai_chongxi"]["loyalty"], 0.0)
+
+    def test_body_guard_level_is_general_state(self):
+        tree = load_template()
+        set_body_guard_level(tree, "bai_chongxi", "high")
+
+        self.assertEqual(tree["generals"]["bai_chongxi"]["body_guard_level"], "high")
+        with self.assertRaises(ValueError):
+            set_body_guard_level(tree, "bai_chongxi", "machine_gun_guard")
 
 
 if __name__ == "__main__":

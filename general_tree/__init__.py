@@ -2,6 +2,7 @@
 
 from .general_tree import (
     DEFAULT_FORCE_POINTS,
+    BODY_GUARD_LEVELS,
     add_loyalty,
     add_skill,
     add_trait,
@@ -13,12 +14,14 @@ from .general_tree import (
     loyalty_report,
     record_battle_loss,
     recruit_general,
+    set_body_guard_level,
     subtree_force_strength,
     validate_tree,
 )
 
 __all__ = [
     "DEFAULT_FORCE_POINTS",
+    "BODY_GUARD_LEVELS",
     "add_loyalty",
     "add_skill",
     "add_trait",
@@ -30,6 +33,7 @@ __all__ = [
     "loyalty_report",
     "record_battle_loss",
     "recruit_general",
+    "set_body_guard_level",
     "subtree_force_strength",
     "validate_tree",
 ]
