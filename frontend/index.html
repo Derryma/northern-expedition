@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>北伐風雲 Playtest</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>北伐風雲</h1>
+      <p id="statusLine">Playtest Console</p>
+    </div>
+    <div class="toolbar">
+      <button id="newGame" title="New game">↻</button>
+      <button id="nextTurn" title="Next turn">▶</button>
+      <select id="playerSelect" title="Player"></select>
+      <button id="drawFunction" title="Draw function card">＋</button>
+      <button id="drawEvent" title="Draw event card">◆</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel overview">
+      <div class="section-head">
+        <h2>Factions</h2>
+        <span id="turnBadge">Turn 0</span>
+      </div>
+      <div id="factions" class="factions"></div>
+    </section>
+
+    <section class="panel event-panel">
+      <div class="section-head">
+        <h2>Current Event</h2>
+        <span id="eventMeta">-</span>
+      </div>
+      <article id="eventCard" class="card-detail empty">No event drawn.</article>
+    </section>
+
+    <section class="panel hands-panel">
+      <div class="section-head">
+        <h2>Function Hands</h2>
+        <span id="poolMeta">-</span>
+      </div>
+      <div id="hands" class="hands"></div>
+    </section>
+
+    <section class="panel reference-panel">
+      <div class="section-head">
+        <h2>Reference</h2>
+        <select id="referenceMode">
+          <option value="function">Function Cards</option>
+          <option value="event">Event Cards</option>
+          <option value="injected">Injected Events</option>
+          <option value="npc">NPC</option>
+          <option value="foreign">Foreign Powers</option>
+        </select>
+      </div>
+      <input id="referenceSearch" class="search" placeholder="Search">
+      <div id="referenceList" class="reference-list"></div>
+    </section>
+
+    <section class="panel combat-panel">
+      <div class="section-head">
+        <h2>Combat Sandbox</h2>
+        <button id="runCombat" title="Run combat">▶</button>
+      </div>
+      <div class="combat-grid">
+        <label>A Army<textarea id="armyA"></textarea></label>
+        <label>B Army<textarea id="armyB"></textarea></label>
+      </div>
+      <pre id="combatResult"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
