@@ -15,6 +15,8 @@ All other Chinese-side factions are organized as NPC factions.
 
 - `data/npc_factions.json` lists the playable majors, NPC rules, and NPC faction records.
 
+Each NPC faction keeps only 1-2 representative figures. Smaller named officers can return later as event text, local modifiers, or function-card results, but they should not clutter the primary NPC faction roster.
+
 ## NPC Rules
 
 - Every three turns, all NPC generals add 1 infantry to their HQ.

@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 155,
+  "count": 116,
   "cards": [
     {
       "id": "south_manchuria_railway_negotiation",
@@ -53,31 +53,6 @@
       ]
     },
     {
-      "id": "日本軍火優惠",
-      "name": "日本軍火優惠",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇯🇵日",
-      "npc_faction": null,
-      "effect": "三井洋行放寬付款：本回合外購日械（含帝國海軍驅逐艦）折價 30%。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.jp>=5",
-      "conditions": [
-        {
-          "description": "控制或鄰接滿洲（南滿鐵路輸入）",
-          "multiplier": 2.0,
-          "expression": "s.pv.滿洲"
-        },
-        {
-          "description": "對日深度友好（≥10）",
-          "multiplier": 1.6,
-          "expression": "s.jp>=10"
-        }
-      ]
-    },
-    {
       "id": "濟南護僑要求",
       "name": "濟南護僑要求",
       "deck_type": "event",
@@ -86,7 +61,7 @@
       "status": "active",
       "foreign_power": "🇯🇵日",
       "npc_faction": null,
-      "effect": "日方要求准許其護僑部隊進駐濟南。\n允許→日 +2；地圖部署：濟南增置日本步兵 ×2 營、機槍 ×1 營（屬日方，內鬥中立、被攻擊則反擊）。代價：濟南每回合收入 -1（永久）。\n拒絕→日 -3，並可能觸發後續懲戒事件。",
+      "effect": "日方要求我方承諾保護濟南日僑與商社。\n接受→日 +2；濟南每回合收入 -1（永久，治外法權擴大）。\n拒絕→日 -3，並向事件池加入「日方護僑最後通牒」。不部署日軍，不直接開戰。",
       "base_weight": 4.0,
       "requirement_expression": null,
       "conditions": [
@@ -100,26 +75,9 @@
           "multiplier": 1.8,
           "expression": "s.warP"
         }
-      ]
-    },
-    {
-      "id": "japanese_punitive_expedition",
-      "name": "日本出兵懲戒",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇯🇵日",
-      "npc_faction": null,
-      "effect": "關東軍／朝鮮軍出動：日軍全部兵力交由對手玩家操控攻擊我方（§11.7B，可調停）。",
-      "base_weight": 3.0,
-      "requirement_expression": "s.jp<=-10",
-      "conditions": [
-        {
-          "description": "對日極度交惡（≤-13）",
-          "multiplier": 3.0,
-          "expression": "s.jp<=-13"
-        }
+      ],
+      "notes": [
+        "Updated: no foreign troop deployment and no automatic attack."
       ]
     },
     {
@@ -139,51 +97,6 @@
           "description": "工廠已多（≥6）",
           "multiplier": 1.5,
           "expression": "s.fct>=6"
-        }
-      ]
-    },
-    {
-      "id": "蘇援軍火到港",
-      "name": "蘇援軍火到港",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇷🇺蘇",
-      "npc_faction": null,
-      "effect": "蘇式軍火經海參崴／廣州運抵：免費獲步兵 ×3、機槍 ×2。",
-      "base_weight": 6.0,
-      "requirement_expression": "s.su>=5",
-      "conditions": [
-        {
-          "description": "控制廣州或海參崴方向之海港",
-          "multiplier": 2.5,
-          "expression": "s.pv.廣東||s.pv.滿洲"
-        },
-        {
-          "description": "對蘇深度友好（≥10）",
-          "multiplier": 1.6,
-          "expression": "s.su>=10"
-        }
-      ]
-    },
-    {
-      "id": "顧問團擴編",
-      "name": "顧問團擴編",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇷🇺蘇",
-      "npc_faction": null,
-      "effect": "加倫顧問組進駐：指定一名將領獲蘇聯顧問加成，任期 10 回合（關係跌破 9 即提前返國，§12.4）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.su>=9",
-      "conditions": [
-        {
-          "description": "控制廣州（黃埔體系）",
-          "multiplier": 2.0,
-          "expression": "s.pv.廣東"
         }
       ]
     },
@@ -298,31 +211,6 @@
       ]
     },
     {
-      "id": "香港軍火交易",
-      "name": "香港軍火交易",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "經香港轉運英械：本回合可外購英製特色武器（維克斯機槍、先進砲艇）折價 25%。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.uk>=5",
-      "conditions": [
-        {
-          "description": "控制閩粵沿海（近港澳）",
-          "multiplier": 1.8,
-          "expression": "s.pv.廣東||s.pv.福建"
-        },
-        {
-          "description": "擁有港口大城",
-          "multiplier": 1.5,
-          "expression": "s.port"
-        }
-      ]
-    },
-    {
       "id": "英國海軍示威",
       "name": "英國海軍示威",
       "deck_type": "event",
@@ -368,51 +256,6 @@
       ]
     },
     {
-      "id": "british_punitive_expedition",
-      "name": "英國出兵懲戒",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "英軍自香港／印緬出動，全部兵力交由對手玩家操控攻擊我方（可調停）。",
-      "base_weight": 3.0,
-      "requirement_expression": "s.uk<=-10",
-      "conditions": [
-        {
-          "description": "對英極度交惡（≤-13）",
-          "multiplier": 3.0,
-          "expression": "s.uk<=-13"
-        }
-      ]
-    },
-    {
-      "id": "匯豐銀行特別授信",
-      "name": "匯豐銀行特別授信",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "匯豐提供優惠授信，由玩家自由選擇；不借無任何負面影響。\n本回合可向匯豐借款，額度提高至 75 元且一律適用 6 回合分期；借款時金錢與負債同增（§4.5）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.uk>=8",
-      "conditions": [
-        {
-          "description": "我方負債中（急需週轉）",
-          "multiplier": 2.5,
-          "expression": "s.debt"
-        },
-        {
-          "description": "現金拮据",
-          "multiplier": 1.8,
-          "expression": "s.money==='low'"
-        }
-      ]
-    },
-    {
       "id": "門戶開放照會",
       "name": "門戶開放照會",
       "deck_type": "event",
@@ -429,51 +272,6 @@
           "description": "對美已友好（≥3）",
           "multiplier": 2.0,
           "expression": "s.us>=3"
-        }
-      ]
-    },
-    {
-      "id": "美式軍械採購",
-      "name": "美式軍械採購",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇺🇸美",
-      "npc_faction": null,
-      "effect": "可靠量產：本回合外購美械（白朗寧機槍、山砲、霰彈槍營）折價 30%。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.us>=5",
-      "conditions": [
-        {
-          "description": "對美深度友好（≥10）",
-          "multiplier": 1.6,
-          "expression": "s.us>=10"
-        }
-      ]
-    },
-    {
-      "id": "美國經濟援助",
-      "name": "美國經濟援助",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇺🇸美",
-      "npc_faction": null,
-      "effect": "獲一次性現金 +30（列強中金額最高）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.us>=8",
-      "conditions": [
-        {
-          "description": "我方負債中",
-          "multiplier": 2.5,
-          "expression": "s.debt"
-        },
-        {
-          "description": "現金拮据",
-          "multiplier": 1.8,
-          "expression": "s.money==='low'"
         }
       ]
     },
@@ -534,66 +332,6 @@
           "description": "擁有含法租界的城市",
           "multiplier": 1.8,
           "expression": "s.frConc"
-        }
-      ]
-    },
-    {
-      "id": "法械與外籍兵團教官",
-      "name": "法械與外籍兵團教官",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇫🇷法",
-      "npc_faction": null,
-      "effect": "獲法系 75 快砲營 ×1，並可指定一將領獲法國顧問（砲兵命中 +1、守城 +1 生命）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.fr>=6",
-      "conditions": [
-        {
-          "description": "對法深度友好（≥10）",
-          "multiplier": 1.6,
-          "expression": "s.fr>=10"
-        }
-      ]
-    },
-    {
-      "id": "德國軍事顧問團",
-      "name": "德國軍事顧問團",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇩🇪德",
-      "npc_faction": null,
-      "effect": "賽克特式教官抵華：指定一將領獲德國顧問（全兵種訓練加成、砲兵攻城 +1）。不牽動任何列強關係。",
-      "base_weight": 6.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "與多國交惡時尤其珍貴（任一列強 ≤-8）",
-          "multiplier": 2.0,
-          "expression": "Math.min(s.jp,s.su,s.uk,s.us,s.fr)<=-8"
-        }
-      ]
-    },
-    {
-      "id": "德國軍火降價",
-      "name": "德國軍火降價",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇩🇪德",
-      "npc_faction": null,
-      "effect": "德商促銷：本回合可外購克虜伯野戰砲營、MG13 機槍營，折價 20%。不牽動列強關係。",
-      "base_weight": 5.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "工業點不足（工廠 ≤3，需外購）",
-          "multiplier": 2.0,
-          "expression": "s.fct<=3"
         }
       ]
     },
@@ -864,31 +602,6 @@
       ]
     },
     {
-      "id": "軍閥公債",
-      "name": "軍閥公債",
-      "deck_type": "event",
-      "category": "economic",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": null,
-      "effect": "由玩家自由選擇；不發行無任何負面影響。\n發行：金錢 +30、負債 +30，須於 3 回合內還清，逾期即凍結資產（§4.5）。\n優惠與代價：本筆公債僅須償還 50%（即還 15 元即視為清償）；但此後你向任何列強銀行借款時，皆須先擲 d6，擲出 3 以上（3、4、5、6）才借款成功（信用受損，永久）。",
-      "base_weight": 4.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "現金拮据",
-          "multiplier": 2.5,
-          "expression": "s.money==='low'"
-        },
-        {
-          "description": "已負債（不建議再借）",
-          "multiplier": 0.3,
-          "expression": "s.debt"
-        }
-      ]
-    },
-    {
       "id": "通貨緊縮",
       "name": "通貨緊縮",
       "deck_type": "event",
@@ -1013,26 +726,6 @@
       ]
     },
     {
-      "id": "葉開鑫倒戈",
-      "name": "葉開鑫倒戈",
-      "deck_type": "event",
-      "category": "npc_or_other_force",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": "湘軍",
-      "effect": "湘軍葉開鑫待價而沽：各玩家暗標出價（最低 16 元），最高者取得其步兵 ×2 與葉開鑫本人（忠誠 5）。湘軍無領袖，可直接策反。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.av.xiang&&s.gn['葉開鑫']",
-      "conditions": [
-        {
-          "description": "我方鄰接湖南",
-          "multiplier": 2.0,
-          "expression": "s.nearHunan"
-        }
-      ]
-    },
-    {
       "id": "劉湘防區擴軍",
       "name": "劉湘防區擴軍",
       "deck_type": "event",
@@ -1069,26 +762,6 @@
           "description": "我方控制宜昌或鄰接四川",
           "multiplier": 2.2,
           "expression": "s.nearSichuan"
-        }
-      ]
-    },
-    {
-      "id": "龍雲政變醞釀",
-      "name": "龍雲政變醞釀",
-      "deck_type": "event",
-      "category": "npc_or_other_force",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": "滇系",
-      "effect": "滇軍龍雲離心：任一玩家可用半價（10 元）直接策反龍雲，成功則其率步兵 ×2 加入。若本回合無人動作，滇系全體將領忠誠上限降至 4。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.av.dian&&s.gn['龍雲']",
-      "conditions": [
-        {
-          "description": "我方鄰接雲南",
-          "multiplier": 2.5,
-          "expression": "s.nearYunnan"
         }
       ]
     },
@@ -1544,31 +1217,6 @@
       ]
     },
     {
-      "id": "橫濱正金銀行借款",
-      "name": "橫濱正金銀行借款",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇯🇵日",
-      "npc_faction": null,
-      "effect": "由玩家自由選擇是否借款；拒絕無任何負面影響。\n接受：金錢 +20、負債 +20，6 回合分期（§4.5）；利息＝指定一座城市之關稅，該城每回合收入 -1，直到還清為止（還清即恢復）。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.jp>=6",
-      "conditions": [
-        {
-          "description": "現金拮据",
-          "multiplier": 2.0,
-          "expression": "s.money==='low'"
-        },
-        {
-          "description": "我方負債中",
-          "multiplier": 1.8,
-          "expression": "s.debt"
-        }
-      ]
-    },
-    {
       "id": "日本贈械",
       "name": "日本贈械",
       "deck_type": "event",
@@ -1581,40 +1229,6 @@
       "base_weight": 3.0,
       "requirement_expression": "s.jp>=10",
       "conditions": []
-    },
-    {
-      "id": "蘇聯建交承認",
-      "name": "蘇聯建交承認",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇷🇺蘇",
-      "npc_faction": null,
-      "effect": "蘇方正式承認：蘇 +2，並立即解鎖蘇式軍火交易（可外購蘇製重砲）。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.su>=3",
-      "conditions": []
-    },
-    {
-      "id": "軍校援建",
-      "name": "軍校援建",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇷🇺蘇",
-      "npc_faction": null,
-      "effect": "蘇聯協建軍官學校：此後自產步兵金錢 -1（永久，若與蘇交惡則失效）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.su>=7",
-      "conditions": [
-        {
-          "description": "控制廣東（黃埔）",
-          "multiplier": 2.5,
-          "expression": "s.pv.廣東"
-        }
-      ]
     },
     {
       "id": "赤色工運滲透",
@@ -1676,69 +1290,6 @@
       ]
     },
     {
-      "id": "英國承認關稅自主",
-      "name": "英國承認關稅自主",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "英方讓步：我方所有租界城市每回合收入 +2（永久）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.uk>=6",
-      "conditions": [
-        {
-          "description": "擁有租界城市",
-          "multiplier": 2.5,
-          "expression": "s.conc"
-        }
-      ]
-    },
-    {
-      "id": "上海防衛軍增援",
-      "name": "上海防衛軍增援",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "needs_rewrite",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "英軍加強租界防務：租界城市之租界駐軍增為 2 營；任何攻入該城者與英關係額外 -2。",
-      "base_weight": 4.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "控制江浙（上海一帶）",
-          "multiplier": 2.5,
-          "expression": "s.pv.江浙"
-        }
-      ],
-      "notes": [
-        "Contains old direct-support or concession-garrison wording; align with updated rules before final play."
-      ]
-    },
-    {
-      "id": "英商軍火走私",
-      "name": "英商軍火走私",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "經香港轉運：本回合外購不受任何禁運事件影響，且折價 20%。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.uk>=4",
-      "conditions": [
-        {
-          "description": "擁有港口大城",
-          "multiplier": 1.8,
-          "expression": "s.port"
-        }
-      ]
-    },
-    {
       "id": "英國軍火出口管制",
       "name": "英國軍火出口管制",
       "deck_type": "event",
@@ -1773,48 +1324,6 @@
       ]
     },
     {
-      "id": "美國承認與商約",
-      "name": "美國承認與商約",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇺🇸美",
-      "npc_faction": null,
-      "effect": "簽訂商約：美 +2，此後所有外購折價 10%（永久）。",
-      "base_weight": 5.0,
-      "requirement_expression": "s.us>=5",
-      "conditions": []
-    },
-    {
-      "id": "美孚石油供應",
-      "name": "美孚石油供應",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇺🇸美",
-      "npc_faction": null,
-      "effect": "獲穩定油源：未來 5 回合內免疫《國際油價上漲》的建軍加價。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.us>=6",
-      "conditions": []
-    },
-    {
-      "id": "美國紅十字救濟",
-      "name": "美國紅十字救濟",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇺🇸美",
-      "npc_faction": null,
-      "effect": "救濟物資抵達：未來 3 回合內所有治安事件效果減半（停產回合數減 1）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.us>=3",
-      "conditions": []
-    },
-    {
       "id": "美國海軍陸戰隊護僑",
       "name": "美國海軍陸戰隊護僑",
       "deck_type": "event",
@@ -1823,7 +1332,7 @@
       "status": "active",
       "foreign_power": "🇺🇸美",
       "npc_faction": null,
-      "effect": "美方要求准其護僑登陸上海。\n接受→美 +2；地圖部署：上海增置美軍步兵 ×2 營＋霰彈槍 ×1 營（屬美方，內鬥中立、被攻擊則反擊）。代價：上海因治外法權擴大，每回合收入 -1（永久）。\n拒絕→美 -2，上海本回合停止外購。",
+      "effect": "美方要求上海護僑與商業安全承諾。\n接受→美 +2；上海每回合收入 -1（永久，治外法權擴大）。\n拒絕→美 -2，上海本回合停止外購，並向事件池加入「美方護僑最後通牒」。不部署美軍，不直接開戰。",
       "base_weight": 4.0,
       "requirement_expression": null,
       "conditions": [
@@ -1832,6 +1341,9 @@
           "multiplier": 2.0,
           "expression": "s.conc"
         }
+      ],
+      "notes": [
+        "Updated: no foreign troop deployment and no automatic attack."
       ]
     },
     {
@@ -1847,60 +1359,6 @@
       "base_weight": 3.0,
       "requirement_expression": null,
       "conditions": []
-    },
-    {
-      "id": "東方匯理銀行貸款",
-      "name": "東方匯理銀行貸款",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇫🇷法",
-      "npc_faction": null,
-      "effect": "法方提出放款，由玩家自由選擇；拒絕無任何負面影響。\n接受：金錢 +18、負債 +18，6 回合分期（§4.5）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.fr>=6",
-      "conditions": [
-        {
-          "description": "現金拮据",
-          "multiplier": 2.0,
-          "expression": "s.money==='low'"
-        }
-      ]
-    },
-    {
-      "id": "外籍兵團教官團",
-      "name": "外籍兵團教官團",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇫🇷法",
-      "npc_faction": null,
-      "effect": "指定一名將領獲法國軍事顧問，任期 10 回合（關係跌破 9 即提前返國）。",
-      "base_weight": 3.0,
-      "requirement_expression": "s.fr>=9",
-      "conditions": []
-    },
-    {
-      "id": "滇越鐵路運輸權",
-      "name": "滇越鐵路運輸權",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇫🇷法",
-      "npc_faction": null,
-      "effect": "取得鐵路運輸特權：控制雲南或廣西之城市每回合金錢 +3（永久）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.fr>=5",
-      "conditions": [
-        {
-          "description": "控制雲南或廣西",
-          "multiplier": 3.0,
-          "expression": "s.pv.雲南||s.pv.廣西"
-        }
-      ]
     },
     {
       "id": "法國教案抗議",
@@ -1933,46 +1391,6 @@
           "description": "控制廣東或廣西",
           "multiplier": 2.5,
           "expression": "s.pv.廣東||s.pv.廣西"
-        }
-      ]
-    },
-    {
-      "id": "德國工業技術團",
-      "name": "德國工業技術團",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇩🇪德",
-      "npc_faction": null,
-      "effect": "德國技師抵華：我方工廠升級上限 +1（永久）。不牽動任何列強關係。",
-      "base_weight": 5.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "工廠 ≥4（效益大）",
-          "multiplier": 1.8,
-          "expression": "s.fct>=4"
-        }
-      ]
-    },
-    {
-      "id": "德製兵工廠設備",
-      "name": "德製兵工廠設備",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇩🇪德",
-      "npc_faction": null,
-      "effect": "可花 30 元購入整套設備：指定一座城市的工業點產出永久 +2。不牽動列強關係。",
-      "base_weight": 4.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "現金充裕",
-          "multiplier": 2.0,
-          "expression": "s.money==='high'"
         }
       ]
     },
@@ -2065,110 +1483,6 @@
       ]
     },
     {
-      "id": "英國軍事顧問團",
-      "name": "英國軍事顧問團",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇬🇧英",
-      "npc_faction": null,
-      "effect": "英國海軍教官團抵華：指定一名將領獲英國顧問——海軍／艦砲命中 +1；該將所部駐紮之港口城市每回合金錢 +1。任期 10 回合；期間對英關係跌破 9 即提前返國。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.uk>=9",
-      "conditions": [
-        {
-          "description": "擁有港口大城",
-          "multiplier": 1.8,
-          "expression": "s.port"
-        }
-      ]
-    },
-    {
-      "id": "日本軍事顧問團",
-      "name": "日本軍事顧問團",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇯🇵日",
-      "npc_faction": null,
-      "effect": "日本陸軍教官團抵華：指定一名將領獲日本顧問——所部步兵命中 +1；每回合可指定 3 單位額外行動一次（奇襲）。任期 10 回合；期間對日關係跌破 9 即提前返國。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.jp>=9",
-      "conditions": [
-        {
-          "description": "控制或鄰接滿洲",
-          "multiplier": 1.8,
-          "expression": "s.pv.滿洲"
-        }
-      ]
-    },
-    {
-      "id": "美國軍事顧問團",
-      "name": "美國軍事顧問團",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇺🇸美",
-      "npc_faction": null,
-      "effect": "美國教官團抵華：指定一名將領獲美國顧問——可挑選其所部 3 個步兵營直接轉為霰彈槍兵（生命1 移動2 攻擊2 射程2、命中+1、可以手榴彈反裝甲）；外購再折價 10%；該將所部駐紮之港口城市每回合金錢 +1。任期 10 回合；期間對美關係跌破 9 即提前返國。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.us>=9",
-      "conditions": []
-    },
-    {
-      "id": "soviet_punitive_expedition",
-      "name": "蘇聯出兵懲戒",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇷🇺蘇",
-      "npc_faction": null,
-      "effect": "蘇聯遠東軍越境討伐：其全部遠東兵力（含坦克）交由對手玩家操控攻擊我方北疆（§11.7B，可循國際／私下調停中止）。\n地圖部署：自海參崴與外蒙古各推進 1 格。",
-      "base_weight": 3.0,
-      "requirement_expression": "s.su<=-10",
-      "conditions": [
-        {
-          "description": "對蘇極度交惡（≤-13）",
-          "multiplier": 3.0,
-          "expression": "s.su<=-13"
-        },
-        {
-          "description": "控制或鄰接滿洲／綏遠",
-          "multiplier": 2.0,
-          "expression": "s.pv.滿洲||s.pv.綏遠"
-        }
-      ]
-    },
-    {
-      "id": "french_punitive_expedition",
-      "name": "法國出兵懲戒",
-      "deck_type": "event",
-      "category": "foreign_power",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": "🇫🇷法",
-      "npc_faction": null,
-      "effect": "法屬印度支那派遣遠征隊：法軍（外籍兵團為主）交由對手玩家操控自越南北上攻擊我方西南（§11.7B，可調停）。\n地圖部署：自河內沿滇越鐵路推進 1 格。",
-      "base_weight": 3.0,
-      "requirement_expression": "s.fr<=-10",
-      "conditions": [
-        {
-          "description": "對法極度交惡（≤-13）",
-          "multiplier": 3.0,
-          "expression": "s.fr<=-13"
-        },
-        {
-          "description": "控制或鄰接雲南／廣西",
-          "multiplier": 2.0,
-          "expression": "s.pv.雲南||s.pv.廣西"
-        }
-      ]
-    },
-    {
       "id": "四國反赤共同聲明",
       "name": "四國反赤共同聲明",
       "deck_type": "event",
@@ -2188,10 +1502,10 @@
       "deck_type": "event",
       "category": "foreign_power",
       "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "needs_rewrite",
+      "status": "active",
       "foreign_power": "🇬🇧英",
       "npc_faction": null,
-      "effect": "英日兩國以租界安全為由，要求我方派兵清剿罷工糾察隊。\n配合→英 +2、日 +2；但該城本回合停產、且此後 3 回合治安事件持續回合數 +1（民怨）。\n拒絕→英 -2、日 -2，且該租界駐軍增為 2 營。",
+      "effect": "英日兩國以租界安全為由，要求我方派兵清剿罷工糾察隊。\n配合→英 +2、日 +2；但該城本回合停產，且此後 3 回合治安事件持續回合數 +1（民怨）。\n拒絕→英 -2、日 -2，並向事件池加入「英日租界安全最後通牒」。不新增外國守軍。",
       "base_weight": 4.0,
       "requirement_expression": null,
       "conditions": [
@@ -2200,9 +1514,6 @@
           "multiplier": 2.5,
           "expression": "s.conc"
         }
-      ],
-      "notes": [
-        "Contains old direct-support or concession-garrison wording; align with updated rules before final play."
       ]
     },
     {
@@ -2298,31 +1609,6 @@
       "base_weight": 4.0,
       "requirement_expression": null,
       "conditions": []
-    },
-    {
-      "id": "五國銀行團聯合貸款",
-      "name": "五國銀行團聯合貸款",
-      "deck_type": "event",
-      "category": "economic",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": null,
-      "effect": "英美日法德五國銀行團聯貸（蘇聯不參與；須與至少兩個參貸國關係 ≥3）。由玩家自由選擇；拒絕無任何負面影響。\n接受：金錢 +50、負債 +50，6 回合分期；任一參貸國與你關係跌至 ≤−8 即全額催收（§4.5）。",
-      "base_weight": 4.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "現金拮据",
-          "multiplier": 2.5,
-          "expression": "s.money==='low'"
-        },
-        {
-          "description": "已負債（不宜再借）",
-          "multiplier": 0.3,
-          "expression": "s.debt"
-        }
-      ]
     },
     {
       "id": "關稅自主談判",
@@ -2632,26 +1918,6 @@
       ]
     },
     {
-      "id": "西北軍缺餉",
-      "name": "西北軍缺餉",
-      "deck_type": "event",
-      "category": "npc_or_other_force",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": "西北軍",
-      "effect": "西北軍欠餉：任一玩家可花 20 元收買其三個營（步 ×2、騎 ×1）直接加入我方（該旅未滿編）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.av.feng",
-      "conditions": [
-        {
-          "description": "現金充裕",
-          "multiplier": 2.0,
-          "expression": "s.money==='high'"
-        }
-      ]
-    },
-    {
       "id": "何鍵守衡陽",
       "name": "何鍵守衡陽",
       "deck_type": "event",
@@ -2692,26 +1958,6 @@
       ]
     },
     {
-      "id": "鄧錫侯封鎖入川",
-      "name": "鄧錫侯封鎖入川",
-      "deck_type": "event",
-      "category": "npc_or_other_force",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": "川軍",
-      "effect": "川軍封鎖三峽通道：外部部隊本回合不可經宜昌進入四川；控制宜昌者可花 12 元買通。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.av.chuan&&s.gn['鄧錫侯']",
-      "conditions": [
-        {
-          "description": "控制或鄰接四川",
-          "multiplier": 2.2,
-          "expression": "s.nearSichuan"
-        }
-      ]
-    },
-    {
       "id": "楊森東出",
       "name": "楊森東出",
       "deck_type": "event",
@@ -2744,26 +1990,6 @@
       "base_weight": 4.0,
       "requirement_expression": "s.av.chuan&&s.gn['劉文輝']",
       "conditions": []
-    },
-    {
-      "id": "胡若愚倒戈",
-      "name": "胡若愚倒戈",
-      "deck_type": "event",
-      "category": "npc_or_other_force",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": "滇系",
-      "effect": "滇軍胡若愚待價而沽：任一玩家可花 16 元直接策反，獲其步兵 ×2 與胡若愚（忠誠 4）。",
-      "base_weight": 4.0,
-      "requirement_expression": "s.av.dian&&s.gn['胡若愚']",
-      "conditions": [
-        {
-          "description": "控制或鄰接雲南",
-          "multiplier": 2.5,
-          "expression": "s.nearYunnan"
-        }
-      ]
     },
     {
       "id": "滇軍出滇",
@@ -2876,26 +2102,6 @@
           "description": "與 NPC 交戰中",
           "multiplier": 3.5,
           "expression": "s.warN"
-        }
-      ]
-    },
-    {
-      "id": "在野名將投效",
-      "name": "在野名將投效",
-      "deck_type": "event",
-      "category": "npc_or_other_force",
-      "source": "PJ Boardgame/北伐風雲_整合遊戲介面.html",
-      "status": "active",
-      "foreign_power": null,
-      "npc_faction": null,
-      "effect": "自在野將領池（§10.7）中，由你指定一名尚未出山者延攬（須支付其身價的一半）：獲得該將領與其自帶部隊。\n（比《舊部來投》可自選人物但需付費；池空則此卡改為獲步兵 ×2、機槍 ×1。）",
-      "base_weight": 3.0,
-      "requirement_expression": null,
-      "conditions": [
-        {
-          "description": "第 6 回合後",
-          "multiplier": 1.8,
-          "expression": "s.turn>=6"
         }
       ]
     },

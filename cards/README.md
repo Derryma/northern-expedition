@@ -9,9 +9,9 @@ There are two card types:
 
 ## Files
 
-- `data/event_cards.json` contains extracted event cards from `PJ Boardgame/北伐風雲_整合遊戲介面.html`.
-- `data/function_cards.json` contains the updated function-card list from `北伐風雲遊戲修改.md`.
-- `data/injected_event_cards.json` contains event cards that enter the event pool later due to player choices.
+- `data/event_cards.json` contains the cleaned automatic event deck. Old direct foreign attack cards were removed.
+- `data/function_cards.json` contains player-held action cards, including many cards migrated out of the old event deck.
+- `data/injected_event_cards.json` contains consequence event cards that enter the event pool later due to player choices.
 - `data/card_pool_rules.json` describes draw timing and dynamic pool mutation.
 
 ## Dynamic Event Pool
@@ -54,4 +54,6 @@ Function cards `特勤衛隊：普通` and `特勤衛隊：菁英` simply set th
 
 ## Cleanup Notes
 
-The source HTML still contains old direct foreign military support and concession-garrison wording. The extracted `event_cards.json` marks those records with `status: "needs_rewrite"` when detected. Direct military support cards such as `英軍借調`, `日軍借調`, `法軍借調`, and `蘇軍借調` were intentionally excluded from the new event JSON.
+The source HTML still contains old direct foreign military support, foreign punitive attack, and concession-garrison wording. The cleaned `event_cards.json` discards those direct foreign attack cards instead of keeping them in the automatic deck.
+
+Cards that are really player choices, such as loans, advisor missions, arms-purchase opportunities, defections, and recruitment actions, belong in `function_cards.json`.

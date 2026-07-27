@@ -44,10 +44,9 @@
       "core_region": "山西",
       "generals": [
         "閻錫山",
-        "傅作義",
-        "商震",
-        "徐永昌"
-      ]
+        "傅作義"
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "G",
@@ -57,12 +56,9 @@
       "core_region": "綏遠/甘肅/陝西邊緣",
       "generals": [
         "馮玉祥",
-        "鹿鍾麟",
-        "宋哲元",
-        "韓復榘",
-        "吉鴻昌",
-        "張之江"
-      ]
+        "宋哲元"
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "M",
@@ -72,10 +68,9 @@
       "core_region": "甘青",
       "generals": [
         "馬麒",
-        "馬福祥",
-        "馬鴻賓",
-        "馬麟"
-      ]
+        "馬福祥"
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "H",
@@ -85,10 +80,9 @@
       "core_region": "湖南",
       "generals": [
         "唐生智",
-        "趙恒惕",
-        "葉開鑫",
         "何鍵"
-      ]
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "C",
@@ -98,10 +92,9 @@
       "core_region": "四川",
       "generals": [
         "劉湘",
-        "劉文輝",
-        "楊森",
-        "鄧錫侯"
-      ]
+        "劉文輝"
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "D",
@@ -111,10 +104,9 @@
       "core_region": "雲南",
       "generals": [
         "唐繼堯",
-        "龍雲",
-        "胡若愚",
-        "張汝驥"
-      ]
+        "龍雲"
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "Q",
@@ -124,7 +116,8 @@
       "core_region": "貴州",
       "generals": [
         "黔軍地方部隊"
-      ]
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "x",
@@ -134,7 +127,8 @@
       "core_region": "新疆",
       "generals": [
         "楊增新"
-      ]
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     },
     {
       "code": "t",
@@ -142,7 +136,10 @@
       "name": "西藏",
       "leader": null,
       "core_region": "西藏",
-      "generals": []
+      "generals": [
+        "西藏地方噶廈"
+      ],
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
     }
   ]
 }
