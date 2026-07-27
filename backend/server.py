@@ -15,6 +15,7 @@ from .data_store import REPO_ROOT
 
 
 FRONTEND_ROOT = REPO_ROOT / "frontend"
+PJ_ROOT = REPO_ROOT / "PJ Boardgame"
 PORTRAIT_ROOT = REPO_ROOT / "PJ Boardgame" / "portraits"
 ENGINE = GameEngine()
 
@@ -108,6 +109,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def _resolve_static_path(self, path: str) -> Path:
         if path in ("", "/"):
             file_path = FRONTEND_ROOT / "index.html"
+        elif path.startswith("/pj/"):
+            file_path = PJ_ROOT / unquote(path.removeprefix("/pj/"))
         elif path.startswith("/assets/portraits/"):
             file_path = PORTRAIT_ROOT / unquote(path.removeprefix("/assets/portraits/"))
         else:
@@ -115,6 +118,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         resolved = file_path.resolve()
         if not (
             str(resolved).startswith(str(FRONTEND_ROOT.resolve()))
+            or str(resolved).startswith(str(PJ_ROOT.resolve()))
             or str(resolved).startswith(str(PORTRAIT_ROOT.resolve()))
         ):
             raise FileNotFoundError

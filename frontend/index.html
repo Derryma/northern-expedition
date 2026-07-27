@@ -3,76 +3,67 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>北伐風雲 Playtest</title>
+  <title>北伐風雲 Playtest Board</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>北伐風雲</h1>
-      <p id="statusLine">Playtest Console</p>
-    </div>
-    <div class="toolbar">
-      <button id="newGame" title="New game">↻</button>
-      <button id="nextTurn" title="Next turn">▶</button>
-      <select id="playerSelect" title="Player"></select>
-      <button id="drawFunction" title="Draw function card">＋</button>
-      <button id="drawEvent" title="Draw event card">◆</button>
-    </div>
-  </header>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>北伐風雲</h1>
+        <p id="statusLine">戰略地圖載入中</p>
+      </div>
+      <nav class="board-tabs" aria-label="Board views">
+        <button class="tab active" data-board="/pj/北伐風雲_整合遊戲介面.html">整合戰棋</button>
+        <button class="tab" data-board="/pj/北伐風雲_地圖.html">戰略地圖</button>
+        <button class="tab" data-board="/pj/北伐風雲_陣營操作板.html">陣營操作板</button>
+        <button class="tab" data-board="/pj/北伐風雲_事件卡.html">事件卡池</button>
+      </nav>
+      <div class="turn-tools">
+        <button id="newGame" title="重開新局">↺</button>
+        <button id="nextTurn" class="primary" title="進入下一回合">下一回合</button>
+        <select id="playerSelect" title="抽取功能卡玩家"></select>
+        <button id="drawFunction" title="抽功能卡">抽功能</button>
+        <button id="drawEvent" title="抽事件卡">抽事件</button>
+      </div>
+    </header>
 
-  <main class="layout">
-    <section class="panel overview">
-      <div class="section-head">
-        <h2>Factions</h2>
-        <span id="turnBadge">Turn 0</span>
-      </div>
-      <div id="factions" class="factions"></div>
-    </section>
+    <main class="board-layout">
+      <section class="board-stage" aria-label="Playable board">
+        <iframe id="boardFrame" title="北伐風雲 board" src="/pj/北伐風雲_整合遊戲介面.html"></iframe>
+      </section>
 
-    <section class="panel event-panel">
-      <div class="section-head">
-        <h2>Current Event</h2>
-        <span id="eventMeta">-</span>
-      </div>
-      <article id="eventCard" class="card-detail empty">No event drawn.</article>
-    </section>
+      <aside class="command-rail">
+        <section class="rail-panel current-event">
+          <div class="panel-title">
+            <h2>本回合事件</h2>
+            <span id="turnBadge">回合 0</span>
+          </div>
+          <article id="eventCard" class="event-card empty">尚未抽事件。按「下一回合」會自動抽世界事件並為各玩家抽功能卡。</article>
+        </section>
 
-    <section class="panel hands-panel">
-      <div class="section-head">
-        <h2>Function Hands</h2>
-        <span id="poolMeta">-</span>
-      </div>
-      <div id="hands" class="hands"></div>
-    </section>
+        <section class="rail-panel faction-strip">
+          <div class="panel-title">
+            <h2>玩家手牌</h2>
+            <span id="poolMeta">-</span>
+          </div>
+          <div id="hands" class="hands"></div>
+        </section>
 
-    <section class="panel reference-panel">
-      <div class="section-head">
-        <h2>Reference</h2>
-        <select id="referenceMode">
-          <option value="function">Function Cards</option>
-          <option value="event">Event Cards</option>
-          <option value="injected">Injected Events</option>
-          <option value="npc">NPC</option>
-          <option value="foreign">Foreign Powers</option>
-        </select>
-      </div>
-      <input id="referenceSearch" class="search" placeholder="Search">
-      <div id="referenceList" class="reference-list"></div>
-    </section>
-
-    <section class="panel combat-panel">
-      <div class="section-head">
-        <h2>Combat Sandbox</h2>
-        <button id="runCombat" title="Run combat">▶</button>
-      </div>
-      <div class="combat-grid">
-        <label>A Army<textarea id="armyA"></textarea></label>
-        <label>B Army<textarea id="armyB"></textarea></label>
-      </div>
-      <pre id="combatResult"></pre>
-    </section>
-  </main>
+        <section class="rail-panel force-tools">
+          <div class="panel-title">
+            <h2>戰鬥快算</h2>
+            <button id="runCombat" title="Run combat">執行</button>
+          </div>
+          <div class="combat-grid">
+            <label>A 軍 JSON<textarea id="armyA" spellcheck="false"></textarea></label>
+            <label>B 軍 JSON<textarea id="armyB" spellcheck="false"></textarea></label>
+          </div>
+          <pre id="combatResult">等待戰鬥輸入。</pre>
+        </section>
+      </aside>
+    </main>
+  </div>
 
   <script type="module" src="/app.js"></script>
 </body>

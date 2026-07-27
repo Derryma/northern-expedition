@@ -10,6 +10,7 @@ Python backend for the Northern Expedition playtest app.
 - Draw and use per-player function cards.
 - Inject consequence event cards into the event pool.
 - Expose the combat simulator through `/api/combat`.
+- Serve original PJ boardgame HTML under `/pj/` for the map, unit, city, and faction-board UI.
 
 ## Main Files
 
@@ -19,4 +20,3 @@ Python backend for the Northern Expedition playtest app.
 - `server.py`: stdlib HTTP API and static frontend server.
 
 The backend intentionally uses only the Python standard library so collaborators can run it without installing packages.
-

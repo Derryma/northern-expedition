@@ -5,13 +5,6 @@ const portraits = {
   N: "/assets/portraits/蔣介石.jpg",
 };
 
-const colors = {
-  F: "#546e7a",
-  W: "#6a1b9a",
-  S: "#2e7d32",
-  N: "#b1812f",
-};
-
 let bootstrap = null;
 let state = null;
 let cardIndex = {};
@@ -36,6 +29,7 @@ function indexCards() {
 }
 
 function cardTitle(card) {
+  if (!card) return "無事件";
   const bits = [card.name || card.id];
   if (card.category) bits.push(card.category);
   if (card.foreign_power) bits.push(card.foreign_power);
@@ -43,50 +37,50 @@ function cardTitle(card) {
   return bits.join(" · ");
 }
 
-function renderCard(card) {
-  if (!card) return "No event drawn.";
-  const lines = [cardTitle(card), "", card.effect || ""];
-  if (card.generated_event_cards?.length) {
-    lines.push("", "Injects: " + card.generated_event_cards.map((c) => c.name || c.id).join(", "));
-  }
-  return lines.join("\n");
+function shortEffect(card) {
+  if (!card) return "尚未抽事件。";
+  const injected = card.generated_event_cards?.length
+    ? `\n\n注入事件：${card.generated_event_cards.map((c) => c.name || c.id).join("、")}`
+    : "";
+  return `${cardTitle(card)}\n\n${card.effect || "無效果文字"}${injected}`;
 }
 
 function render() {
-  $("turnBadge").textContent = `Turn ${state.turn}`;
-  $("statusLine").textContent = `Events ${state.counts.event_pool} · Injected ${state.counts.injected_event_pool}`;
-  $("poolMeta").textContent = `Event ${state.counts.event_pool} / Injected ${state.counts.injected_event_pool}`;
-  $("eventMeta").textContent = state.last_event ? cardTitle(state.last_event) : "-";
-  $("eventCard").textContent = renderCard(state.last_event);
+  $("turnBadge").textContent = `回合 ${state.turn}`;
+  $("statusLine").textContent = `事件池 ${state.counts.event_pool} · 注入 ${state.counts.injected_event_pool}`;
+  $("poolMeta").textContent = `事件 ${state.counts.event_pool} / 注入 ${state.counts.injected_event_pool}`;
+  $("eventCard").textContent = shortEffect(state.last_event);
   $("eventCard").classList.toggle("empty", !state.last_event);
-  renderFactions();
   renderHands();
-  renderReference();
-}
-
-function renderFactions() {
-  $("factions").innerHTML = bootstrap.players.map((faction) => `
-    <div class="faction" style="--swatch:${colors[faction.code] || "#9c8b71"}">
-      <img src="${portraits[faction.code] || ""}" alt="">
-      <div>
-        <h3>${faction.leader}</h3>
-        <small>${faction.code} · ${faction.name}</small>
-        <small>Deck ${state.counts.players[faction.code]?.deck ?? 0} · Hand ${state.counts.players[faction.code]?.hand ?? 0}</small>
-      </div>
-    </div>
-  `).join("");
 }
 
 function renderHands() {
   $("hands").innerHTML = Object.entries(state.players).map(([player, payload]) => {
+    const faction = bootstrap.players.find((item) => item.code === player);
     const cards = payload.hand.map((id) => cardIndex[id]).filter(Boolean);
-    const body = cards.length ? cards.map((card) => `
-      <div class="mini-card">
-        <span>${card.name}<small class="tag">${card.category || "function"}</small></span>
-        <button data-use="${card.id}" data-player="${player}" title="Use card">✓</button>
+    const body = cards.length
+      ? cards.map((card) => `
+        <div class="hand-card">
+          <div>
+            <b>${card.name}</b>
+            <small>${card.category || "function"}</small>
+          </div>
+          <button data-use="${card.id}" data-player="${player}" title="打出功能卡">打出</button>
+        </div>
+      `).join("")
+      : `<div class="hand-card muted">無手牌</div>`;
+    return `
+      <div class="hand">
+        <div class="hand-head">
+          <img src="${portraits[player] || ""}" alt="">
+          <div>
+            <h3>${player} · ${faction?.leader || player}</h3>
+            <small>牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length} · 棄牌 ${payload.discard.length}</small>
+          </div>
+        </div>
+        ${body}
       </div>
-    `).join("") : `<div class="mini-card"><span>No cards</span></div>`;
-    return `<div class="hand"><h3>${player}</h3>${body}</div>`;
+    `;
   }).join("");
 
   document.querySelectorAll("[data-use]").forEach((button) => {
@@ -98,43 +92,31 @@ function renderHands() {
       state = result.state;
       render();
       if (result.injected.length) {
-        $("eventCard").textContent = `Injected into event pool:\n\n${result.injected.map(cardTitle).join("\n")}`;
+        $("eventCard").textContent = `功能卡已打出：${result.card.name}\n\n注入事件池：\n${result.injected.map(cardTitle).join("\n")}`;
         $("eventCard").classList.remove("empty");
       }
     });
   });
 }
 
-function renderReference() {
-  const mode = $("referenceMode").value;
-  const query = $("referenceSearch").value.trim().toLowerCase();
-  let items = [];
-  if (mode === "function") items = bootstrap.cards.function;
-  if (mode === "event") items = bootstrap.cards.event;
-  if (mode === "injected") items = bootstrap.cards.injected_event;
-  if (mode === "npc") items = bootstrap.npc_factions;
-  if (mode === "foreign") items = Object.values(bootstrap.foreign_powers.powers);
-
-  const filtered = items.filter((item) => JSON.stringify(item).toLowerCase().includes(query)).slice(0, 80);
-  $("referenceList").innerHTML = filtered.map((item) => {
-    if (mode === "npc") {
-      return `<article class="reference-item"><h3>${item.name}<span class="tag">${item.code}</span></h3><p>${item.generals.join("、")}</p></article>`;
-    }
-    if (mode === "foreign") {
-      return `<article class="reference-item"><h3>${item.display_name}</h3><p>${(item.territories || []).join("、")}</p></article>`;
-    }
-    return `<article class="reference-item"><h3>${cardTitle(item)}</h3><p>${item.effect || ""}</p></article>`;
-  }).join("");
+function setupBoardTabs() {
+  document.querySelectorAll("[data-board]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-board]").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      $("boardFrame").src = button.dataset.board;
+    });
+  });
 }
 
 function setupCombatDefaults() {
   $("armyA").value = JSON.stringify({
-    name: "A Test Army",
+    name: "北伐第一軍",
     units: { infantry: 10, cavalry: 2, artillery: 2, machine_gun: 2 },
     tactic: "normal_advance",
   }, null, 2);
   $("armyB").value = JSON.stringify({
-    name: "B Test Army",
+    name: "直系守軍",
     units: { infantry: 9, cavalry: 1, artillery: 2, machine_gun: 3 },
     tactic: "layered_delaying",
   }, null, 2);
@@ -145,6 +127,7 @@ async function boot() {
   indexCards();
   state = await api("/api/new-game", { players: bootstrap.players.map((p) => p.code) });
   $("playerSelect").innerHTML = bootstrap.players.map((p) => `<option value="${p.code}">${p.code} · ${p.leader}</option>`).join("");
+  setupBoardTabs();
   setupCombatDefaults();
   render();
 }
@@ -171,9 +154,6 @@ $("drawFunction").addEventListener("click", async () => {
   state = result.state;
   render();
 });
-
-$("referenceMode").addEventListener("change", renderReference);
-$("referenceSearch").addEventListener("input", renderReference);
 
 $("runCombat").addEventListener("click", async () => {
   try {
