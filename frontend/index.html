@@ -3,68 +3,154 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>北伐風雲 Playtest Board</title>
+  <title>北伐風雲 Northern Expedition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <h1>北伐風雲</h1>
-        <p id="statusLine">戰略地圖載入中</p>
-      </div>
-      <nav class="board-tabs" aria-label="Board views">
-        <button class="tab active" data-board="/pj/北伐風雲_整合遊戲介面.html">整合戰棋</button>
-        <button class="tab" data-board="/pj/北伐風雲_地圖.html">戰略地圖</button>
-        <button class="tab" data-board="/pj/北伐風雲_陣營操作板.html">陣營操作板</button>
-        <button class="tab" data-board="/pj/北伐風雲_事件卡.html">事件卡池</button>
-      </nav>
-      <div class="turn-tools">
-        <button id="newGame" title="重開新局">↺</button>
-        <button id="nextTurn" class="primary" title="進入下一回合">下一回合</button>
-        <select id="playerSelect" title="抽取功能卡玩家"></select>
-        <button id="drawFunction" title="抽功能卡">抽功能</button>
-        <button id="drawEvent" title="抽事件卡">抽事件</button>
-      </div>
-    </header>
+  <!-- Top Bar -->
+  <header class="game-topbar">
+    <div class="topbar-left">
+      <h1 class="game-title">北伐風雲</h1>
+      <span class="turn-indicator" id="turnBadge">回合 1</span>
+    </div>
+    <div class="topbar-center">
+      <button class="topbar-btn" data-panel="generals">將領樹</button>
+      <button class="topbar-btn" data-panel="recruitment">募兵</button>
+      <button class="topbar-btn" data-panel="economy">經濟</button>
+      <button class="topbar-btn" data-panel="foreign">外交</button>
+      <button class="topbar-btn feature-cards" data-panel="cards">手牌</button>
+    </div>
+    <div class="topbar-right">
+      <div class="faction-stats" id="factionStats" aria-label="陣營資源"></div>
+      <select id="playerSelect" class="faction-select"></select>
+      <button id="newGame" class="topbar-btn topbar-icon-btn" title="重新開始" aria-label="重新開始">↺</button>
+    </div>
+  </header>
 
-    <main class="board-layout">
-      <section class="board-stage" aria-label="Playable board">
-        <iframe id="boardFrame" title="北伐風雲 board" src="/pj/北伐風雲_整合遊戲介面.html"></iframe>
-      </section>
-
-      <aside class="command-rail">
-        <section class="rail-panel current-event">
-          <div class="panel-title">
-            <h2>本回合事件</h2>
-            <span id="turnBadge">回合 0</span>
-          </div>
-          <article id="eventCard" class="event-card empty">尚未抽事件。按「下一回合」會自動抽世界事件並為各玩家抽功能卡。</article>
-        </section>
-
-        <section class="rail-panel faction-strip">
-          <div class="panel-title">
-            <h2>玩家手牌</h2>
-            <span id="poolMeta">-</span>
-          </div>
-          <div id="hands" class="hands"></div>
-        </section>
-
-        <section class="rail-panel force-tools">
-          <div class="panel-title">
-            <h2>戰鬥快算</h2>
-            <button id="runCombat" title="Run combat">執行</button>
-          </div>
-          <div class="combat-grid">
-            <label>A 軍 JSON<textarea id="armyA" spellcheck="false"></textarea></label>
-            <label>B 軍 JSON<textarea id="armyB" spellcheck="false"></textarea></label>
-          </div>
-          <pre id="combatResult">等待戰鬥輸入。</pre>
-        </section>
-      </aside>
-    </main>
+  <!-- Main Map -->
+  <main class="map-container">
+    <div class="map-stage" id="mapStage">
+      <canvas id="mapCanvas" width="1800" height="1200"></canvas>
+      <svg id="armyOverlay" width="1800" height="1200" aria-label="軍隊標記"></svg>
+    </div>
+  </main>
+  <div class="map-zoom-controls" aria-label="地圖縮放">
+    <button id="zoomOut" title="縮小" aria-label="縮小">−</button>
+    <input id="zoomRange" type="range" min="60" max="200" step="10" value="100" aria-label="地圖縮放比例">
+    <button id="zoomIn" title="放大" aria-label="放大">+</button>
+    <button id="zoomReset" title="重設縮放" aria-label="重設縮放">↺</button>
   </div>
 
+  <!-- Phase Banner (top overlay) -->
+  <div class="phase-banner" id="phaseBanner">
+    <span class="phase-label">回合制策略</span>
+  </div>
+
+  <!-- Function-card hand -->
+  <section class="hand-dock" id="handDock" aria-label="功能卡手牌">
+    <div class="dock-header">
+      <span>功能卡</span>
+      <span class="dock-count" id="handCount">0 / 4</span>
+    </div>
+    <div class="hand-cards" id="handCards"></div>
+  </section>
+
+  <aside class="tile-info-dock" id="tileInfoDock" aria-label="地格情報">
+    <div class="tile-info" id="tileInfo" hidden></div>
+  </aside>
+
+  <aside class="battle-report-dock" id="battleReportDock" aria-label="戰鬥情報">
+    <div class="battle-panel" id="battlePanel" hidden></div>
+  </aside>
+
+  <!-- Pending unit orders and turn notifications -->
+  <aside class="turn-dock" id="turnDock" aria-label="待命軍隊">
+    <button class="inbox-badge" id="dealInboxBadge" title="待處理交易" aria-label="待處理交易" hidden>0</button>
+    <div class="dock-header">
+      <span id="pendingTitle">待命軍隊</span>
+      <span class="dock-count" id="pendingCount">0</span>
+    </div>
+    <div class="army-detail" id="armyDetail" hidden></div>
+    <div class="pending-list" id="pendingList"></div>
+    <div class="turn-notification" id="turnNotification" hidden></div>
+    <div class="turn-dock-actions">
+      <button class="undo-order-btn" id="undoOrderBtn" title="撤銷本回合上一道軍令" disabled>↶</button>
+      <button class="event-history-btn feature-events" id="eventHistoryBtn">
+        <span class="event-badge" id="eventBadge">!</span>
+        <span>事件</span>
+      </button>
+      <button class="end-turn-btn" id="endTurnBtn">
+        <span id="endTurnLabel">處理軍令</span>
+        <span class="turn-arrow">→</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="ui-tooltip" id="uiTooltip" role="tooltip" hidden></div>
+
+  <!-- Overlay Panels (hidden by default) -->
+  <div class="overlay-panel panel-large" id="panelGenerals">
+    <div class="panel-header">
+      <h2>將領樹</h2>
+      <button class="panel-close" data-close="generals">×</button>
+    </div>
+    <div class="panel-content" id="generalsContent"></div>
+  </div>
+
+  <div class="overlay-panel" id="panelRecruitment">
+    <div class="panel-header">
+      <h2>募兵徵將</h2>
+      <button class="panel-close" data-close="recruitment">×</button>
+    </div>
+    <div class="panel-content" id="recruitmentContent"></div>
+  </div>
+
+  <div class="overlay-panel" id="panelEconomy">
+    <div class="panel-header">
+      <h2>經濟建設</h2>
+      <button class="panel-close" data-close="economy">×</button>
+    </div>
+    <div class="panel-content" id="economyContent"></div>
+  </div>
+
+  <div class="overlay-panel" id="panelForeign">
+    <div class="panel-header">
+      <h2>列強外交</h2>
+      <button class="panel-close" data-close="foreign">×</button>
+    </div>
+    <div class="panel-content" id="foreignContent"></div>
+  </div>
+
+  <div class="overlay-panel" id="panelCards">
+    <div class="panel-header">
+      <h2>功能卡</h2>
+      <button class="panel-close" data-close="cards">×</button>
+    </div>
+    <div class="panel-content" id="cardsContent"></div>
+  </div>
+
+  <!-- Event Modal -->
+  <div class="event-modal" id="eventModal">
+    <div class="event-modal-content">
+      <h2>本回合世界事件</h2>
+      <div class="event-card-display" id="eventCardDisplay"></div>
+      <button class="event-modal-close" id="eventModalClose">明白了</button>
+    </div>
+  </div>
+
+  <!-- Event History Panel -->
+  <div class="overlay-panel" id="panelEventHistory">
+    <div class="panel-header">
+      <h2>事件歷史</h2>
+      <button class="panel-close" data-close="eventHistory">×</button>
+    </div>
+    <div class="panel-content" id="eventHistoryContent"></div>
+  </div>
+
+  <script type="module" src="/map.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

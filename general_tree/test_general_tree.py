@@ -15,6 +15,7 @@ from general_tree import (
     record_battle_loss,
     recruit_general,
     set_body_guard_level,
+    transfer_troops_between_absolute_loyal_pair,
     validate_tree,
 )
 
@@ -111,6 +112,25 @@ class GeneralTreeTests(unittest.TestCase):
 
         add_loyalty(tree, "bai_chongxi", -99)
         self.assertEqual(tree["generals"]["bai_chongxi"]["loyalty"], 0.0)
+
+    def test_absolute_loyalty_is_fixed_at_ten(self):
+        tree = load_template()
+        add_loyalty(tree, "he_yingqin", -99)
+        record_battle_loss(tree, "he_yingqin", {"infantry": 5})
+
+        self.assertEqual(tree["generals"]["he_yingqin"]["loyalty"], 10)
+
+    def test_absolute_loyal_pair_can_transfer_troops(self):
+        tree = load_template()
+        transfer_troops_between_absolute_loyal_pair(
+            tree,
+            from_general_id="chiang_kai_shek",
+            to_general_id="he_yingqin",
+            units={"infantry": 2},
+        )
+
+        self.assertEqual(tree["generals"]["chiang_kai_shek"]["units"]["infantry"], 16.0)
+        self.assertEqual(tree["generals"]["he_yingqin"]["units"]["infantry"], 16.0)
 
     def test_body_guard_level_is_general_state(self):
         tree = load_template()

@@ -111,8 +111,8 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 59.0)
-        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 59.0)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 57.0)
+        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 57.0)
         artillery_attack = [
             attack
             for attack in result["log"][0]["attacks"]
@@ -136,7 +136,7 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 56.0)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 54.0)
         self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 60.0)
 
         focused_attacks = [
@@ -160,12 +160,12 @@ class CombatSimulationTests(unittest.TestCase):
 
         artillery_attack = result["log"][0]["attacks"][0]
         self.assertEqual(artillery_attack["target_section"], "line")
-        self.assertEqual(artillery_attack["damage"], 4.0)
+        self.assertEqual(artillery_attack["damage"], 4.5)
         damage_by_unit = {
             target["unit"]: target["damage"]
             for target in artillery_attack["damage_by_target"]
         }
-        self.assertEqual(damage_by_unit["infantry"], 1.0)
+        self.assertEqual(damage_by_unit["infantry"], 1.5)
         self.assertEqual(damage_by_unit["machine_gun"], 3.0)
 
     def test_attack_matrix_makes_machine_guns_better_than_artillery_against_cavalry(self):
@@ -214,7 +214,7 @@ class CombatSimulationTests(unittest.TestCase):
         self.assertTrue(b_artillery_attack["forced_contact"])
         self.assertEqual(b_artillery_attack["target_armies"], ["A Screen"])
         self.assertEqual(result["remaining"]["A"]["raw_hp"]["artillery"], 2.0)
-        self.assertEqual(result["remaining"]["A"]["raw_hp"]["cavalry"], 2.0)
+        self.assertEqual(result["remaining"]["A"]["raw_hp"]["cavalry"], 3.0)
 
     def test_last_stand_holds_longer_than_layered_delaying(self):
         layered = TACTICS["layered_delaying"]["threshold"] / TACTICS["layered_delaying"]["harm_taken_multiplier"]
@@ -232,7 +232,65 @@ class CombatSimulationTests(unittest.TestCase):
         pursuit = result["log"][-1]
         self.assertEqual(pursuit["phase"], "pursuit")
         self.assertEqual(pursuit["cavalry"], 3)
-        self.assertEqual(pursuit["casualty_multiplier"], 0.85)
+        self.assertTrue(pursuit["eligible"])
+        damage = {target["unit"]: target["applied_damage"] for target in pursuit["damage_by_target"]}
+        self.assertEqual(damage["infantry"], 6.0)
+        self.assertAlmostEqual(damage["machine_gun"], 1.5)
+        self.assertEqual(pursuit["after"]["units"]["infantry"], 3)
+        self.assertEqual(pursuit["after"]["units"]["machine_gun"], 0)
+
+    def test_loser_cavalry_blocks_pursuit_damage(self):
+        result = simulate_battle(
+            {"units": {"infantry": 8, "cavalry": 3, "artillery": 3}},
+            {"units": {"infantry": 7, "cavalry": 1, "machine_gun": 2}},
+            max_rounds=5,
+        )
+
+        pursuit = result["log"][-1]
+        self.assertEqual(pursuit["phase"], "pursuit")
+        self.assertFalse(pursuit["eligible"])
+        self.assertEqual(pursuit["reason"], "loser still has cavalry covering the retreat")
+        self.assertEqual(pursuit["before"], pursuit["after"])
+
+    def test_initial_units_preserve_retreat_baseline_between_api_rounds(self):
+        first = simulate_battle(
+            {"name": "A", "units": {"infantry": 20}, "tactic": "normal_advance"},
+            {"name": "B", "units": {"infantry": 20}, "tactic": "last_stand"},
+            max_rounds=1,
+        )
+        remaining_a = first["remaining"]["A"]["units"]
+        remaining_b = first["remaining"]["B"]["units"]
+        second = simulate_battle(
+            {
+                "name": "A",
+                "units": remaining_a,
+                "initial_units": {"infantry": 20},
+                "tactic": "normal_advance",
+            },
+            {
+                "name": "B",
+                "units": remaining_b,
+                "initial_units": {"infantry": 20},
+                "tactic": "last_stand",
+            },
+            max_rounds=1,
+        )
+
+        self.assertEqual(second["winner"], "B")
+        self.assertGreater(second["remaining"]["A"]["units"]["infantry"], 0)
+
+    def test_retreat_threshold_prevents_annihilation_before_pursuit(self):
+        result = simulate_battle(
+            {"units": {"artillery": 20}, "modifiers": [{"stat": "harm_taken", "multiplier": 0.01}]},
+            {"units": {"infantry": 10}, "tactic": "last_stand"},
+            max_rounds=1,
+        )
+
+        self.assertEqual(result["winner"], "A")
+        self.assertGreater(result["log"][0]["remaining"]["B"]["units"]["infantry"], 0)
+        pursuit = next(entry for entry in result["log"] if entry.get("phase") == "pursuit")
+        self.assertEqual(pursuit["cavalry"], 0)
+        self.assertEqual(pursuit["before"]["units"], pursuit["after"]["units"])
 
 
 if __name__ == "__main__":

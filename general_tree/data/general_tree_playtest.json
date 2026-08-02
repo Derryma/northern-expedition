@@ -1,19 +1,19 @@
 {
-  "version": "experimental-0.1",
+  "version": "playtest-0.1",
   "great_general_id": "chiang_kai_shek",
   "generals": {
     "chiang_kai_shek": {
       "id": "chiang_kai_shek",
-      "name": "Chiang Kai-shek",
+      "name": "蔣介石",
       "role": "great_general",
-      "faction": "中央軍",
+      "faction": "Central Army",
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
       "body_guard_level": null,
       "command_cap": 80,
       "traits": ["shock_column_leader"],
-      "skills": [],
+      "skills": ["fortress_builder"],
       "units": {
         "infantry": 18,
         "cavalry": 2,
@@ -27,9 +27,9 @@
     },
     "he_yingqin": {
       "id": "he_yingqin",
-      "name": "He Yingqin",
+      "name": "何應欽",
       "role": "lieutenant_general",
-      "faction": "中央軍",
+      "faction": "Central Army",
       "core_faction": true,
       "loyalty": 10,
       "absolute_loyalty": true,
@@ -45,15 +45,15 @@
         "machine_gun": 4
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 2,
-      "subordinates": ["xue_yue"],
+      "subordinate_slots": 0,
+      "subordinates": [],
       "status": "active"
     },
     "bai_chongxi": {
       "id": "bai_chongxi",
-      "name": "Bai Chongxi",
+      "name": "白崇禧",
       "role": "lieutenant_general",
-      "faction": "桂系",
+      "faction": "Guangxi Clique",
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
@@ -68,22 +68,22 @@
         "machine_gun": 3
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 2,
-      "subordinates": ["li_zongren"],
+      "subordinate_slots": 0,
+      "subordinates": [],
       "status": "active"
     },
     "tang_shengzhi": {
       "id": "tang_shengzhi",
-      "name": "Tang Shengzhi",
+      "name": "唐生智",
       "role": "lieutenant_general",
-      "faction": "湘系",
+      "faction": "Hunan Army",
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 34,
       "traits": ["local_supply_boss"],
-      "skills": [],
+      "skills": ["pontoon_bridge"],
       "units": {
         "infantry": 10,
         "cavalry": 3,
@@ -91,52 +91,6 @@
         "machine_gun": 2
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 2,
-      "subordinates": [],
-      "status": "active"
-    },
-    "xue_yue": {
-      "id": "xue_yue",
-      "name": "Xue Yue",
-      "role": "major_general",
-      "faction": "中央軍",
-      "core_faction": true,
-      "loyalty": 7,
-      "loyalty_exempt": false,
-      "body_guard_level": null,
-      "command_cap": 20,
-      "traits": ["layered_defender"],
-      "skills": ["fortress_builder"],
-      "units": {
-        "infantry": 8,
-        "cavalry": 0,
-        "artillery": 1,
-        "machine_gun": 2
-      },
-      "parent_id": "he_yingqin",
-      "subordinate_slots": 0,
-      "subordinates": [],
-      "status": "active"
-    },
-    "li_zongren": {
-      "id": "li_zongren",
-      "name": "Li Zongren",
-      "role": "major_general",
-      "faction": "桂系",
-      "core_faction": false,
-      "loyalty": 6,
-      "loyalty_exempt": false,
-      "body_guard_level": null,
-      "command_cap": 24,
-      "traits": ["cavalry_screen_commander"],
-      "skills": [],
-      "units": {
-        "infantry": 9,
-        "cavalry": 2,
-        "artillery": 1,
-        "machine_gun": 2
-      },
-      "parent_id": "bai_chongxi",
       "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>北伐風雲 - 簡化地圖</title>
+<style>
+  body { margin: 0; background: #2a2520; }
+  #mapContainer { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+  svg { width: 100%; height: 100%; }
+
+  /* Province styles */
+  .province {
+    fill: #3a3530;
+    stroke: #6b5c38;
+    stroke-width: 2;
+    transition: fill 0.2s;
+    cursor: pointer;
+  }
+  .province:hover { fill: #4a4540; }
+
+  /* Faction colors */
+  .province.faction-N { fill: rgba(249, 168, 37, 0.3); }
+  .province.faction-F { fill: rgba(84, 110, 122, 0.3); }
+  .province.faction-W { fill: rgba(106, 27, 154, 0.3); }
+  .province.faction-S { fill: rgba(46, 125, 50, 0.3); }
+
+  /* Province labels */
+  .province-label {
+    font-size: 14px;
+    fill: #f3ecdb;
+    font-weight: 600;
+    pointer-events: none;
+    text-anchor: middle;
+  }
+
+  /* Army markers */
+  .army-marker {
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .army-marker:hover {
+    transform: scale(1.1);
+  }
+
+  .army-designation {
+    font-size: 16px;
+    font-weight: 700;
+    fill: white;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+
+  .army-halo {
+    fill: none;
+    stroke: #ffd700;
+    stroke-width: 3;
+    opacity: 0;
+    animation: pulse 2s infinite;
+  }
+
+  .army-marker.unmoved .army-halo {
+    opacity: 1;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.8; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(1.2); }
+  }
+</style>
+</head>
+<body>
+  <div id="mapContainer">
+    <svg viewBox="0 0 1200 900" id="map">
+      <defs>
+        <filter id="shadow">
+          <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.5"/>
+        </filter>
+      </defs>
+
+      <g id="provinces"></g>
+      <g id="armies"></g>
+    </svg>
+  </div>
+
+  <script src="china_map_data.js"></script>
+  <script src="china_map.js"></script>
+</body>
+</html>

@@ -70,6 +70,8 @@ def validate_tree(tree: GeneralTree) -> GeneralTree:
         loyalty = general.get("loyalty")
         if loyalty is not None and not general.get("loyalty_exempt", False):
             _set_loyalty(general, loyalty)
+        if _is_absolute_loyal(general):
+            general["loyalty"] = 10
         body_guard_level = general.get("body_guard_level")
         if body_guard_level not in BODY_GUARD_LEVELS:
             raise ValueError(f"{general_id} has invalid body_guard_level {body_guard_level!r}")
@@ -125,6 +127,7 @@ def recruit_general(
         "faction": str(general.get("faction", parent.get("faction", "unknown"))),
         "core_faction": bool(general.get("core_faction", False)),
         "loyalty": general.get("loyalty"),
+        "absolute_loyalty": bool(general.get("absolute_loyalty", False)),
         "loyalty_exempt": bool(general.get("loyalty_exempt", False)),
         "body_guard_level": general.get("body_guard_level"),
         "command_cap": command_cap,
@@ -138,6 +141,8 @@ def recruit_general(
     }
     if new_general["loyalty"] is not None:
         _set_loyalty(new_general, new_general["loyalty"])
+    if _is_absolute_loyal(new_general):
+        new_general["loyalty"] = 10
 
     generals[general_id] = new_general
     _subordinates(parent).append(general_id)
@@ -203,7 +208,11 @@ def record_battle_loss(
     general["units"] = units
 
     lost_strength = calculate_force_strength(actual_lost)
-    if not general.get("loyalty_exempt", False) and general.get("loyalty") is not None:
+    if (
+        not general.get("loyalty_exempt", False)
+        and not _is_absolute_loyal(general)
+        and general.get("loyalty") is not None
+    ):
         _set_loyalty(general, float(general["loyalty"]) - lost_strength * loyalty_loss_per_force_point)
     return tree
 
@@ -212,9 +221,53 @@ def add_loyalty(tree: GeneralTree, general_id: str, amount: float) -> GeneralTre
     """Directly add or remove loyalty for event effects."""
 
     general = _general(tree, general_id)
-    if general.get("loyalty_exempt", False) or general.get("loyalty") is None:
+    if general.get("loyalty_exempt", False) or _is_absolute_loyal(general) or general.get("loyalty") is None:
         return tree
     _set_loyalty(general, float(general["loyalty"]) + amount)
+    return tree
+
+
+def transfer_troops_between_absolute_loyal_pair(
+    tree: GeneralTree,
+    *,
+    from_general_id: str,
+    to_general_id: str,
+    units: UnitBlock,
+    allow_over_cap: bool = False,
+) -> GeneralTree:
+    """Move troops between a great general and the faction's absolute loyalist.
+
+    Map adjacency is intentionally checked by the caller. This helper enforces
+    only the hierarchy/loyalty exception and command-cap accounting.
+    """
+
+    source = _general(tree, from_general_id)
+    target = _general(tree, to_general_id)
+    pair_roles = {source.get("role"), target.get("role")}
+    if pair_roles != {"great_general", "lieutenant_general"}:
+        raise ValueError("free transfer requires a great general and one lieutenant general")
+    if source.get("faction") != target.get("faction"):
+        raise ValueError("free transfer requires the same faction")
+    if not (_is_absolute_loyal(source) or _is_absolute_loyal(target)):
+        raise ValueError("one side of the transfer must have absolute loyalty")
+
+    moving = _clean_units(units)
+    source_units = _clean_units(source.get("units", {}))
+    target_units = _clean_units(target.get("units", {}))
+    for unit, count in moving.items():
+        if count > source_units.get(unit, 0.0):
+            raise ValueError(f"not enough {unit} to transfer")
+        source_units[unit] -= count
+        target_units[unit] += count
+
+    if not allow_over_cap:
+        target_force = calculate_force_strength(target_units)
+        command_cap = float(target.get("command_cap", 0))
+        if target_force > command_cap:
+            raise ValueError(f"transfer would exceed command cap {command_cap}")
+
+    source["units"] = source_units
+    target["units"] = target_units
     return tree
 
 
@@ -283,7 +336,7 @@ def kill_general(tree: GeneralTree, general_id: str) -> GeneralTree:
     general["status"] = "killed"
     for child_id in _descendants(tree, general_id):
         child = _general(tree, child_id)
-        if child.get("role") == "major_general" and not child.get("loyalty_exempt", False):
+        if child.get("role") == "major_general" and not child.get("loyalty_exempt", False) and not _is_absolute_loyal(child):
             child["loyalty"] = 0
     return tree
 
@@ -298,7 +351,7 @@ def defect_general(tree: GeneralTree, general_id: str, new_faction: str) -> Gene
     for branch_id in (general_id, *_descendants(tree, general_id)):
         general = _general(tree, branch_id)
         general["faction"] = new_faction
-        if not general.get("loyalty_exempt", False) and general.get("loyalty") is not None:
+        if not general.get("loyalty_exempt", False) and not _is_absolute_loyal(general) and general.get("loyalty") is not None:
             general["loyalty"] = 1
     return tree
 
@@ -351,7 +404,14 @@ def _descendants(tree: GeneralTree, general_id: str) -> list[str]:
 
 
 def _set_loyalty(general: Dict[str, Any], value: Any) -> None:
+    if _is_absolute_loyal(general):
+        general["loyalty"] = 10
+        return
     general["loyalty"] = max(0.0, min(10.0, float(value)))
+
+
+def _is_absolute_loyal(general: Mapping[str, Any]) -> bool:
+    return bool(general.get("absolute_loyalty", False))
 
 
 def _clean_units(units: UnitBlock) -> Dict[str, float]:

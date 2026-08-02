@@ -21,6 +21,7 @@ DATA_PATHS = {
     "unit_stats": "comabt_system/data/unit_stats.json",
     "tactics": "comabt_system/data/tactics.json",
     "general_traits": "comabt_system/data/general_traits.json",
+    "strategic_map": "scenario/data/strategic_map.json",
 }
 
 
@@ -54,4 +55,3 @@ def _index_cards(cards: list[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             raise ValueError(f"duplicate card id: {card_id}")
         indexed[card_id] = card
     return indexed
-

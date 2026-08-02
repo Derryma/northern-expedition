@@ -1,0 +1,99 @@
+{
+  "version": "fengtian-0.1",
+  "great_general_id": "zhang_zuolin",
+  "generals": {
+    "zhang_zuolin": {
+      "id": "zhang_zuolin",
+      "name": "張作霖",
+      "role": "great_general",
+      "faction": "Fengtian Clique",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 80,
+      "traits": ["warlord_supremacy"],
+      "skills": [],
+      "units": {
+        "infantry": 16,
+        "cavalry": 4,
+        "artillery": 3,
+        "machine_gun": 3
+      },
+      "parent_id": null,
+      "subordinate_slots": 3,
+      "subordinates": ["zhang_xueliang", "yang_yuting", "zhang_zongchang"],
+      "status": "active"
+    },
+    "zhang_xueliang": {
+      "id": "zhang_xueliang",
+      "name": "張學良",
+      "role": "lieutenant_general",
+      "faction": "Fengtian Clique",
+      "core_faction": true,
+      "loyalty": 10,
+      "absolute_loyalty": true,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 38,
+      "traits": ["young_marshal"],
+      "skills": ["pontoon_bridge"],
+      "units": {
+        "infantry": 12,
+        "cavalry": 3,
+        "artillery": 2,
+        "machine_gun": 2
+      },
+      "parent_id": "zhang_zuolin",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "yang_yuting": {
+      "id": "yang_yuting",
+      "name": "楊宇霆",
+      "role": "lieutenant_general",
+      "faction": "Fengtian Clique",
+      "core_faction": true,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 36,
+      "traits": ["industrial_organizer"],
+      "skills": ["fortress_builder"],
+      "units": {
+        "infantry": 10,
+        "cavalry": 2,
+        "artillery": 2,
+        "machine_gun": 3
+      },
+      "parent_id": "zhang_zuolin",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "zhang_zongchang": {
+      "id": "zhang_zongchang",
+      "name": "張宗昌",
+      "role": "lieutenant_general",
+      "faction": "Shandong Army",
+      "core_faction": false,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 32,
+      "traits": ["white_russian_mercenaries"],
+      "skills": [],
+      "units": {
+        "infantry": 14,
+        "cavalry": 2,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "zhang_zuolin",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

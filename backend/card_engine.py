@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import math
 from copy import deepcopy
 from typing import Any, Dict, Iterable, Optional
 
@@ -10,6 +11,102 @@ from .data_store import load_game_data
 
 
 DEFAULT_PLAYERS = ("F", "W", "S", "N")
+MAX_HAND_SIZE = 4
+FUNCTION_CARD_DRAW_COST = 10
+WARLORD_CODES = ("F", "W", "S", "N", "Y", "G", "M", "H", "C", "D", "Q")
+UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
+RECRUIT_COSTS = {
+    "infantry": {"cash": 3, "factory": 1},
+    "cavalry": {"cash": 6, "factory": 1},
+    "machine_gun": {"cash": 9, "factory": 3},
+    "artillery": {"cash": 14, "factory": 4},
+}
+LOYALTY_FUNCTION_CARD_IDS = ("unit_promotion", "local_autonomy_agitation")
+ABSOLUTE_LOYAL_GENERAL_IDS = {
+    "zhang_xueliang",
+    "jin_yun_e",
+    "lu_xiangting",
+    "he_yingqin",
+}
+FUNCTION_CARD_COPIES = {
+    "unit_promotion": 4,
+    "local_autonomy_agitation": 4,
+    "reserve_gift_infantry": 4,
+    "reserve_gift_cavalry": 2,
+    "reserve_gift_machine_gun": 2,
+    "reserve_gift_artillery": 1,
+    "city_development": 4,
+    "antiwar_speech_infantry": 5,
+    "antiwar_speech_cavalry": 2,
+    "antiwar_speech_machine_gun": 2,
+    "antiwar_speech_artillery": 1,
+    "zhili_infantry_drill": 2,
+    "anti_fengtian_alignment": 2,
+    "marshal_gratitude": 2,
+    "soviet_aid": 2,
+    "whampoa_spirit": 2,
+    "northern_expedition_oath": 2,
+    "overseas_chinese_remittance": 2,
+    "first_united_front": 1,
+    "northeast_army_rearmament": 2,
+    "kwantung_army_exercise": 2,
+    "japanese_colonization_group": 1,
+    "japanese_loan": 2,
+    "manchurian_railway_concession": 2,
+}
+FEATURES = {
+    "events": False,
+    "function_cards": True,
+    "event_interval": 3,
+    "function_card_draw_cost": FUNCTION_CARD_DRAW_COST,
+    "function_card_purchase_limit": 1,
+}
+ECONOMY_SCALE = {"cash": 0.25, "factory": 0.35}
+NORTHEAST_PROVINCES = {"奉天", "吉林", "黑龍江"}
+
+
+def scaled_city_value(city: Dict[str, Any], field: str) -> int:
+    value = int(city.get(field, 0))
+    return max(1, round(value * ECONOMY_SCALE[field])) if value else 0
+
+FACTION_PROFILES = {
+    "F": {
+        "treasury": 75,
+        "income": 55,
+        "debt": 180,
+        "unit_reserve": 41,
+        "unit_reserves": {"infantry": 27, "cavalry": 7, "machine_gun": 4, "artillery": 3},
+        "recruitment_cost_modifier": 1.10,
+        "foreign_relations": {"jp": 5, "su": -3, "uk": 1, "fr": 0, "us": 2},
+    },
+    "W": {
+        "treasury": 50,
+        "income": 40,
+        "debt": 150,
+        "unit_reserve": 30,
+        "unit_reserves": {"infantry": 20, "cavalry": 5, "machine_gun": 3, "artillery": 2},
+        "recruitment_cost_modifier": 1.00,
+        "foreign_relations": {"jp": 0, "su": 2, "uk": -1, "fr": 1, "us": 0},
+    },
+    "S": {
+        "treasury": 65,
+        "income": 58,
+        "debt": 105,
+        "unit_reserve": 34,
+        "unit_reserves": {"infantry": 23, "cavalry": 4, "machine_gun": 4, "artillery": 3},
+        "recruitment_cost_modifier": 0.95,
+        "foreign_relations": {"jp": 2, "su": -2, "uk": 4, "fr": 3, "us": 3},
+    },
+    "N": {
+        "treasury": 40,
+        "income": 34,
+        "debt": 60,
+        "unit_reserve": 25,
+        "unit_reserves": {"infantry": 18, "cavalry": 3, "machine_gun": 2, "artillery": 2},
+        "recruitment_cost_modifier": 0.90,
+        "foreign_relations": {"jp": -4, "su": 5, "uk": 1, "fr": 2, "us": 4},
+    },
+}
 
 
 class GameEngine:
@@ -21,24 +118,76 @@ class GameEngine:
     def new_game(self, *, players: Iterable[str] = DEFAULT_PLAYERS, seed: Optional[int] = None) -> Dict[str, Any]:
         if seed is not None:
             self.random.seed(seed)
-        function_ids = [card["id"] for card in self.data["function_cards"]["cards"]]
+        card_ids = {card["id"] for card in self.data["function_cards"]["cards"]}
         event_ids = [card["id"] for card in self.data["event_cards"]["cards"] if card.get("status") == "active"]
+        cities = self.data["strategic_map"]["cities"]
+
+        def player_state(player: str) -> Dict[str, Any]:
+            profile = deepcopy(FACTION_PROFILES.get(player, {}))
+            function_ids = [
+                card_id
+                for card_id, copies in FUNCTION_CARD_COPIES.items()
+                if card_id in card_ids and self._card_allowed_for_player(card_id, player)
+                for _ in range(copies)
+            ]
+            city_economy = [
+                {
+                    "id": city["id"],
+                    "name": city["name"],
+                    "province": city["province"],
+                    "cash": scaled_city_value(city, "cash"),
+                    "factory": scaled_city_value(city, "factory"),
+                }
+                for city in cities
+                if city["faction"] == player
+            ]
+            profile["city_economy"] = city_economy
+            profile["income"] = sum(city["cash"] for city in city_economy)
+            profile["factory_income"] = sum(city["factory"] for city in city_economy)
+            profile["factory_points"] = profile["factory_income"]
+            profile["warlord_relations"] = {
+                code: {
+                    "status": "peace" if code in DEFAULT_PLAYERS else "war",
+                    "war_started_turn": None if code in DEFAULT_PLAYERS else 0,
+                    "permanent_war": code not in DEFAULT_PLAYERS,
+                }
+                for code in WARLORD_CODES
+                if code != player
+            }
+            profile["pending_deals"] = []
+            profile["army_reinforcements"] = {}
+            profile["id"] = player
+            profile["function_deck"] = list(function_ids)
+            profile["hand"] = []
+            profile["discard"] = []
+            profile["pending_draw"] = None
+            profile["function_purchase_used"] = False
+            profile["timed_effects"] = []
+            profile["last_debt_service"] = None
+            return profile
+
         self.state = {
             "turn": 0,
-            "players": {
-                player: {
-                    "id": player,
-                    "function_deck": list(function_ids),
-                    "hand": [],
-                    "discard": [],
+            "players": {player: player_state(player) for player in players},
+            "city_owners": {city["id"]: city["faction"] for city in cities},
+            "city_development": {},
+            "npc_accounts": {
+                code: {
+                    "treasury": 60,
+                    "unit_reserves": {"infantry": 20, "cavalry": 5, "machine_gun": 3, "artillery": 2},
                 }
-                for player in players
+                for code in WARLORD_CODES
+                if code not in DEFAULT_PLAYERS
             },
             "event_pool": list(event_ids),
             "injected_event_pool": [],
             "event_history": [],
             "turn_log": [],
             "last_event": None,
+            "last_action": None,
+            "recurring_effects": [],
+            "last_economy_log": {},
+            "next_deal_id": 1,
         }
         for player_state in self.state["players"].values():
             self.random.shuffle(player_state["function_deck"])
@@ -54,6 +203,8 @@ class GameEngine:
                     "deck": len(payload["function_deck"]),
                     "hand": len(payload["hand"]),
                     "discard": len(payload["discard"]),
+                    "pending_draw": 1 if payload.get("pending_draw") else 0,
+                    "function_purchase_used": 1 if payload.get("function_purchase_used") else 0,
                 }
                 for player, payload in state["players"].items()
             },
@@ -71,6 +222,9 @@ class GameEngine:
             "tactics": self.data["tactics"],
             "general_traits": self.data["general_traits"],
             "general_skills": self.data["general_skills"],
+            "strategic_map": self._strategic_map_snapshot(),
+            "recruit_costs": RECRUIT_COSTS,
+            "features": FEATURES,
             "cards": {
                 "event": self.data["event_cards"]["cards"],
                 "function": self.data["function_cards"]["cards"],
@@ -78,17 +232,177 @@ class GameEngine:
             },
         }
 
-    def next_turn(self) -> Dict[str, Any]:
+    def next_turn(self, active_player: Optional[str] = None) -> Dict[str, Any]:
+        if active_player is not None:
+            self._player(active_player)
+        blocked_players = [
+            player
+            for player, payload in self.state["players"].items()
+            if FEATURES["function_cards"] and payload.get("pending_draw")
+        ]
+        if blocked_players:
+            names = ", ".join(blocked_players)
+            raise ValueError(f"players must resolve pending card draws first: {names}")
         self.state["turn"] += 1
+        self.state["last_event"] = None
+        economy_log = self._apply_turn_economy()
+        self._tick_timed_effects()
+        for payload in self.state["players"].values():
+            payload["function_purchase_used"] = False
         turn_entry = {
             "turn": self.state["turn"],
-            "event": self.draw_event()["card"],
-            "function_draws": {},
+            "event": None,
+            "function_purchase_offer": active_player if FEATURES["function_cards"] else None,
+            "economy": economy_log,
         }
-        for player in self.state["players"]:
-            turn_entry["function_draws"][player] = self.draw_function(player)["card"]
+        if FEATURES["events"] and self.state["turn"] % FEATURES["event_interval"] == 0:
+            turn_entry["event"] = self.draw_event()["card"]
         self.state["turn_log"].append(turn_entry)
         return {"turn": turn_entry, "state": self.snapshot()}
+
+    def _apply_turn_economy(self) -> Dict[str, Any]:
+        log: Dict[str, Any] = {}
+        for player, payload in self.state["players"].items():
+            gross_income = int(payload.get("income", 0))
+            debt_before = int(round(payload.get("debt", 0)))
+            interest = int(round(debt_before * 0.02)) if debt_before > 0 else 0
+            debt_after_interest = debt_before + interest
+            forced_repayment = min(debt_after_interest, gross_income // 2) if debt_after_interest > 0 else 0
+            net_income = gross_income - forced_repayment
+
+            payload["treasury"] += net_income
+            payload["factory_points"] += int(payload.get("factory_income", 0))
+            payload["debt"] = int(max(0, debt_after_interest - forced_repayment))
+            service = {
+                "gross_income": gross_income,
+                "interest": interest,
+                "forced_repayment": forced_repayment,
+                "net_income": net_income,
+                "debt_before": debt_before,
+                "debt_after": payload["debt"],
+                "cash_effects": [],
+            }
+            payload["last_debt_service"] = service
+            log[player] = deepcopy(service)
+
+        active_recurring = []
+        for effect in self.state.get("recurring_effects", []):
+            if int(effect.get("remaining_turns", 0)) <= 0:
+                continue
+            entries = []
+            for player, amount in effect.get("cash_deltas", {}).items():
+                if player not in self.state["players"]:
+                    continue
+                amount = int(amount)
+                self.state["players"][player]["treasury"] += amount
+                entry = {"effect_id": effect.get("id"), "name": effect.get("name"), "amount": amount}
+                self.state["players"][player]["last_debt_service"].setdefault("cash_effects", []).append(entry)
+                log[player].setdefault("cash_effects", []).append(entry)
+                entries.append({"player": player, "amount": amount})
+            effect["remaining_turns"] = int(effect.get("remaining_turns", 0)) - 1
+            if effect["remaining_turns"] > 0:
+                active_recurring.append(effect)
+        self.state["recurring_effects"] = active_recurring
+        self.state["last_economy_log"] = log
+        return log
+
+    def _tick_timed_effects(self) -> None:
+        for payload in self.state["players"].values():
+            active_effects = []
+            for effect in payload.get("timed_effects", []):
+                remaining = int(effect.get("remaining_turns", 0)) - 1
+                if remaining > 0:
+                    effect["remaining_turns"] = remaining
+                    active_effects.append(effect)
+            payload["timed_effects"] = active_effects
+
+    def _strategic_map_snapshot(self) -> Dict[str, Any]:
+        strategic_map = deepcopy(self.data["strategic_map"])
+        for city in strategic_map.get("cities", []):
+            bonus = self.state.get("city_development", {}).get(city["id"], {})
+            city["cash"] = scaled_city_value(city, "cash") + int(bonus.get("cash", 0))
+            city["factory"] = scaled_city_value(city, "factory") + int(bonus.get("factory", 0))
+            city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["faction"])
+        return strategic_map
+
+    def _city_economy_for(self, player: str) -> list[Dict[str, Any]]:
+        development = self.state.get("city_development", {})
+        return [
+            {
+                "id": city["id"],
+                "name": city["name"],
+                "province": city["province"],
+                "cash": scaled_city_value(city, "cash") + int(development.get(city["id"], {}).get("cash", 0)),
+                "factory": scaled_city_value(city, "factory") + int(development.get(city["id"], {}).get("factory", 0)),
+            }
+            for city in self.data["strategic_map"]["cities"]
+            if self.state["city_owners"].get(city["id"], city["faction"]) == player
+        ]
+
+    def _refresh_city_income(self) -> None:
+        for player, payload in self.state["players"].items():
+            city_economy = self._city_economy_for(player)
+            payload["city_economy"] = city_economy
+            payload["income"] = sum(item["cash"] for item in city_economy)
+            payload["factory_income"] = sum(item["factory"] for item in city_economy)
+
+    def capture_city(self, city_id: str, faction: str) -> Dict[str, Any]:
+        if faction not in WARLORD_CODES:
+            raise ValueError(f"unknown faction {faction!r}")
+        city = next(
+            (item for item in self.data["strategic_map"]["cities"] if item["id"] == city_id),
+            None,
+        )
+        if city is None:
+            raise ValueError(f"unknown city {city_id!r}")
+
+        previous_owner = self.state["city_owners"].get(city_id, city["faction"])
+        self.state["city_owners"][city_id] = faction
+        self._refresh_city_income()
+
+        return {
+            "city": {
+                "id": city["id"],
+                "name": city["name"],
+                "cash": scaled_city_value(city, "cash")
+                + int(self.state.get("city_development", {}).get(city["id"], {}).get("cash", 0)),
+                "factory": scaled_city_value(city, "factory")
+                + int(self.state.get("city_development", {}).get(city["id"], {}).get("factory", 0)),
+            },
+            "previous_owner": previous_owner,
+            "owner": faction,
+            "state": self.snapshot(),
+        }
+
+    def recruit_captive_general(self, player: str) -> Dict[str, Any]:
+        player_state = self._player(player)
+        infantry_cost = 5
+        if player_state["unit_reserves"].get("infantry", 0) < infantry_cost:
+            raise ValueError("recruiting a captive general requires 5 infantry reserves")
+        player_state["unit_reserves"]["infantry"] -= infantry_cost
+        player_state["unit_reserve"] = sum(player_state["unit_reserves"].values())
+        return {"infantry": infantry_cost, "state": self.snapshot()}
+
+    def attempt_defection(self, player: str, loyalty: int) -> Dict[str, Any]:
+        return self.attempt_defection_with_force(player, loyalty, 1)
+
+    def attempt_defection_with_force(self, player: str, loyalty: int, force: float) -> Dict[str, Any]:
+        player_state = self._player(player)
+        loyalty = max(1, min(10, int(loyalty)))
+        force = max(1.0, float(force))
+        cost = int(math.ceil(10 + force * 3 + loyalty * 2))
+        if player_state.get("treasury", 0) < cost:
+            raise ValueError(f"defection attempt requires {cost} cash")
+        player_state["treasury"] -= cost
+        chance = max(0.03, min(0.45, 0.45 - loyalty * 0.04 - force * 0.003))
+        roll = self.random.random()
+        return {
+            "success": roll < chance,
+            "cost": cost,
+            "chance": chance,
+            "roll": roll,
+            "state": self.snapshot(),
+        }
 
     def draw_event(self) -> Dict[str, Any]:
         card_id = self._weighted_event_choice()
@@ -100,23 +414,216 @@ class GameEngine:
 
     def draw_function(self, player: str) -> Dict[str, Any]:
         player_state = self._player(player)
+        if player_state.get("pending_draw"):
+            raise ValueError(f"{player!r} must discard a card before drawing again")
+        if player_state.get("function_purchase_used"):
+            raise ValueError("function card purchase limit reached for this turn")
         if not player_state["function_deck"]:
             player_state["function_deck"] = player_state["discard"]
             player_state["discard"] = []
             self.random.shuffle(player_state["function_deck"])
         if not player_state["function_deck"]:
             raise ValueError("function deck is empty")
+        if player_state.get("treasury", 0) < FUNCTION_CARD_DRAW_COST:
+            raise ValueError(f"drawing a function card requires {FUNCTION_CARD_DRAW_COST} cash")
+        player_state["treasury"] -= FUNCTION_CARD_DRAW_COST
+        player_state["function_purchase_used"] = True
         card_id = player_state["function_deck"].pop()
-        player_state["hand"].append(card_id)
-        return {"card": self._card_template(card_id), "state": self.snapshot()}
+        requires_discard = len(player_state["hand"]) >= MAX_HAND_SIZE
+        if requires_discard:
+            player_state["pending_draw"] = card_id
+        else:
+            player_state["hand"].append(card_id)
+        return {
+            "card": self._card_template(card_id),
+            "requires_discard": requires_discard,
+            "draw_cost": FUNCTION_CARD_DRAW_COST,
+            "state": self.snapshot(),
+        }
 
-    def use_function(self, player: str, card_id: str) -> Dict[str, Any]:
+    def discard_for_draw(self, player: str, card_id: str) -> Dict[str, Any]:
         player_state = self._player(player)
+        pending_card = player_state.get("pending_draw")
+        if not pending_card:
+            raise ValueError(f"{player!r} has no pending card draw")
         if card_id not in player_state["hand"]:
             raise ValueError(f"{card_id!r} is not in {player}'s hand")
         player_state["hand"].remove(card_id)
         player_state["discard"].append(card_id)
+        player_state["hand"].append(pending_card)
+        player_state["pending_draw"] = None
+        return {
+            "discarded": self._card_template(card_id),
+            "received": self._card_template(pending_card),
+            "state": self.snapshot(),
+        }
+
+    def use_function(
+        self,
+        player: str,
+        card_id: str,
+        *,
+        target_general_id: Optional[str] = None,
+        target_owner: Optional[str] = None,
+        target_city_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        player_state = self._player(player)
+        if card_id not in player_state["hand"]:
+            raise ValueError(f"{card_id!r} is not in {player}'s hand")
         card = self._card_template(card_id)
+        self._validate_card_use(player, card)
+        mechanic = card.get("mechanic") or ("loyalty" if card_id in LOYALTY_FUNCTION_CARD_IDS else None)
+        if mechanic is None:
+            raise ValueError("this function card is not implemented in the playtest rules")
+        cost = int(card.get("cost", 0) or 0)
+        if player_state.get("treasury", 0) < cost:
+            raise ValueError(f"using this card requires {cost} cash")
+        loyalty_delta = 0
+        loyalty_delta_all: Optional[Dict[str, Any]] = None
+        reserve_delta: Optional[Dict[str, Any]] = None
+        reserve_deltas: list[Dict[str, Any]] = []
+        city_development: Optional[Dict[str, Any]] = None
+        city_developments: list[Dict[str, Any]] = []
+        cash_delta = 0
+        debt_delta = 0
+        timed_effect: Optional[Dict[str, Any]] = None
+        recurring_effect: Optional[Dict[str, Any]] = None
+        if mechanic == "loyalty":
+            if not target_general_id or not target_owner:
+                raise ValueError("a target general is required")
+            if target_general_id in ABSOLUTE_LOYAL_GENERAL_IDS:
+                raise ValueError("this general has absolute loyalty and cannot be changed by function cards")
+            if card_id == "unit_promotion" and target_owner != player:
+                raise ValueError("unit promotion must target your own general")
+            if card_id == "local_autonomy_agitation" and target_owner == player:
+                raise ValueError("local autonomy agitation must target an opposing general")
+            loyalty_delta = 1 if card_id == "unit_promotion" else -1
+        elif mechanic == "reserve_gain":
+            unit_type = str(card["unit_type"])
+            amount = self.random.randint(int(card.get("min_units", 2)), int(card.get("max_units", 5)))
+            self._add_reserve(player, unit_type, amount)
+            reserve_delta = {"owner": player, "unit_type": unit_type, "amount": amount}
+            reserve_deltas.append(reserve_delta)
+        elif mechanic == "reserve_loss":
+            if not target_owner or target_owner == player or target_owner not in self.state["players"]:
+                raise ValueError("antiwar speech must target another playable faction")
+            target_state = self._player(target_owner)
+            unit_type = str(card["unit_type"])
+            requested = self.random.randint(int(card.get("min_units", 3)), int(card.get("max_units", 5)))
+            amount = min(requested, int(target_state["unit_reserves"].get(unit_type, 0)))
+            self._add_reserve(target_owner, unit_type, -amount)
+            reserve_delta = {"owner": target_owner, "unit_type": unit_type, "amount": -amount}
+            reserve_deltas.append(reserve_delta)
+        elif mechanic == "city_development":
+            if not target_city_id:
+                raise ValueError("city development requires a controlled target city")
+            city_entry = next((item for item in player_state.get("city_economy", []) if item["id"] == target_city_id), None)
+            if city_entry is None:
+                raise ValueError("city development must target your controlled city")
+            cash = self.random.randint(int(card.get("min_cash", 1)), int(card.get("max_cash", 3)))
+            factory = self.random.randint(int(card.get("min_factory", 1)), int(card.get("max_factory", 2)))
+            bonus = self.state.setdefault("city_development", {}).setdefault(target_city_id, {"cash": 0, "factory": 0})
+            bonus["cash"] += cash
+            bonus["factory"] += factory
+            self._refresh_city_income()
+            city_development = {"city_id": target_city_id, "cash": cash, "factory": factory}
+            city_developments.append(city_development)
+        elif mechanic == "joint_reserve_gain":
+            for owner in card.get("owners", []):
+                for unit_type, amount in card.get("unit_reserves", {}).items():
+                    self._add_reserve(str(owner), str(unit_type), int(amount))
+                    reserve_deltas.append({"owner": str(owner), "unit_type": str(unit_type), "amount": int(amount)})
+            reserve_delta = reserve_deltas[0] if reserve_deltas else None
+        elif mechanic == "timed_combat_effect":
+            owners = card.get("effect_owners") or [player]
+            duration = int(card.get("duration_turns", 1))
+            timed_effect = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "kind": "combat_modifier",
+                "remaining_turns": duration,
+                "owners": [str(owner) for owner in owners],
+                "target_faction": card.get("target_faction"),
+                "modifiers": deepcopy(card.get("modifiers", [])),
+            }
+            for owner in owners:
+                self._player(str(owner)).setdefault("timed_effects", []).append(deepcopy(timed_effect))
+        elif mechanic == "recurring_cash_transfer":
+            recurring_effect = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "remaining_turns": int(card.get("duration_turns", 1)),
+                "cash_deltas": deepcopy(card.get("cash_deltas", {})),
+            }
+            self.state.setdefault("recurring_effects", []).append(recurring_effect)
+        elif mechanic == "reserve_debt_bundle":
+            debt_delta = int(card.get("debt", 0))
+            player_state["debt"] = int(round(player_state.get("debt", 0) + debt_delta))
+            for unit_type, amount in card.get("unit_reserves", {}).items():
+                self._add_reserve(player, str(unit_type), int(amount))
+                reserve_deltas.append({"owner": player, "unit_type": str(unit_type), "amount": int(amount)})
+            reserve_delta = reserve_deltas[0] if reserve_deltas else None
+        elif mechanic == "loyalty_all":
+            loyalty_delta_all = {"owner": player, "amount": int(card.get("loyalty_delta", 0))}
+        elif mechanic == "cash_gain":
+            cash_delta = int(card.get("cash", 0))
+            player_state["treasury"] += cash_delta
+        elif mechanic == "reserve_bundle":
+            for unit_type, amount in card.get("unit_reserves", {}).items():
+                self._add_reserve(player, str(unit_type), int(amount))
+                reserve_deltas.append({"owner": player, "unit_type": str(unit_type), "amount": int(amount)})
+            reserve_delta = reserve_deltas[0] if reserve_deltas else None
+        elif mechanic == "regional_city_development":
+            cash = int(card.get("cash", 0))
+            factory = int(card.get("factory", 0))
+            provinces = set(card.get("provinces") or NORTHEAST_PROVINCES)
+            for city in self.data["strategic_map"]["cities"]:
+                owner = self.state["city_owners"].get(city["id"], city["faction"])
+                if owner != player or city.get("province") not in provinces:
+                    continue
+                bonus = self.state.setdefault("city_development", {}).setdefault(city["id"], {"cash": 0, "factory": 0})
+                bonus["cash"] += cash
+                bonus["factory"] += factory
+                city_developments.append({"city_id": city["id"], "cash": cash, "factory": factory})
+            self._refresh_city_income()
+            city_development = city_developments[0] if city_developments else None
+        elif mechanic == "debt_cash":
+            debt_delta = int(card.get("debt", 0))
+            cash_delta = int(card.get("cash", 0))
+            player_state["debt"] = int(round(player_state.get("debt", 0) + debt_delta))
+            player_state["treasury"] += cash_delta
+        elif mechanic == "rail_movement":
+            timed_effect = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "kind": "rail_movement",
+                "remaining_turns": int(card.get("duration_turns", 1)),
+                "owners": [player],
+                "tiles": int(card.get("tiles", 3)),
+            }
+            player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
+        else:
+            raise ValueError("this function card is not implemented in the playtest rules")
+        player_state["treasury"] -= cost
+        player_state["hand"].remove(card_id)
+        player_state["discard"].append(card_id)
+        self.state["last_action"] = {
+            "type": "function_card",
+            "player": player,
+            "card": card,
+            "target_general_id": target_general_id,
+            "target_owner": target_owner,
+            "loyalty_delta": loyalty_delta,
+            "loyalty_delta_all": loyalty_delta_all,
+            "reserve_delta": reserve_delta,
+            "reserve_deltas": reserve_deltas,
+            "city_development": city_development,
+            "city_developments": city_developments,
+            "cash_delta": cash_delta,
+            "debt_delta": debt_delta,
+            "timed_effect": timed_effect,
+            "recurring_effect": recurring_effect,
+        }
         injected = []
         for generated in card.get("generated_event_cards", []):
             generated_id = str(generated["id"])
@@ -126,7 +633,236 @@ class GameEngine:
                 self.state["event_pool"].append(generated_id)
                 self.state["injected_event_pool"].append(generated_id)
             injected.append(template)
-        return {"card": card, "injected": injected, "state": self.snapshot()}
+        return {
+            "card": card,
+            "injected": injected,
+            "target_general_id": target_general_id,
+            "target_owner": target_owner,
+            "loyalty_delta": loyalty_delta,
+            "loyalty_delta_all": loyalty_delta_all,
+            "reserve_delta": reserve_delta,
+            "reserve_deltas": reserve_deltas,
+            "city_development": city_development,
+            "city_developments": city_developments,
+            "cash_delta": cash_delta,
+            "debt_delta": debt_delta,
+            "timed_effect": timed_effect,
+            "recurring_effect": recurring_effect,
+            "state": self.snapshot(),
+        }
+
+    def set_diplomacy(
+        self,
+        player: str,
+        target: str,
+        status: str,
+        *,
+        peace_card_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if status not in ("peace", "war"):
+            raise ValueError("diplomatic status must be 'peace' or 'war'")
+        player_state = self._player(player)
+        if target == player or target not in player_state["warlord_relations"]:
+            raise ValueError(f"invalid warlord target: {target!r}")
+        relation = player_state["warlord_relations"][target]
+        if relation.get("permanent_war") or target not in DEFAULT_PLAYERS:
+            raise ValueError("NPC factions are permanent enemies in this playtest")
+        if status == "peace" and relation["status"] == "war":
+            war_started = relation.get("war_started_turn")
+            war_turns = self.state["turn"] - int(war_started or 0)
+            if war_turns < 10:
+                if not peace_card_id or peace_card_id not in player_state["hand"]:
+                    raise ValueError(f"peace requires 10 turns of war ({war_turns}/10 completed)")
+                peace_card = self._card_template(peace_card_id)
+                peace_text = f"{peace_card.get('name', '')} {peace_card.get('effect', '')}".lower()
+                if not any(term in peace_text for term in ("停戰", "議和", "和平", "peace", "truce")):
+                    raise ValueError("the selected function card cannot authorize early peace")
+                player_state["hand"].remove(peace_card_id)
+                player_state["discard"].append(peace_card_id)
+        war_started_turn = self.state["turn"] if status == "war" else None
+        relation.update({"status": status, "war_started_turn": war_started_turn})
+        if target in self.state["players"]:
+            self.state["players"][target]["warlord_relations"][player].update(
+                {"status": status, "war_started_turn": war_started_turn}
+            )
+        self.state["last_action"] = {
+            "type": "diplomacy",
+            "player": player,
+            "target": target,
+            "status": status,
+        }
+        return {"state": self.snapshot()}
+
+    def make_deal(
+        self,
+        player: str,
+        target: str,
+        *,
+        funds: int = 0,
+        unit_type: Optional[str] = None,
+        reserve: int = 0,
+    ) -> Dict[str, Any]:
+        source = self._player(player)
+        if target == player or target not in source["warlord_relations"]:
+            raise ValueError(f"invalid deal target: {target!r}")
+        destination = self.state["players"].get(target)
+        if destination is None:
+            raise ValueError("deals can only be proposed to playable factions")
+        funds = max(0, int(funds))
+        reserve = max(0, int(reserve))
+        if funds > source["treasury"]:
+            raise ValueError("insufficient treasury for deal")
+        if reserve:
+            if unit_type not in UNIT_TYPES:
+                raise ValueError("a valid unit type is required for reserve transfer")
+            if reserve > source["unit_reserves"][unit_type]:
+                raise ValueError("insufficient unit reserve for deal")
+        if not funds and not reserve:
+            raise ValueError("a deal must include funds or reserve units")
+        deal_id = self.state["next_deal_id"]
+        self.state["next_deal_id"] += 1
+        proposal = {
+            "id": deal_id,
+            "from": player,
+            "to": target,
+            "funds": funds,
+            "unit_type": unit_type if reserve else None,
+            "reserve": reserve,
+            "status": "pending",
+            "turn": self.state["turn"],
+        }
+        destination["pending_deals"].append(proposal)
+        self.state["last_action"] = {
+            "type": "deal",
+            "player": player,
+            "target": target,
+            "funds": funds,
+            "unit_type": unit_type,
+            "reserve": reserve,
+            "deal_id": deal_id,
+        }
+        return {"deal": deepcopy(proposal), "state": self.snapshot()}
+
+    def respond_to_deal(self, player: str, deal_id: int, accept: bool) -> Dict[str, Any]:
+        destination = self._player(player)
+        proposal = next(
+            (deal for deal in destination["pending_deals"] if deal["id"] == int(deal_id)),
+            None,
+        )
+        if proposal is None:
+            raise ValueError(f"unknown pending deal: {deal_id!r}")
+        if accept:
+            source = self._player(proposal["from"])
+            funds = proposal["funds"]
+            reserve = proposal["reserve"]
+            unit_type = proposal["unit_type"]
+            if funds > source["treasury"]:
+                raise ValueError("sender no longer has enough treasury")
+            if reserve > source["unit_reserves"].get(unit_type, 0):
+                raise ValueError("sender no longer has enough reserve units")
+            source["treasury"] -= funds
+            destination["treasury"] += funds
+            if reserve:
+                source["unit_reserves"][unit_type] -= reserve
+                destination["unit_reserves"][unit_type] += reserve
+            source["unit_reserve"] = sum(source["unit_reserves"].values())
+            destination["unit_reserve"] = sum(destination["unit_reserves"].values())
+        destination["pending_deals"].remove(proposal)
+        proposal["status"] = "accepted" if accept else "declined"
+        self.state["last_action"] = {
+            "type": "deal_response",
+            "player": player,
+            "deal": deepcopy(proposal),
+        }
+        return {"deal": proposal, "state": self.snapshot()}
+
+    def train_unit(self, player: str, unit_type: str, count: int = 1) -> Dict[str, Any]:
+        player_state = self._player(player)
+        if unit_type not in RECRUIT_COSTS:
+            raise ValueError(f"unknown unit type: {unit_type!r}")
+        count = int(count)
+        if count < 1:
+            raise ValueError("recruit count must be positive")
+        cost = RECRUIT_COSTS[unit_type]
+        cash_cost = math.ceil(cost["cash"] * player_state.get("recruitment_cost_modifier", 1)) * count
+        factory_cost = cost["factory"] * count
+        if player_state["treasury"] < cash_cost:
+            raise ValueError("insufficient treasury")
+        if player_state["factory_points"] < factory_cost:
+            raise ValueError("insufficient factory points")
+        player_state["treasury"] -= cash_cost
+        player_state["factory_points"] -= factory_cost
+        player_state["unit_reserves"][unit_type] += count
+        player_state["unit_reserve"] = sum(player_state["unit_reserves"].values())
+        return {"state": self.snapshot()}
+
+    def reinforce_army(
+        self,
+        player: str,
+        army_id: str,
+        city_id: str,
+        unit_type: str,
+        count: int = 1,
+    ) -> Dict[str, Any]:
+        player_state = self._player(player)
+        if unit_type not in RECRUIT_COSTS:
+            raise ValueError(f"unknown unit type: {unit_type!r}")
+        count = int(count)
+        if count < 1:
+            raise ValueError("recruit count must be positive")
+        city = next(
+            (item for item in self.data["strategic_map"]["cities"] if item["id"] == city_id),
+            None,
+        )
+        if not city or city["faction"] != player or city["level"] < 3:
+            raise ValueError("reinforcement requires a controlled major city")
+        if player_state["unit_reserves"][unit_type] < count:
+            raise ValueError("insufficient unit reserve")
+        player_state["unit_reserves"][unit_type] -= count
+        player_state["unit_reserve"] = sum(player_state["unit_reserves"].values())
+        reinforcement = player_state["army_reinforcements"].setdefault(
+            army_id, {unit: 0 for unit in UNIT_TYPES}
+        )
+        reinforcement[unit_type] += count
+        return {"state": self.snapshot()}
+
+    def repay_debt(self, player: str, amount: int) -> Dict[str, Any]:
+        player_state = self._player(player)
+        amount = max(0, int(amount))
+        if amount <= 0:
+            raise ValueError("debt repayment must be positive")
+        paid = min(amount, int(player_state.get("treasury", 0)), int(player_state.get("debt", 0)))
+        if paid <= 0:
+            raise ValueError("no debt can be repaid")
+        player_state["treasury"] -= paid
+        player_state["debt"] = int(max(0, round(player_state.get("debt", 0) - paid)))
+        self.state["last_action"] = {
+            "type": "repay_debt",
+            "player": player,
+            "amount": paid,
+        }
+        return {"amount": paid, "state": self.snapshot()}
+
+    def _add_reserve(self, player: str, unit_type: str, amount: int) -> None:
+        if unit_type not in UNIT_TYPES:
+            raise ValueError(f"unknown unit type: {unit_type!r}")
+        payload = self._player(player)
+        payload["unit_reserves"][unit_type] = max(0, int(payload["unit_reserves"].get(unit_type, 0)) + int(amount))
+        payload["unit_reserve"] = sum(payload["unit_reserves"].values())
+
+    def _card_allowed_for_player(self, card_id: str, player: str) -> bool:
+        card = self._card_template(card_id)
+        allowed = card.get("allowed_players")
+        return not allowed or player in allowed
+
+    def _validate_card_use(self, player: str, card: Dict[str, Any]) -> None:
+        allowed = card.get("allowed_players")
+        if allowed and player not in allowed:
+            raise ValueError("this card is not available to this faction")
+        for target in card.get("requires_peace_with", []):
+            relation = self._player(player).get("warlord_relations", {}).get(target, {})
+            if relation.get("status") == "war":
+                raise ValueError("this card requires peace with the listed faction")
 
     def _player(self, player: str) -> Dict[str, Any]:
         if player not in self.state["players"]:

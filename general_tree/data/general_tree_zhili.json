@@ -1,0 +1,99 @@
+{
+  "version": "zhili-0.1",
+  "great_general_id": "wu_peifu",
+  "generals": {
+    "wu_peifu": {
+      "id": "wu_peifu",
+      "name": "吳佩孚",
+      "role": "great_general",
+      "faction": "Zhili Clique",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 75,
+      "traits": ["confucian_general"],
+      "skills": [],
+      "units": {
+        "infantry": 20,
+        "cavalry": 2,
+        "artillery": 3,
+        "machine_gun": 3
+      },
+      "parent_id": null,
+      "subordinate_slots": 3,
+      "subordinates": ["jin_yun_e", "xiao_yaonan", "feng_yuxiang"],
+      "status": "active"
+    },
+    "jin_yun_e": {
+      "id": "jin_yun_e",
+      "name": "靳雲鶚",
+      "role": "lieutenant_general",
+      "faction": "Zhili Clique",
+      "core_faction": true,
+      "loyalty": 10,
+      "absolute_loyalty": true,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 40,
+      "traits": ["defensive_specialist"],
+      "skills": ["fortress_builder"],
+      "units": {
+        "infantry": 15,
+        "cavalry": 1,
+        "artillery": 2,
+        "machine_gun": 3
+      },
+      "parent_id": "wu_peifu",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "xiao_yaonan": {
+      "id": "xiao_yaonan",
+      "name": "蕭耀南",
+      "role": "lieutenant_general",
+      "faction": "Zhili Clique",
+      "core_faction": true,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 35,
+      "traits": ["central_plains_veteran"],
+      "skills": [],
+      "units": {
+        "infantry": 12,
+        "cavalry": 2,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "wu_peifu",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "feng_yuxiang": {
+      "id": "feng_yuxiang",
+      "name": "馮玉祥",
+      "role": "lieutenant_general",
+      "faction": "Northwest Army",
+      "core_faction": false,
+      "loyalty": 4,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 42,
+      "traits": ["christian_general", "soviet_trained"],
+      "skills": ["pontoon_bridge"],
+      "units": {
+        "infantry": 16,
+        "cavalry": 3,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "wu_peifu",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

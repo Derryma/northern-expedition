@@ -11,7 +11,7 @@
       "scope": "per_player",
       "draw": "each player draws individually",
       "frequency": "each turn",
-      "hand_rule": "hold until used or discarded by future rule"
+      "hand_rule": "maximum 4 cards; when a fifth card is drawn, discard one held card before receiving it"
     }
   },
   "dynamic_pool_rules": [

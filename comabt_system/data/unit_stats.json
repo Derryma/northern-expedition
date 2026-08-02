@@ -34,15 +34,15 @@
       "machine_gun": 1.0
     },
     "cavalry": {
-      "infantry": 1.0,
+      "infantry": 2.0,
       "cavalry": 2.0,
       "artillery": 3.0,
       "machine_gun": 1.0
     },
     "artillery": {
-      "infantry": 2.0,
+      "infantry": 3.0,
       "cavalry": 1.0,
-      "artillery": 3.0,
+      "artillery": 2.0,
       "machine_gun": 3.0
     },
     "machine_gun": {

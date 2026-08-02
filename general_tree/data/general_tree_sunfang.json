@@ -1,0 +1,99 @@
+{
+  "version": "sunfang-0.1",
+  "great_general_id": "sun_chuanfang",
+  "generals": {
+    "sun_chuanfang": {
+      "id": "sun_chuanfang",
+      "name": "孫傳芳",
+      "role": "great_general",
+      "faction": "Five Provinces Army",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 70,
+      "traits": ["five_provinces_alliance"],
+      "skills": [],
+      "units": {
+        "infantry": 18,
+        "cavalry": 1,
+        "artillery": 2,
+        "machine_gun": 4
+      },
+      "parent_id": null,
+      "subordinate_slots": 3,
+      "subordinates": ["lu_xiangting", "zhou_yinren", "meng_zhaoyue"],
+      "status": "active"
+    },
+    "lu_xiangting": {
+      "id": "lu_xiangting",
+      "name": "盧香亭",
+      "role": "lieutenant_general",
+      "faction": "Five Provinces Army",
+      "core_faction": true,
+      "loyalty": 10,
+      "absolute_loyalty": true,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 36,
+      "traits": ["yangzi_defender"],
+      "skills": ["pontoon_bridge"],
+      "units": {
+        "infantry": 14,
+        "cavalry": 1,
+        "artillery": 2,
+        "machine_gun": 3
+      },
+      "parent_id": "sun_chuanfang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "zhou_yinren": {
+      "id": "zhou_yinren",
+      "name": "周蔭人",
+      "role": "lieutenant_general",
+      "faction": "Five Provinces Army",
+      "core_faction": true,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 34,
+      "traits": ["fujian_garrison"],
+      "skills": ["fortress_builder"],
+      "units": {
+        "infantry": 12,
+        "cavalry": 1,
+        "artillery": 1,
+        "machine_gun": 3
+      },
+      "parent_id": "sun_chuanfang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "meng_zhaoyue": {
+      "id": "meng_zhaoyue",
+      "name": "孟昭月",
+      "role": "lieutenant_general",
+      "faction": "Five Provinces Army",
+      "core_faction": true,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 32,
+      "traits": ["jiangxi_commander"],
+      "skills": [],
+      "units": {
+        "infantry": 10,
+        "cavalry": 2,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "sun_chuanfang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

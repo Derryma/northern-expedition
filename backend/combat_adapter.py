@@ -24,6 +24,23 @@ def _load_combat_module():
 
 def simulate(payload: Dict[str, Any]) -> Dict[str, Any]:
     combat = _load_combat_module()
+    force_a = combat.calculate_force_strength(payload["army_a"].get("units", {}))
+    force_b = combat.calculate_force_strength(payload["army_b"].get("units", {}))
+    if force_a <= 5:
+        raise ValueError("attacking army must have more than 5 force points")
+    if force_b <= 5:
+        units_a = combat._clean_counts(payload["army_a"].get("units", {}))
+        zero_units = {unit: 0 for unit in combat.UNITS}
+        return {
+            "winner": "A",
+            "surrendered": "B",
+            "rounds": 0,
+            "log": [],
+            "remaining": {
+                "A": {"label": "A", "units": units_a},
+                "B": {"label": "B", "units": zero_units},
+            },
+        }
     return combat.simulate_battle(
         payload["army_a"],
         payload["army_b"],

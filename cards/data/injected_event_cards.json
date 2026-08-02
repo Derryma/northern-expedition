@@ -137,10 +137,10 @@
       "foreign_power": "🇬🇧英",
       "status": "injectable",
       "source": "function card chain",
-      "effect": "英方要求港口關稅與航行便利。接受：英 +1、指定港口收入 -1 持續 3 回合；拒絕：英 -2，本回合香港轉運不可用。",
+      "effect": "英方要求港口關稅與航行便利。接受：英 +1、指定港口收入 -1 持續 3 回合；拒絕：英 -2，本回合沿海英商轉運不可用。",
       "base_weight": 0,
       "enters_pool_when": [
-        "function_card:function_香港軍火交易",
+        "function_card:function_華南軍火交易",
         "function_card:function_英商軍火走私"
       ]
     },
