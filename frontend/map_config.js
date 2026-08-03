@@ -3,10 +3,10 @@
 
 // Faction definitions
 const FACTIONS = {
-  F: { name: '奉系', leader: '張作霖', color: '#546e7a', flag: '🚩' },
-  W: { name: '直系', leader: '吳佩孚', color: '#6a1b9a', flag: '🚩' },
-  S: { name: '五省聯軍', leader: '孫傳芳', color: '#2e7d32', flag: '🚩' },
-  N: { name: '國民革命軍', leader: '蔣介石', color: '#f9a825', flag: '🚩' },
+  F: { name: '張', leader: '張作霖', color: '#546e7a', flag: '🚩' },
+  W: { name: '吳', leader: '吳佩孚', color: '#6a1b9a', flag: '🚩' },
+  S: { name: '孫', leader: '孫傳芳', color: '#2e7d32', flag: '🚩' },
+  N: { name: '蔣', leader: '蔣介石', color: '#f9a825', flag: '🚩' },
   Y: { name: '晉系', leader: '閻錫山', color: '#6d4c41', flag: '🚩' },
   G: { name: '西北軍', leader: '馮玉祥', color: '#ad1457', flag: '🚩' },
   M: { name: '馬家軍', leader: '馬麒', color: '#00897b', flag: '🚩' },

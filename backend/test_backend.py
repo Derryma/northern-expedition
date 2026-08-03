@@ -280,6 +280,41 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(updated["unit_reserves"]["machine_gun"], before["machine_gun"] + 2)
         self.assertEqual(len(result["reserve_deltas"]), 3)
 
+    def test_intel_and_police_cards_create_timed_effects(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["N"]["hand"] = ["intel_network", "police_system"]
+
+        intel = engine.use_function("N", "intel_network", target_province="湖北")
+        police = engine.use_function("N", "police_system")
+        effects = police["state"]["players"]["N"]["timed_effects"]
+
+        self.assertEqual(intel["timed_effect"]["kind"], "intel_network")
+        self.assertEqual(intel["timed_effect"]["target_province"], "湖北")
+        self.assertTrue(any(effect["kind"] == "police_system" and effect["remaining_turns"] == 3 for effect in effects))
+
+    def test_communist_riot_suppresses_two_target_cities_temporarily(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["N"]["hand"] = ["communist_riot"]
+        before_income = engine.state["players"]["W"]["income"]
+        before_factory = engine.state["players"]["W"]["factory_income"]
+
+        result = engine.use_function("N", "communist_riot", target_owner="W")
+        updated = result["state"]["players"]["W"]
+
+        self.assertEqual(len(result["city_disruption"]["city_ids"]), 2)
+        self.assertLess(updated["income"], before_income)
+        self.assertLess(updated["factory_income"], before_factory)
+
+    def test_forced_next_turn_discards_unresolved_pending_draws(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["W"]["pending_draw"] = "unit_promotion"
+
+        result = engine.next_turn(active_player="N", force=True)
+
+        self.assertEqual(result["turn"]["turn"], 1)
+        self.assertIsNone(result["state"]["players"]["W"]["pending_draw"])
+        self.assertIn("unit_promotion", result["state"]["players"]["W"]["discard"])
+
     def test_zhili_joint_cards_require_peace_and_affect_both_factions(self):
         engine = GameEngine(seed=4)
         engine.state["players"]["W"]["hand"] = ["zhili_infantry_drill"]
@@ -299,15 +334,18 @@ class BackendTests(unittest.TestCase):
     def test_turn_debt_service_adds_interest_and_forced_repayment(self):
         engine = GameEngine(seed=4)
         player = engine.state["players"]["N"]
-        player.update({"treasury": 10, "income": 34, "factory_income": 0, "debt": 60})
+        player.update({"treasury": 10, "debt": 60})
+        income = player["income"]
+        interest = round(player["debt"] * 0.02)
+        repayment = min(player["debt"] + interest, income // 2)
 
         result = engine.next_turn(active_player="N")
         updated = result["state"]["players"]["N"]
 
-        self.assertEqual(updated["treasury"], 27)
-        self.assertEqual(updated["debt"], 44)
-        self.assertEqual(updated["last_debt_service"]["interest"], 1)
-        self.assertEqual(updated["last_debt_service"]["forced_repayment"], 17)
+        self.assertEqual(updated["treasury"], 10 + income - repayment)
+        self.assertEqual(updated["debt"], 60 + interest - repayment)
+        self.assertEqual(updated["last_debt_service"]["interest"], interest)
+        self.assertEqual(updated["last_debt_service"]["forced_repayment"], repayment)
 
     def test_manual_debt_repayment_is_capped_by_cash_and_debt(self):
         engine = GameEngine(seed=4)
@@ -323,6 +361,10 @@ class BackendTests(unittest.TestCase):
     def test_initial_reserves_are_halved(self):
         engine = GameEngine(seed=4)
         self.assertEqual(engine.state["players"]["F"]["unit_reserves"]["infantry"], 27)
+
+    def test_dalian_is_removed_from_playtest_city_list(self):
+        engine = GameEngine(seed=4)
+        self.assertNotIn("dalian", {city["id"] for city in engine.data["strategic_map"]["cities"]})
 
     def test_inactive_faction_must_choose_its_own_discard(self):
         engine = GameEngine(seed=13)

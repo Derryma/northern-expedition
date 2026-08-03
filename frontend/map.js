@@ -22,10 +22,10 @@ export const MAPW = (MAX_LON - MIN_LON) * KX;
 export const MAPH = (MAX_LAT - MIN_LAT) * KY;
 
 export const FACTIONS = {
-  F: { name: '奉系（張作霖）', shortName: '奉', type: 'player', color: '#546e7a' },
-  W: { name: '直系（吳佩孚）', shortName: '直', type: 'player', color: '#6a1b9a' },
-  S: { name: '五省聯軍（孫傳芳）', shortName: '孫', type: 'player', color: '#2e7d32' },
-  N: { name: '國民革命軍', shortName: '國民革命軍', type: 'player', color: '#d89b1d' },
+  F: { name: '張', shortName: '張', type: 'player', color: '#546e7a' },
+  W: { name: '吳', shortName: '吳', type: 'player', color: '#6a1b9a' },
+  S: { name: '孫', shortName: '孫', type: 'player', color: '#2e7d32' },
+  N: { name: '蔣', shortName: '蔣', type: 'player', color: '#d89b1d' },
   Y: { name: '晉系（閻錫山）', shortName: '晉', type: 'npc', color: '#6d4c41' },
   G: { name: '西北軍（馮玉祥）', shortName: '西北軍', type: 'npc', color: '#ad496f' },
   M: { name: '西北馬家軍', shortName: '馬', type: 'npc', color: '#16877b' },
@@ -204,28 +204,28 @@ for (const river of RIVERS) {
 
 export const ARMY_POSITIONS = {
   N: [
-    { id: 'N-1', generalId: 'chiang_kai_shek', general: '蔣介石', designator: '第一軍', lon: 113.3, lat: 23.1, units: { infantry: 18, cavalry: 2, artillery: 3, machine_gun: 4 } },
-    { id: 'N-2', generalId: 'he_yingqin', general: '何應欽', designator: '第二軍', lon: 116.7, lat: 23.4, units: { infantry: 14, cavalry: 2, artillery: 2, machine_gun: 4 } },
-    { id: 'N-3', generalId: 'bai_chongxi', general: '白崇禧', designator: '第三軍', lon: 108.3, lat: 22.8, units: { infantry: 12, cavalry: 2, artillery: 2, machine_gun: 3 } },
-    { id: 'N-4', generalId: 'tang_shengzhi', general: '唐生智', designator: '第四軍', lon: 110.3, lat: 25.3, units: { infantry: 10, cavalry: 3, artillery: 1, machine_gun: 2 } },
+    { id: 'N-1', generalId: 'chiang_kai_shek', general: '蔣介石', designator: '第一軍', startCityId: 'guangzhou', lon: 113.3, lat: 23.1, units: { infantry: 18, cavalry: 2, artillery: 3, machine_gun: 4 } },
+    { id: 'N-2', generalId: 'he_yingqin', general: '何應欽', designator: '第二軍', startCityId: 'shantou', lon: 116.7, lat: 23.4, units: { infantry: 14, cavalry: 2, artillery: 2, machine_gun: 4 } },
+    { id: 'N-3', generalId: 'bai_chongxi', general: '白崇禧', designator: '第三軍', startCityId: 'nanning', lon: 108.3, lat: 22.8, units: { infantry: 12, cavalry: 2, artillery: 2, machine_gun: 3 } },
+    { id: 'N-4', generalId: 'tang_shengzhi', general: '唐生智', designator: '第四軍', startCityId: 'guilin', lon: 110.3, lat: 25.3, units: { infantry: 10, cavalry: 3, artillery: 1, machine_gun: 2 } },
   ],
   F: [
-    { id: 'F-1', generalId: 'zhang_zuolin', general: '張作霖', designator: '第一軍', lon: 123.4, lat: 41.8, units: { infantry: 24, cavalry: 8, artillery: 6, machine_gun: 8 } },
-    { id: 'F-2', generalId: 'zhang_xueliang', general: '張學良', designator: '第二軍', lon: 117.2, lat: 39.1, units: { infantry: 16, cavalry: 4, artillery: 4, machine_gun: 4 } },
-    { id: 'F-3', generalId: 'yang_yuting', general: '楊宇霆', designator: '第三軍', lon: 116.4, lat: 39.9, units: { infantry: 12, cavalry: 4, artillery: 3, machine_gun: 4 } },
-    { id: 'F-4', generalId: 'zhang_zongchang', general: '張宗昌', designator: '第四軍', lon: 117.0, lat: 36.7, units: { infantry: 14, cavalry: 6, artillery: 4, machine_gun: 4 } },
+    { id: 'F-1', generalId: 'zhang_zuolin', general: '張作霖', designator: '第一軍', startCityId: 'shenyang', lon: 123.4, lat: 41.8, units: { infantry: 24, cavalry: 8, artillery: 6, machine_gun: 8 } },
+    { id: 'F-2', generalId: 'zhang_xueliang', general: '張學良', designator: '第二軍', startCityId: 'tianjin', lon: 117.2, lat: 39.1, units: { infantry: 16, cavalry: 4, artillery: 4, machine_gun: 4 } },
+    { id: 'F-3', generalId: 'yang_yuting', general: '楊宇霆', designator: '第三軍', startCityId: 'beijing', lon: 116.4, lat: 39.9, units: { infantry: 12, cavalry: 4, artillery: 3, machine_gun: 4 } },
+    { id: 'F-4', generalId: 'zhang_zongchang', general: '張宗昌', designator: '第四軍', startCityId: 'jinan', lon: 117.0, lat: 36.7, units: { infantry: 14, cavalry: 6, artillery: 4, machine_gun: 4 } },
   ],
   W: [
-    { id: 'W-1', generalId: 'wu_peifu', general: '吳佩孚', designator: '第一軍', lon: 114.3, lat: 30.6, units: { infantry: 20, cavalry: 6, artillery: 5, machine_gun: 6 } },
-    { id: 'W-2', generalId: 'jin_yun_e', general: '靳雲鶚', designator: '第二軍', lon: 113.6, lat: 34.7, units: { infantry: 16, cavalry: 4, artillery: 3, machine_gun: 4 } },
-    { id: 'W-3', generalId: 'feng_yuxiang', general: '馮玉祥', designator: '第三軍', lon: 112.4, lat: 34.6, units: { infantry: 12, cavalry: 4, artillery: 2, machine_gun: 3 } },
-    { id: 'W-4', generalId: 'xiao_yaonan', general: '蕭耀南', designator: '第四軍', lon: 111.3, lat: 30.7, units: { infantry: 12, cavalry: 2, artillery: 1, machine_gun: 2 } },
+    { id: 'W-1', generalId: 'wu_peifu', general: '吳佩孚', designator: '第一軍', startCityId: 'wuhan', lon: 114.3, lat: 30.6, units: { infantry: 20, cavalry: 6, artillery: 5, machine_gun: 6 } },
+    { id: 'W-2', generalId: 'jin_yun_e', general: '靳雲鶚', designator: '第二軍', startCityId: 'zhengzhou', lon: 113.6, lat: 34.7, units: { infantry: 16, cavalry: 4, artillery: 3, machine_gun: 4 } },
+    { id: 'W-3', generalId: 'feng_yuxiang', general: '馮玉祥', designator: '第三軍', startCityId: 'luoyang', lon: 112.4, lat: 34.6, units: { infantry: 12, cavalry: 4, artillery: 2, machine_gun: 3 } },
+    { id: 'W-4', generalId: 'wang_chengbin', general: '王承斌', designator: '第四軍', startCityId: 'yichang', lon: 111.3, lat: 30.7, units: { infantry: 12, cavalry: 2, artillery: 1, machine_gun: 2 } },
   ],
   S: [
-    { id: 'S-1', generalId: 'sun_chuanfang', general: '孫傳芳', designator: '第一軍', lon: 118.8, lat: 32.1, units: { infantry: 18, cavalry: 4, artillery: 4, machine_gun: 5 } },
-    { id: 'S-2', generalId: 'lu_xiangting', general: '盧香亭', designator: '第二軍', lon: 121.5, lat: 31.2, units: { infantry: 14, cavalry: 3, artillery: 3, machine_gun: 4 } },
-    { id: 'S-3', generalId: 'zhou_yinren', general: '周蔭人', designator: '第三軍', lon: 115.9, lat: 28.7, units: { infantry: 12, cavalry: 2, artillery: 2, machine_gun: 3 } },
-    { id: 'S-4', generalId: 'meng_zhaoyue', general: '孟昭月', designator: '第四軍', lon: 119.3, lat: 26.1, units: { infantry: 10, cavalry: 2, artillery: 1, machine_gun: 2 } },
+    { id: 'S-1', generalId: 'sun_chuanfang', general: '孫傳芳', designator: '第一軍', startCityId: 'nanjing', lon: 118.8, lat: 32.1, units: { infantry: 18, cavalry: 4, artillery: 4, machine_gun: 5 } },
+    { id: 'S-2', generalId: 'li_houji', general: '李厚基', designator: '第二軍', startCityId: 'shanghai', lon: 121.5, lat: 31.2, units: { infantry: 14, cavalry: 3, artillery: 3, machine_gun: 4 } },
+    { id: 'S-3', generalId: 'zhou_yinren', general: '周蔭人', designator: '第三軍', startCityId: 'nanchang', lon: 115.9, lat: 28.7, units: { infantry: 12, cavalry: 2, artillery: 2, machine_gun: 3 } },
+    { id: 'S-4', generalId: 'lu_yongxiang', general: '盧永祥', designator: '第四軍', startCityId: 'fuzhou', lon: 119.3, lat: 26.1, units: { infantry: 10, cavalry: 2, artillery: 1, machine_gun: 2 } },
   ],
 };
 

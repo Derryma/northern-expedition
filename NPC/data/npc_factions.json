@@ -4,22 +4,22 @@
   "major_playable_factions": [
     {
       "code": "S",
-      "name": "五省聯軍",
+      "name": "孫",
       "leader": "孫傳芳"
     },
     {
       "code": "W",
-      "name": "直系",
+      "name": "吳",
       "leader": "吳佩孚"
     },
     {
       "code": "F",
-      "name": "奉系",
+      "name": "張",
       "leader": "張作霖"
     },
     {
       "code": "N",
-      "name": "國民革命軍",
+      "name": "蔣",
       "leader": "蔣中正"
     }
   ],

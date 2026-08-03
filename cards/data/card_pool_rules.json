@@ -9,8 +9,8 @@
     },
     "function_cards": {
       "scope": "per_player",
-      "draw": "each player draws individually",
-      "frequency": "each turn",
+      "draw": "optional paid purchase",
+      "frequency": "each player may pay 10 cash to draw at turn start; limit 1 purchase per turn",
       "hand_rule": "maximum 4 cards; when a fifth card is drawn, discard one held card before receiving it"
     }
   },

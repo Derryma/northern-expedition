@@ -23,6 +23,7 @@ const PORTRAIT_BY_ID = {
   sun_chuanfang: "/assets/portraits/孫傳芳.jpg",
   zhou_yinren: "/assets/portraits/周蔭人.jpg",
   li_houji: "/assets/portraits/李厚基.jpg",
+  lu_yongxiang: "/assets/portraits/盧永祥.jpg",
 };
 
 let bootstrap = null;
@@ -51,6 +52,7 @@ const completedPontoons = new Set();
 const completedFortresses = new Set();
 const activeBattles = [];
 const battleReports = [];
+const pendingProvinceClaims = [];
 const collapsedBattleIds = new Set();
 const hiddenBattleReportIds = new Set();
 const retreatConfirmations = new Map();
@@ -74,6 +76,12 @@ let sharedEngineHash = "";
 let sharedSyncInFlight = false;
 let sharedReady = false;
 const skippedFunctionPurchasePrompts = new Set();
+const DEBUG_MODE = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const outsideMapArt = new Image();
+outsideMapArt.src = "/assets/shiju-border.png";
+outsideMapArt.addEventListener("load", () => {
+  if (state) initMap();
+});
 
 const UNIT_META = {
   infantry: { name: "步兵", short: "步", symbol: "infantry" },
@@ -87,6 +95,38 @@ const UNIT_DISPLAY_SCALE = {
   cavalry: { multiplier: 1000, suffix: "人" },
   machine_gun: { multiplier: 50, suffix: "挺" },
   artillery: { multiplier: 10, suffix: "門" },
+};
+
+const STRATEGIC_PROVINCE_BY_MODERN_NAME = {
+  "北京市": "直隸",
+  "天津市": "直隸",
+  "河北省": "直隸",
+  "辽宁省": "奉天",
+  "吉林省": "吉林",
+  "黑龙江省": "黑龍江",
+  "山东省": "山東",
+  "河南省": "河南",
+  "湖北省": "湖北",
+  "湖南省": "湖南",
+  "江苏省": "江蘇",
+  "上海市": "江蘇",
+  "安徽省": "安徽",
+  "浙江省": "浙江",
+  "福建省": "福建",
+  "江西省": "江西",
+  "广东省": "廣東",
+  "海南省": "廣東",
+  "广西壮族自治区": "廣西",
+  "四川省": "四川",
+  "重庆市": "四川",
+  "贵州省": "貴州",
+  "云南省": "雲南",
+  "山西省": "山西",
+  "陕西省": "陝西",
+  "甘肃省": "甘肅",
+  "青海省": "青海",
+  "内蒙古自治区": "綏遠",
+  "宁夏回族自治区": "甘肅",
 };
 
 const TRAIT_LABELS = {
@@ -139,9 +179,30 @@ function traitDescription(trait) {
     .map(([skill]) => ENGINEERING_OPERATIONS[skill]?.label)
     .filter(Boolean);
   const effects = [];
-  if (modifiers.length) effects.push("戰鬥效果：已套用");
+  if (modifiers.length) effects.push(`戰鬥效果：${modifiers.map(modifierDescription).join("、")}`);
   if (engineering.length) effects.push(`工程能力：${engineering.join("、")}`);
-  return effects.length ? effects.join("\n") : base;
+  return effects.length ? `${base}\n${effects.join("\n")}` : base;
+}
+
+function modifierDescription(modifier) {
+  const unit = modifier.unit ? `${UNIT_META[modifier.unit]?.name || modifier.unit}` : "全軍";
+  const target = modifier.target ? `對${UNIT_META[modifier.target]?.name || modifier.target}` : "";
+  const statLabels = {
+    attack: "攻擊",
+    hp: "生命",
+    threshold: "崩潰門檻",
+    harm_taken: "承傷",
+  };
+  const stat = statLabels[modifier.stat] || modifier.stat || "效果";
+  if (modifier.multiplier !== undefined) {
+    const delta = (Number(modifier.multiplier) - 1) * 100;
+    return `${unit}${target}${stat} ${delta >= 0 ? "+" : ""}${Math.round(delta)}%`;
+  }
+  if (modifier.add !== undefined) {
+    const delta = Number(modifier.add) * 100;
+    return `${unit}${target}${stat} ${delta >= 0 ? "+" : ""}${Math.round(delta)}%`;
+  }
+  return `${unit}${target}${stat}`;
 }
 
 function traitChip(trait) {
@@ -171,6 +232,10 @@ const TRAIT_GAME_MODIFIERS = {
   yangzi_defender: [{ stat: "harm_taken", multiplier: 0.90 }],
   fujian_garrison: [{ stat: "harm_taken", unit: "infantry", multiplier: 0.90 }],
   jiangxi_commander: [{ stat: "attack", unit: "infantry", multiplier: 1.06 }],
+  shock_column_leader: [{ stat: "attack", unit: "infantry", multiplier: 1.15 }, { stat: "attack", unit: "cavalry", multiplier: 1.15 }, { stat: "harm_taken", multiplier: 1.10 }],
+  steady_drillmaster: [{ stat: "attack", unit: "infantry", multiplier: 1.10 }],
+  fire_support_savant: [{ stat: "attack", unit: "artillery", target: "machine_gun", multiplier: 1.25 }, { stat: "attack", unit: "artillery", target: "infantry", multiplier: 1.15 }],
+  local_supply_boss: [{ stat: "threshold", unit: "infantry", add: 0.05 }, { stat: "threshold", unit: "machine_gun", add: 0.05 }],
 };
 
 const TACTIC_LABELS = {
@@ -212,10 +277,29 @@ function armyCombatLabel(army) {
   return `${FACTIONS[faction]?.shortName || faction} ${army.designator}`;
 }
 
+function hexToRgb(hex) {
+  const clean = String(hex || "").replace("#", "");
+  const value = parseInt(clean.length === 3
+    ? clean.split("").map((char) => char + char).join("")
+    : clean, 16);
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  };
+}
+
+function mixColor(hex, base = "#e7dcbe", weight = 0.52) {
+  const source = hexToRgb(hex);
+  const backdrop = hexToRgb(base);
+  const channel = (name) => Math.round(source[name] * weight + backdrop[name] * (1 - weight));
+  return `rgb(${channel("r")}, ${channel("g")}, ${channel("b")})`;
+}
+
 function armyCompositionVisible(army, observer = currentPlayer) {
   if (!army) return false;
   if (factionForArmy(army) === observer) return true;
-  return Boolean(activeBattleForArmy(army));
+  return Boolean(activeBattleForArmy(army) || armyRevealedByIntel(army, observer));
 }
 
 function tacticData(tacticId) {
@@ -385,6 +469,7 @@ function tacticalSnapshot() {
     resolvedArmyIds: [...resolvedArmyIds],
     armyOrderHistory: JSON.parse(JSON.stringify(armyOrderHistory)),
     turnReady: { ...turnReady },
+    pendingProvinceClaims: JSON.parse(JSON.stringify(pendingProvinceClaims)),
   };
 }
 
@@ -436,6 +521,7 @@ function applyTacticalSnapshot(snapshot) {
   }
   replaceArray(armyOrderHistory, snapshot.armyOrderHistory);
   replaceObject(turnReady, snapshot.turnReady);
+  replaceArray(pendingProvinceClaims, snapshot.pendingProvinceClaims);
   generalTreeData = generalTrees[currentPlayer];
 }
 
@@ -530,6 +616,45 @@ function indexCards() {
   }
 }
 
+function cellDistance(first, second) {
+  return Math.hypot(hcx(first.c) - hcx(second.c), hcy(first.c, first.r) - hcy(second.c, second.r));
+}
+
+function hexPathBetween(start, goal) {
+  if (!start || !goal) return [];
+  if (start.key === goal.key) return [start];
+  const frontier = [start];
+  const cameFrom = new Map([[start.key, null]]);
+  while (frontier.length) {
+    frontier.sort((first, second) => cellDistance(first, goal) - cellDistance(second, goal));
+    const current = frontier.shift();
+    if (current.key === goal.key) break;
+    const neighbors = cellNeighbors(current)
+      .filter((cell) => cell.land && !cameFrom.has(cell.key))
+      .sort((first, second) => cellDistance(first, goal) - cellDistance(second, goal));
+    for (const neighbor of neighbors) {
+      cameFrom.set(neighbor.key, current.key);
+      frontier.push(neighbor);
+    }
+  }
+  if (!cameFrom.has(goal.key)) return [start, goal];
+  const path = [];
+  for (let key = goal.key; key; key = cameFrom.get(key)) path.push(cells[key]);
+  return path.reverse();
+}
+
+function railroadRouteCells(railroad) {
+  const route = [];
+  for (let index = 0; index < railroad.points.length - 1; index++) {
+    const start = cellAt(...railroad.points[index]);
+    const goal = cellAt(...railroad.points[index + 1]);
+    for (const cell of hexPathBetween(start, goal)) {
+      if (cell && route.at(-1)?.key !== cell.key) route.push(cell);
+    }
+  }
+  return route;
+}
+
 function indexScenarioCells() {
   const scenario = bootstrap.strategic_map || {};
   for (const cell of Object.values(cells)) {
@@ -539,22 +664,8 @@ function indexScenarioCells() {
     cell.railBridge = false;
   }
   for (const railroad of scenario.railroads || []) {
-    const route = [];
-    for (let index = 0; index < railroad.points.length - 1; index++) {
-      const [fromLon, fromLat] = railroad.points[index];
-      const [toLon, toLat] = railroad.points[index + 1];
-      const [fromX, fromY] = px(fromLon, fromLat);
-      const [toX, toY] = px(toLon, toLat);
-      const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / (s * 0.35)));
-      for (let step = 0; step <= steps; step++) {
-        const progress = step / steps;
-        const cell = cellAt(
-          fromLon + (toLon - fromLon) * progress,
-          fromLat + (toLat - fromLat) * progress,
-        );
-        if (cell && route.at(-1)?.key !== cell.key) route.push(cell);
-      }
-    }
+    const route = railroadRouteCells(railroad);
+    railroad.cellKeys = route.map((cell) => cell.key);
     for (const cell of route) {
       cell.railroads.add(railroad.name);
       if (cell.river) cell.railBridge = true;
@@ -586,6 +697,25 @@ function indexScenarioCells() {
     if (cell.river && !cell.railBridge) throw new Error(`City ${city.name} requires a railway bridge`);
     cell.city = city;
     occupiedCityCells.add(cell.key);
+  }
+}
+
+function snapArmiesToStartCities() {
+  const occupied = new Set();
+  const cityById = new Map((bootstrap.strategic_map?.cities || []).map((city) => [city.id, city]));
+  for (const armies of Object.values(ARMY_POSITIONS)) {
+    for (const army of armies) {
+      const city = cityById.get(army.startCityId);
+      const cell = city?.cellKey ? cells[city.cellKey] : null;
+      if (!cell || occupied.has(cell.key)) continue;
+      army.cellKey = cell.key;
+      army.lon = cell.lon;
+      army.lat = cell.lat;
+      if (INITIAL_ARMY_CELLS[army.id]) {
+        INITIAL_ARMY_CELLS[army.id] = { cellKey: cell.key, lon: cell.lon, lat: cell.lat };
+      }
+      occupied.add(cell.key);
+    }
   }
 }
 
@@ -789,6 +919,65 @@ function cityLabel(cityId) {
   return (bootstrap.strategic_map?.cities || []).find((city) => city.id === cityId)?.name || cityId || "未知城市";
 }
 
+function provinceOptions() {
+  const provinces = new Set((bootstrap.strategic_map?.cities || [])
+    .map((city) => city.province)
+    .filter(Boolean));
+  return [...provinces].sort((first, second) => first.localeCompare(second, "zh-Hant"));
+}
+
+function strategicProvinceForCell(cell) {
+  if (!cell) return null;
+  if (cell.city?.province) return cell.city.province;
+  const playableProvinces = new Set(provinceOptions());
+  const translated = STRATEGIC_PROVINCE_BY_MODERN_NAME[cell.province];
+  if (playableProvinces.has(translated)) return translated;
+  if (playableProvinces.has(cell.province)) return cell.province;
+  const nearestCity = (bootstrap.strategic_map?.cities || []).reduce((nearest, city) => {
+    const cityCell = cells[city.cellKey];
+    if (!cityCell) return nearest;
+    const distance = (cityCell.lon - cell.lon) ** 2 + (cityCell.lat - cell.lat) ** 2;
+    return !nearest || distance < nearest.distance ? { city, distance } : nearest;
+  }, null)?.city;
+  return nearestCity?.province || cell.province || null;
+}
+
+function activeTimedEffects(player, kind = null) {
+  return (state.players[player]?.timed_effects || [])
+    .filter((effect) => Number(effect.remaining_turns || 0) > 0 && (!kind || effect.kind === kind));
+}
+
+function factionHasPoliceProtection(player) {
+  return activeTimedEffects(player, "police_system").length > 0;
+}
+
+function provinceForArmy(army) {
+  return cityForArmy(army)?.province || strategicProvinceForCell(cells[army?.cellKey]) || null;
+}
+
+function armyRevealedByIntel(army, observer = currentPlayer) {
+  const armyFaction = factionForArmy(army);
+  if (!army || armyFaction === observer || factionHasPoliceProtection(armyFaction)) return false;
+  const province = provinceForArmy(army);
+  return activeTimedEffects(observer, "intel_network")
+    .some((effect) => effect.target_province === province);
+}
+
+function activeEffectsMarkup(payload = state.players[currentPlayer]) {
+  const effects = (payload?.timed_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
+  if (!effects.length) return "";
+  return `<div class="active-effect-list">
+    ${effects.map((effect) => {
+      const label = effect.kind === "police_system"
+        ? `警政保護剩餘 ${effect.remaining_turns} 回合`
+        : effect.kind === "intel_network"
+          ? `情報網：${effect.target_province}，剩餘 ${effect.remaining_turns} 回合`
+          : `${effect.name || "持續效果"}剩餘 ${effect.remaining_turns} 回合`;
+      return `<span>${label}</span>`;
+    }).join("")}
+  </div>`;
+}
+
 function generalLabel(generalId, owner = null) {
   const general = generalById(generalId);
   const prefix = owner ? `${factionLabel(owner)} · ` : "";
@@ -841,12 +1030,34 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const owners = (action.timed_effect.owners || [action.player])
       .map((owner) => factionLabel(owner, owner === viewer))
       .join("、");
-    parts.push(`${owners}${action.timed_effect.name || "持續效果"}啟動 ${turns} 回合`);
+    const effectDetail = action.timed_effect.kind === "intel_network"
+      ? `揭露${action.timed_effect.target_province}`
+      : action.timed_effect.kind === "police_system"
+        ? "反情報保護"
+        : action.timed_effect.name || "持續效果";
+    parts.push(`${owners}${effectDetail}啟動 ${turns} 回合`);
   }
   if (action.recurring_effect) {
     parts.push(`${action.recurring_effect.name || "持續收支"}啟動 ${action.recurring_effect.remaining_turns || 0} 回合`);
   }
+  if (action.city_disruption) {
+    const target = factionLabel(action.city_disruption.target_owner, action.city_disruption.target_owner === viewer);
+    const cities = (action.city_disruption.cities || []).map((city) => city.name).join("、");
+    parts.push(`${target}${cities}產出停擺 ${action.city_disruption.remaining_turns} 回合`);
+  }
   return `${actor}打出「${cardName}」${parts.length ? `：${parts.join("；")}。` : "。"}`;
+}
+
+function functionActionVisibleTo(action, viewer = currentPlayer) {
+  if (!action || action.type !== "function_card") return false;
+  if (action.player === viewer) return true;
+  if (action.card?.mechanic === "intel_network") return false;
+  if (action.city_disruption?.target_owner === viewer) return true;
+  if ((action.reserve_deltas || []).some((delta) => delta.owner === viewer)) return true;
+  if (action.target_owner === viewer) return true;
+  if (action.loyalty_delta_all?.owner === viewer) return true;
+  if ((action.timed_effect?.owners || []).includes(viewer)) return true;
+  return false;
 }
 
 function updateFeatureVisibility() {
@@ -1317,7 +1528,7 @@ function armyTooltipText(army, observer = currentPlayer) {
   return [
     armyCombatLabel(army),
     army.general,
-    armyCompositionVisible(army, observer) ? formatUnits(armyUnits(army)) : "兵力不明，交戰後揭露編制",
+    armyCompositionVisible(army, observer) ? formatUnits(armyUnits(army)) : "兵力不明，需交戰或情報網揭露編制",
   ].join("\n");
 }
 
@@ -1589,7 +1800,7 @@ function renderCardsPanel() {
   const purchase = functionPurchaseMarkup(payload, "panel");
 
   if (!cards.length) {
-    return `${purchase}<div class="empty-state">目前無手牌</div>`;
+    return `${purchase}${activeEffectsMarkup(payload)}<div class="empty-state">目前無手牌</div>`;
   }
 
   const cardsHtml = cards.map((card) => `
@@ -1609,6 +1820,7 @@ function renderCardsPanel() {
 
   return `
     ${purchase}
+    ${activeEffectsMarkup(payload)}
     ${pendingCard ? `<div class="discard-panel-notice">新牌「${pendingCard.name}」等待加入。請棄置一張現有手牌。</div>` : ""}
     <div style="margin-bottom: 16px; padding: 12px; background: var(--terracotta-tint); border-radius: 8px;">
       <div style="font-size: 13px; color: var(--muted);">
@@ -1636,6 +1848,7 @@ function attachCardHandlers(root = document) {
           target_owner: root.querySelector(`[data-card-target-owner="${button.dataset.use}"]`)?.value
             || generalOwners[targetGeneralId],
           target_city_id: root.querySelector(`[data-card-target-city="${button.dataset.use}"]`)?.value,
+          target_province: root.querySelector(`[data-card-target-province="${button.dataset.use}"]`)?.value,
         });
         state = result.state;
         if (result.target_general_id && result.loyalty_delta) {
@@ -1715,9 +1928,13 @@ function loyaltyCardTargetMarkup(card) {
 }
 
 function functionCardTargetMarkup(card) {
-  if (card.mechanic === "reserve_loss") {
+  if (["reserve_loss", "communist_riot"].includes(card.mechanic)) {
     const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
     return `<label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "intel_network") {
+    const provinces = provinceOptions();
+    return `<label class="card-target">指定省份<select data-card-target-province="${card.id}">${provinces.map((province) => `<option value="${province}">${province}</option>`).join("")}</select></label>`;
   }
   if (card.mechanic === "city_development") {
     const cities = state.players[currentPlayer]?.city_economy || [];
@@ -1737,7 +1954,7 @@ function renderHandDock() {
 
   const prompt = pendingCard
     ? `<div class="discard-banner">新牌「${pendingCard.name}」等待加入：選一張棄置</div>`
-    : functionPurchaseMarkup(payload, "dock");
+    : functionPurchaseMarkup(payload, "dock") + activeEffectsMarkup(payload);
   const cardMarkup = cards.length
     ? cards.map((card, index) => `
       <article class="hand-card-mini" style="--card-index:${index}" tabindex="0">
@@ -1796,12 +2013,14 @@ async function boot() {
   ]);
   indexCards();
   indexScenarioCells();
+  snapArmiesToStartCities();
   indexProvinceCells();
   await loadAllGeneralTrees();
   initializeGeneralRuntime();
   synchronizeFieldArmies();
 
-  $("playerSelect").innerHTML = bootstrap.players.map((p) => `<option value="${p.code}">${p.code} · ${p.leader}</option>`).join("");
+  $("playerSelect").innerHTML = bootstrap.players.map((p) => `<option value="${p.code}">${p.name} · ${p.leader}</option>`).join("");
+  $("debugForceTurnBtn").hidden = !DEBUG_MODE;
 
   // Set current player from select
   currentPlayer = $("playerSelect").value;
@@ -1925,9 +2144,12 @@ function drawInfrastructure(ctx) {
   ctx.strokeStyle = 'rgba(31, 28, 23, 0.94)';
   ctx.lineWidth = 4.2;
   for (const railroad of bootstrap.strategic_map?.railroads || []) {
+    const route = (railroad.cellKeys || []).map((key) => cells[key]).filter(Boolean);
+    if (!route.length) continue;
     ctx.beginPath();
-    railroad.points.forEach(([lon, lat], index) => {
-      const [x, y] = px(lon, lat);
+    route.forEach((cell, index) => {
+      const x = hcx(cell.c);
+      const y = hcy(cell.c, cell.r);
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
@@ -1937,9 +2159,12 @@ function drawInfrastructure(ctx) {
   ctx.lineWidth = 1.8;
   ctx.setLineDash([2, 4]);
   for (const railroad of bootstrap.strategic_map?.railroads || []) {
+    const route = (railroad.cellKeys || []).map((key) => cells[key]).filter(Boolean);
+    if (!route.length) continue;
     ctx.beginPath();
-    railroad.points.forEach(([lon, lat], index) => {
-      const [x, y] = px(lon, lat);
+    route.forEach((cell, index) => {
+      const x = hcx(cell.c);
+      const y = hcy(cell.c, cell.r);
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
@@ -2058,8 +2283,13 @@ function drawCompletedEngineering(ctx) {
 
 function drawOutsideMapAtmosphere(ctx) {
   ctx.save();
-  ctx.fillStyle = '#b9c4b8';
+  ctx.fillStyle = '#c8b894';
   ctx.fillRect(0, 0, MAPW, MAPH);
+  if (outsideMapArt.complete && outsideMapArt.naturalWidth) {
+    ctx.globalAlpha = 0.72;
+    ctx.drawImage(outsideMapArt, 0, 0, MAPW, MAPH);
+    ctx.globalAlpha = 1;
+  }
   ctx.strokeStyle = 'rgba(64, 55, 42, 0.24)';
   ctx.lineWidth = 1;
   for (let x = -MAPH; x < MAPW + MAPH; x += 42) {
@@ -2124,7 +2354,7 @@ function initMap() {
       // Draw faction-colored hex fill
       if (cell.fac && FACTIONS[cell.fac]) {
         const facColor = FACTIONS[cell.fac].color;
-        ctx.fillStyle = facColor + '40'; // 25% opacity
+        ctx.fillStyle = mixColor(facColor);
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -2147,7 +2377,7 @@ function initMap() {
 
       // Highlight river hexes
       if (cell.river) {
-        ctx.fillStyle = 'rgba(76, 139, 179, 0.48)'; // faction-independent river tint
+        ctx.fillStyle = '#92b6c1';
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -2533,11 +2763,7 @@ function armyIsVisible(army, armyFaction, observer) {
     factionForArmy(ownArmy) === observer && cellWithinRange(ownArmy.cellKey, army.cellKey, 2)
   );
   if (nearbyArmy) return true;
-  return (bootstrap.strategic_map?.cities || []).some((city) =>
-    city.level >= 3
-    && cells[city.cellKey]?.fac === observer
-    && cellWithinRange(city.cellKey, army.cellKey, 2)
-  );
+  return armyRevealedByIntel(army, observer);
 }
 
 function selectedArmy() {
@@ -2564,6 +2790,50 @@ function forcePoints(units) {
     + (units.cavalry || 0)
     + (units.machine_gun || 0) * 2
     + (units.artillery || 0) * 4;
+}
+
+function citiesInProvince(province) {
+  return (bootstrap.strategic_map?.cities || []).filter((city) => city.province === province);
+}
+
+function queueProvinceClaimIfReady(province, faction) {
+  if (!province || !state?.players?.[faction]) return;
+  const cities = citiesInProvince(province);
+  if (!cities.length || !cities.every((city) => city.faction === faction)) return;
+  if (pendingProvinceClaims.some((claim) => claim.province === province && claim.faction === faction)) return;
+  const provinceCells = Object.values(cells).filter((cell) => strategicProvinceForCell(cell) === province);
+  if (!provinceCells.some((cell) => cell.fac !== faction)) return;
+  pendingProvinceClaims.push({ province, faction, turn: state.turn });
+}
+
+function claimProvince(province, faction) {
+  const blockedByForeignArmy = new Set(
+    allArmies(true)
+      .filter((army) => army.status !== "jailed" && factionForArmy(army) !== faction)
+      .map((army) => army.cellKey)
+  );
+  let painted = 0;
+  for (const cell of Object.values(cells)) {
+    if (strategicProvinceForCell(cell) !== province || blockedByForeignArmy.has(cell.key)) continue;
+    if (cell.fac !== faction) {
+      cell.fac = faction;
+      painted += 1;
+    }
+  }
+  const index = pendingProvinceClaims.findIndex((claim) => claim.province === province && claim.faction === faction);
+  if (index >= 0) pendingProvinceClaims.splice(index, 1);
+  uiNotice = `${FACTIONS[faction]?.shortName || faction}宣布接管${province}，已改色 ${painted} 格；他軍駐紮格暫不變更。`;
+  initMap();
+  renderPendingActions();
+  publishSharedState(true).catch((error) => showNotice(`省份歸屬同步失敗：${error.message}`));
+}
+
+function skipProvinceClaim(province, faction) {
+  const index = pendingProvinceClaims.findIndex((claim) => claim.province === province && claim.faction === faction);
+  if (index >= 0) pendingProvinceClaims.splice(index, 1);
+  uiNotice = `本次暫不宣告${province}歸屬。`;
+  renderPendingActions();
+  publishSharedState(true).catch((error) => showNotice(`省份歸屬同步失敗：${error.message}`));
 }
 
 function occupyTile(cell, faction, record = null) {
@@ -2594,6 +2864,7 @@ function transferCityEconomy(city, previousFaction, nextFaction) {
     });
   }
   city.faction = nextFaction;
+  queueProvinceClaimIfReady(city.province, nextFaction);
   for (const payload of Object.values(state.players)) {
     payload.income = (payload.city_economy || []).reduce((sum, item) => sum + (item.cash || 0), 0);
     payload.factory_income = (payload.city_economy || []).reduce((sum, item) => sum + (item.factory || 0), 0);
@@ -2828,7 +3099,8 @@ function renderTileInfo() {
     <div class="tile-info-heading"><b>${city?.name || "鄉野地格"}</b><span>${FACTIONS[cell.fac]?.shortName || "無控制"}</span></div>
     <div class="tile-info-grid">
       <span>地形<strong>${cell.river ? `水域 · ${cell.river}` : "陸地"}</strong></span>
-      <span>聚落<strong>${city ? `${city.province} · ${city.level} 級城市` : `${cell.province || "未知省份"} · 鄉村`}</strong></span>
+      <span>聚落<strong>${city ? `${city.province} · ${city.level} 級城市` : `${strategicProvinceForCell(cell) || "未知省份"} · 鄉村`}</strong></span>
+      <span>歸屬<strong>${FACTIONS[cell.fac]?.name || "無控制"}</strong></span>
       <span>工事<strong>${fortifications.join("、") || "無"}</strong></span>
       <span>產出<strong>¥${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
     </div>
@@ -2894,7 +3166,7 @@ function renderArmyDetail() {
           <div>${unitSymbol(type, units[type])}<span>${UNIT_META[type].name}<small>${formatUnitQuantity(type, units[type])}</small></span></div>
         `).join("")}
       </div>
-    ` : `<div class="enemy-hidden-composition"><b>兵力不明</b><span>敵軍編制需進入戰鬥後才會揭露。</span></div>`}
+    ` : `<div class="enemy-hidden-composition"><b>兵力不明</b><span>敵軍編制需交戰或情報網揭露。</span></div>`}
     ${isOwnArmy ? absoluteTransferMarkup(army) : ""}
     ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? `策反費用 ¥${defectionCost} · 成功率 ${defectionChance}%` : "兵力未明，策反費用與成功率不公開"}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
     ${fightingBattle ? `<div class="active-operation">交戰中：不可移動、休整或補充。請在戰鬥情報中定策。</div>` : ""}
@@ -3480,6 +3752,16 @@ function setupPendingActions() {
     }
   });
   $("turnNotification").addEventListener("click", async (event) => {
+    const claimButton = event.target.closest("[data-claim-province]");
+    if (claimButton) {
+      claimProvince(claimButton.dataset.claimProvince, claimButton.dataset.claimFaction || currentPlayer);
+      return;
+    }
+    const skipClaimButton = event.target.closest("[data-skip-province-claim]");
+    if (skipClaimButton) {
+      skipProvinceClaim(skipClaimButton.dataset.skipProvinceClaim, skipClaimButton.dataset.claimFaction || currentPlayer);
+      return;
+    }
     const buyButton = event.target.closest("[data-buy-function-card]");
     if (buyButton) {
       await buyFunctionCard(buyButton);
@@ -3815,7 +4097,17 @@ function renderPendingActions() {
   inboxBadge.hidden = deals.length === 0;
   inboxBadge.textContent = String(deals.length);
   const notification = $("turnNotification");
-  if (uiNotice) {
+  const provinceClaim = pendingProvinceClaims.find((claim) => claim.faction === currentPlayer);
+  if (provinceClaim) {
+    notification.hidden = false;
+    notification.innerHTML = `
+      <b>省份歸屬</b>
+      <span>${provinceClaim.province}所有城市已由${FACTIONS[currentPlayer]?.shortName || currentPlayer}控制。是否宣告接管全省？</span>
+      <div class="notification-actions">
+        <button data-claim-province="${provinceClaim.province}" data-claim-faction="${currentPlayer}">宣告接管</button>
+        <button data-skip-province-claim="${provinceClaim.province}" data-claim-faction="${currentPlayer}">稍後再說</button>
+      </div>`;
+  } else if (uiNotice) {
     notification.hidden = false;
     notification.innerHTML = `<b>軍令提示</b><span>${uiNotice}</span>`;
   } else if (deals.length) {
@@ -3844,7 +4136,7 @@ function renderPendingActions() {
         <button data-buy-function-card="${currentPlayer}">支付 ¥${cost}</button>
         <button data-skip-function-purchase="${currentPlayer}">略過</button>
       </div>`;
-  } else if (bootstrap.features?.function_cards && state.last_action?.type === "function_card" && state.last_action.player !== currentPlayer) {
+  } else if (bootstrap.features?.function_cards && state.last_action?.type === "function_card" && functionActionVisibleTo(state.last_action, currentPlayer)) {
     const message = functionActionMessage(state.last_action, currentPlayer);
     notification.hidden = false;
     notification.innerHTML = `<b>功能卡效果</b><span>${message}</span>`;
@@ -3901,6 +4193,7 @@ async function resetGame() {
   armyOrderHistory.length = 0;
   activeBattles.length = 0;
   battleReports.length = 0;
+  pendingProvinceClaims.length = 0;
   collapsedBattleIds.clear();
   hiddenBattleReportIds.clear();
   retreatConfirmations.clear();
@@ -3943,9 +4236,9 @@ $("newGame").addEventListener("click", () => {
 
 $("undoOrderBtn").addEventListener("click", undoLastArmyOrder);
 
-$("endTurnBtn").addEventListener("click", async () => {
+async function advanceToNextTurn(force = false) {
   const pending = pendingArmies();
-  if (pending.length) {
+  if (!force && pending.length) {
     selectArmy(pending[0].id);
     return;
   }
@@ -3953,16 +4246,20 @@ $("endTurnBtn").addEventListener("click", async () => {
     ["pending", "ongoing"].includes(battle.status)
     && (!battle.confirmed?.A || !battle.confirmed?.B)
   );
-  if (pendingBattle) {
+  if (!force && pendingBattle) {
     selectBattle(pendingBattle.id);
     return;
   }
-  if (turnReady[currentPlayer] === state.turn && !allPlayersReadyForTurn()) {
+  if (!force && turnReady[currentPlayer] === state.turn && !allPlayersReadyForTurn()) {
     showNotice("你已結束本回合；等待其他三方完成軍令。");
     await publishSharedState(true);
     return;
   }
-  turnReady[currentPlayer] = state.turn;
+  if (force) {
+    for (const player of TURN_PLAYERS) turnReady[player] = state.turn;
+  } else {
+    turnReady[currentPlayer] = state.turn;
+  }
   renderPendingActions();
   try {
     await publishSharedState(true);
@@ -3970,7 +4267,7 @@ $("endTurnBtn").addEventListener("click", async () => {
     showNotice(`同步結束回合狀態失敗：${error.message}`);
     return;
   }
-  if (!allPlayersReadyForTurn()) {
+  if (!force && !allPlayersReadyForTurn()) {
     const readyPlayers = TURN_PLAYERS.filter((player) => turnReady[player] === state.turn).length;
     showNotice(`已送出結束回合確認，等待其他玩家（${readyPlayers}/${TURN_PLAYERS.length}）。`);
     return;
@@ -3978,11 +4275,11 @@ $("endTurnBtn").addEventListener("click", async () => {
 
   try {
     const continuingBattles = activeBattles.filter((battle) =>
-      battle.status === "ongoing" && battle.roundResolvedTurn !== state.turn
+      ["pending", "ongoing"].includes(battle.status) && battle.roundResolvedTurn !== state.turn
     );
     for (const battle of continuingBattles) await resolveBattleRound(battle);
     await cityEconomySync;
-    const result = await api("/api/next-turn", { active_player: currentPlayer });
+    const result = await api("/api/next-turn", { active_player: currentPlayer, force });
     state = result.state;
     syncStrategicCitiesFromState();
     uiNotice = null;
@@ -4012,6 +4309,14 @@ $("endTurnBtn").addEventListener("click", async () => {
     console.error("Next turn error:", error);
     alert("下一回合失敗：" + error.message);
   }
+}
+
+$("endTurnBtn").addEventListener("click", () => {
+  advanceToNextTurn(false);
+});
+
+$("debugForceTurnBtn").addEventListener("click", () => {
+  advanceToNextTurn(true);
 });
 
 boot().catch((error) => {

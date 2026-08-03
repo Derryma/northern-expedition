@@ -10,7 +10,7 @@ The existing map in `PJ Boardgame/北伐風雲_地圖.html` is overwhelming beca
 
 ### Focus Area
 **China mainland only** (no foreign territories):
-- 4 major player factions: F (奉系), W (直系), S (五省聯軍), N (國民革命軍)
+- 4 major player factions: F (張), W (吳), S (孫), N (蔣)
 - Key NPC factions: Y (晉系), G (西北軍), H (湘軍), D (滇系), C (川軍)
 - Major cities and strategic railways only
 - Remove: Japan, Korea, Soviet territories, detailed hex numbers

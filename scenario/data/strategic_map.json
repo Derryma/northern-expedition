@@ -3,7 +3,6 @@
   "cities": [
     {"id":"shenyang","name":"瀋陽","province":"奉天","faction":"F","lon":123.4,"lat":41.8,"level":5,"cash":12,"factory":5},
     {"id":"jinzhou","name":"錦州","province":"奉天","faction":"F","lon":121.1,"lat":41.1,"level":3,"cash":6,"factory":2},
-    {"id":"dalian","name":"大連","province":"奉天","faction":"F","lon":121.7,"lat":39.0,"level":4,"cash":9,"factory":3},
     {"id":"changchun","name":"長春","province":"吉林","faction":"F","lon":125.3,"lat":43.9,"level":3,"cash":6,"factory":2},
     {"id":"jilin","name":"吉林","province":"吉林","faction":"F","lon":126.6,"lat":43.8,"level":2,"cash":4,"factory":1},
     {"id":"harbin","name":"哈爾濱","province":"黑龍江","faction":"F","lon":126.6,"lat":45.8,"level":4,"cash":9,"factory":3},

@@ -25,7 +25,7 @@ LOYALTY_FUNCTION_CARD_IDS = ("unit_promotion", "local_autonomy_agitation")
 ABSOLUTE_LOYAL_GENERAL_IDS = {
     "zhang_xueliang",
     "jin_yun_e",
-    "lu_xiangting",
+    "li_houji",
     "he_yingqin",
 }
 FUNCTION_CARD_COPIES = {
@@ -36,6 +36,9 @@ FUNCTION_CARD_COPIES = {
     "reserve_gift_machine_gun": 2,
     "reserve_gift_artillery": 1,
     "city_development": 4,
+    "intel_network": 6,
+    "police_system": 4,
+    "communist_riot": 3,
     "antiwar_speech_infantry": 5,
     "antiwar_speech_cavalry": 2,
     "antiwar_speech_machine_gun": 2,
@@ -171,6 +174,7 @@ class GameEngine:
             "players": {player: player_state(player) for player in players},
             "city_owners": {city["id"]: city["faction"] for city in cities},
             "city_development": {},
+            "city_output_effects": [],
             "npc_accounts": {
                 code: {
                     "treasury": 60,
@@ -232,7 +236,7 @@ class GameEngine:
             },
         }
 
-    def next_turn(self, active_player: Optional[str] = None) -> Dict[str, Any]:
+    def next_turn(self, active_player: Optional[str] = None, *, force: bool = False) -> Dict[str, Any]:
         if active_player is not None:
             self._player(active_player)
         blocked_players = [
@@ -241,8 +245,14 @@ class GameEngine:
             if FEATURES["function_cards"] and payload.get("pending_draw")
         ]
         if blocked_players:
-            names = ", ".join(blocked_players)
-            raise ValueError(f"players must resolve pending card draws first: {names}")
+            if force:
+                for player in blocked_players:
+                    payload = self.state["players"][player]
+                    payload["discard"].append(payload["pending_draw"])
+                    payload["pending_draw"] = None
+            else:
+                names = ", ".join(blocked_players)
+                raise ValueError(f"players must resolve pending card draws first: {names}")
         self.state["turn"] += 1
         self.state["last_event"] = None
         economy_log = self._apply_turn_economy()
@@ -261,6 +271,7 @@ class GameEngine:
         return {"turn": turn_entry, "state": self.snapshot()}
 
     def _apply_turn_economy(self) -> Dict[str, Any]:
+        self._refresh_city_income()
         log: Dict[str, Any] = {}
         for player, payload in self.state["players"].items():
             gross_income = int(payload.get("income", 0))
@@ -315,29 +326,48 @@ class GameEngine:
                     effect["remaining_turns"] = remaining
                     active_effects.append(effect)
             payload["timed_effects"] = active_effects
+        active_city_effects = []
+        for effect in self.state.get("city_output_effects", []):
+            remaining = int(effect.get("remaining_turns", 0)) - 1
+            if remaining > 0:
+                effect["remaining_turns"] = remaining
+                active_city_effects.append(effect)
+        self.state["city_output_effects"] = active_city_effects
+        self._refresh_city_income()
 
     def _strategic_map_snapshot(self) -> Dict[str, Any]:
         strategic_map = deepcopy(self.data["strategic_map"])
         for city in strategic_map.get("cities", []):
             bonus = self.state.get("city_development", {}).get(city["id"], {})
-            city["cash"] = scaled_city_value(city, "cash") + int(bonus.get("cash", 0))
-            city["factory"] = scaled_city_value(city, "factory") + int(bonus.get("factory", 0))
+            cash, factory = self._adjusted_city_output(
+                city["id"],
+                scaled_city_value(city, "cash") + int(bonus.get("cash", 0)),
+                scaled_city_value(city, "factory") + int(bonus.get("factory", 0)),
+            )
+            city["cash"] = cash
+            city["factory"] = factory
             city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["faction"])
         return strategic_map
 
     def _city_economy_for(self, player: str) -> list[Dict[str, Any]]:
         development = self.state.get("city_development", {})
-        return [
-            {
+        economy = []
+        for city in self.data["strategic_map"]["cities"]:
+            if self.state["city_owners"].get(city["id"], city["faction"]) != player:
+                continue
+            cash, factory = self._adjusted_city_output(
+                city["id"],
+                scaled_city_value(city, "cash") + int(development.get(city["id"], {}).get("cash", 0)),
+                scaled_city_value(city, "factory") + int(development.get(city["id"], {}).get("factory", 0)),
+            )
+            economy.append({
                 "id": city["id"],
                 "name": city["name"],
                 "province": city["province"],
-                "cash": scaled_city_value(city, "cash") + int(development.get(city["id"], {}).get("cash", 0)),
-                "factory": scaled_city_value(city, "factory") + int(development.get(city["id"], {}).get("factory", 0)),
-            }
-            for city in self.data["strategic_map"]["cities"]
-            if self.state["city_owners"].get(city["id"], city["faction"]) == player
-        ]
+                "cash": cash,
+                "factory": factory,
+            })
+        return economy
 
     def _refresh_city_income(self) -> None:
         for player, payload in self.state["players"].items():
@@ -364,10 +394,13 @@ class GameEngine:
             "city": {
                 "id": city["id"],
                 "name": city["name"],
-                "cash": scaled_city_value(city, "cash")
-                + int(self.state.get("city_development", {}).get(city["id"], {}).get("cash", 0)),
-                "factory": scaled_city_value(city, "factory")
-                + int(self.state.get("city_development", {}).get(city["id"], {}).get("factory", 0)),
+                **dict(zip(("cash", "factory"), self._adjusted_city_output(
+                    city["id"],
+                    scaled_city_value(city, "cash")
+                    + int(self.state.get("city_development", {}).get(city["id"], {}).get("cash", 0)),
+                    scaled_city_value(city, "factory")
+                    + int(self.state.get("city_development", {}).get(city["id"], {}).get("factory", 0)),
+                ))),
             },
             "previous_owner": previous_owner,
             "owner": faction,
@@ -466,6 +499,7 @@ class GameEngine:
         target_general_id: Optional[str] = None,
         target_owner: Optional[str] = None,
         target_city_id: Optional[str] = None,
+        target_province: Optional[str] = None,
     ) -> Dict[str, Any]:
         player_state = self._player(player)
         if card_id not in player_state["hand"]:
@@ -488,6 +522,7 @@ class GameEngine:
         debt_delta = 0
         timed_effect: Optional[Dict[str, Any]] = None
         recurring_effect: Optional[Dict[str, Any]] = None
+        city_disruption: Optional[Dict[str, Any]] = None
         if mechanic == "loyalty":
             if not target_general_id or not target_owner:
                 raise ValueError("a target general is required")
@@ -602,6 +637,49 @@ class GameEngine:
                 "tiles": int(card.get("tiles", 3)),
             }
             player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
+        elif mechanic == "intel_network":
+            province = str(target_province or "").strip()
+            if not province:
+                raise ValueError("intel network requires a target province")
+            duration = int(card.get("duration_turns", 1))
+            timed_effect = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "kind": "intel_network",
+                "remaining_turns": duration,
+                "owners": [player],
+                "target_province": province,
+            }
+            player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
+        elif mechanic == "police_system":
+            duration = int(card.get("duration_turns", 3))
+            timed_effect = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "kind": "police_system",
+                "remaining_turns": duration,
+                "owners": [player],
+            }
+            player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
+        elif mechanic == "communist_riot":
+            if not target_owner or target_owner == player or target_owner not in self.state["players"]:
+                raise ValueError("communist riot must target another playable faction")
+            target_cities = list(self._player(target_owner).get("city_economy", []))
+            if not target_cities:
+                raise ValueError("target faction has no cities to disrupt")
+            selected = self.random.sample(target_cities, k=min(2, len(target_cities)))
+            city_disruption = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "target_owner": target_owner,
+                "remaining_turns": int(card.get("duration_turns", 3)),
+                "city_ids": [city["id"] for city in selected],
+                "cities": [{"id": city["id"], "name": city["name"]} for city in selected],
+                "cash_multiplier": float(card.get("cash_multiplier", 0)),
+                "factory_multiplier": float(card.get("factory_multiplier", 0)),
+            }
+            self.state.setdefault("city_output_effects", []).append(deepcopy(city_disruption))
+            self._refresh_city_income()
         else:
             raise ValueError("this function card is not implemented in the playtest rules")
         player_state["treasury"] -= cost
@@ -623,6 +701,7 @@ class GameEngine:
             "debt_delta": debt_delta,
             "timed_effect": timed_effect,
             "recurring_effect": recurring_effect,
+            "city_disruption": city_disruption,
         }
         injected = []
         for generated in card.get("generated_event_cards", []):
@@ -648,6 +727,7 @@ class GameEngine:
             "debt_delta": debt_delta,
             "timed_effect": timed_effect,
             "recurring_effect": recurring_effect,
+            "city_disruption": city_disruption,
             "state": self.snapshot(),
         }
 
@@ -849,6 +929,16 @@ class GameEngine:
         payload = self._player(player)
         payload["unit_reserves"][unit_type] = max(0, int(payload["unit_reserves"].get(unit_type, 0)) + int(amount))
         payload["unit_reserve"] = sum(payload["unit_reserves"].values())
+
+    def _adjusted_city_output(self, city_id: str, cash: int, factory: int) -> tuple[int, int]:
+        adjusted_cash = int(cash)
+        adjusted_factory = int(factory)
+        for effect in self.state.get("city_output_effects", []):
+            if int(effect.get("remaining_turns", 0)) <= 0 or city_id not in effect.get("city_ids", []):
+                continue
+            adjusted_cash = int(round(adjusted_cash * float(effect.get("cash_multiplier", 1))))
+            adjusted_factory = int(round(adjusted_factory * float(effect.get("factory_multiplier", 1))))
+        return max(0, adjusted_cash), max(0, adjusted_factory)
 
     def _card_allowed_for_player(self, card_id: str, player: str) -> bool:
         card = self._card_template(card_id)

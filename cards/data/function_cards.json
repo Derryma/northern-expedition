@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 74,
+  "count": 77,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -249,6 +249,44 @@
       "generated_event_cards": []
     },
     {
+      "id": "intel_network",
+      "name": "情報網",
+      "deck_type": "function",
+      "category": "intelligence",
+      "holdable": true,
+      "mechanic": "intel_network",
+      "duration_turns": 1,
+      "cost": 0,
+      "effect": "指定一省，本回合可看見該省敵軍軍隊標記與兵力編制；若目標陣營有警政系統保護，該陣營不會被揭露。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "police_system",
+      "name": "警政系統",
+      "deck_type": "function",
+      "category": "counter_intelligence",
+      "holdable": true,
+      "mechanic": "police_system",
+      "duration_turns": 3,
+      "cost": 0,
+      "effect": "三回合內，我方所有不在敵軍正常視野內的軍隊免疫敵方情報網窺探；已在敵軍視野內或交戰中的軍隊不受此保護。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "communist_riot",
+      "name": "共黨暴動",
+      "deck_type": "function",
+      "category": "political_warfare",
+      "holdable": true,
+      "mechanic": "communist_riot",
+      "duration_turns": 3,
+      "cash_multiplier": 0,
+      "factory_multiplier": 0,
+      "cost": 0,
+      "effect": "指定一個敵方勢力，隨機兩座城市現金與工廠產出歸零 3 回合；目標勢力會收到明確通知。",
+      "generated_event_cards": []
+    },
+    {
       "id": "zhili_infantry_drill",
       "name": "直系步兵操練",
       "deck_type": "function",
@@ -260,7 +298,7 @@
       "owners": ["W", "S"],
       "unit_reserves": {"infantry": 5},
       "cost": 0,
-      "effect": "孫傳芳與吳佩孚若未交戰，雙方各獲得步兵預備隊 5 營。",
+      "effect": "孫與吳若未交戰，雙方各獲得步兵預備隊 5 營。",
       "generated_event_cards": []
     },
     {
@@ -277,7 +315,7 @@
       "duration_turns": 3,
       "modifiers": [{"stat": "attack", "multiplier": 1.05}],
       "cost": 0,
-      "effect": "孫傳芳與吳佩孚若未交戰，雙方對奉軍全兵種攻擊 +5%，持續 3 回合。",
+      "effect": "孫與吳若未交戰，雙方對張全兵種攻擊 +5%，持續 3 回合。",
       "generated_event_cards": []
     },
     {
@@ -292,7 +330,7 @@
       "duration_turns": 5,
       "cash_deltas": {"S": -5, "W": 10},
       "cost": 0,
-      "effect": "孫傳芳每回合現金 -5，吳佩孚每回合現金 +10，持續 5 回合。",
+      "effect": "孫每回合現金 -5，吳每回合現金 +10，持續 5 回合。",
       "generated_event_cards": []
     },
     {
@@ -306,7 +344,7 @@
       "debt": 20,
       "unit_reserves": {"infantry": 5, "cavalry": 5, "machine_gun": 2},
       "cost": 0,
-      "effect": "國民革命軍負債 +20，步兵預備隊 +5、騎兵 +5、機槍 +2。",
+      "effect": "蔣負債 +20，步兵預備隊 +5、騎兵 +5、機槍 +2。",
       "generated_event_cards": []
     },
     {
@@ -319,7 +357,7 @@
       "allowed_players": ["N"],
       "loyalty_delta": 2,
       "cost": 0,
-      "effect": "國民革命軍全體可變忠誠將領忠誠 +2。",
+      "effect": "蔣全體可變忠誠將領忠誠 +2。",
       "generated_event_cards": []
     },
     {
@@ -333,7 +371,7 @@
       "duration_turns": 3,
       "modifiers": [{"stat": "attack", "multiplier": 1.1}],
       "cost": 0,
-      "effect": "國民革命軍全軍攻擊 +10%，持續 3 回合。",
+      "effect": "蔣全軍攻擊 +10%，持續 3 回合。",
       "generated_event_cards": []
     },
     {
@@ -346,7 +384,7 @@
       "allowed_players": ["N"],
       "cash": 20,
       "cost": 0,
-      "effect": "國民革命軍現金 +20。",
+      "effect": "蔣現金 +20。",
       "generated_event_cards": []
     },
     {
@@ -359,7 +397,7 @@
       "allowed_players": ["N"],
       "unit_reserves": {"infantry": 20},
       "cost": 0,
-      "effect": "國民革命軍步兵預備隊 +20。本牌每副牌僅 1 張。",
+      "effect": "蔣步兵預備隊 +20。本牌每副牌僅 1 張。",
       "generated_event_cards": []
     },
     {
@@ -373,7 +411,7 @@
       "duration_turns": 3,
       "modifiers": [{"stat": "harm_taken", "unit": "infantry", "multiplier": 0.95}],
       "cost": 0,
-      "effect": "奉系步兵承傷 -5%，持續 3 回合。",
+      "effect": "張步兵承傷 -5%，持續 3 回合。",
       "generated_event_cards": []
     },
     {
@@ -387,7 +425,7 @@
       "duration_turns": 3,
       "modifiers": [{"stat": "attack", "unit": "infantry", "multiplier": 1.05}],
       "cost": 0,
-      "effect": "奉系步兵攻擊 +5%，持續 3 回合。",
+      "effect": "張步兵攻擊 +5%，持續 3 回合。",
       "generated_event_cards": []
     },
     {
@@ -402,7 +440,7 @@
       "cash": 1,
       "factory": 1,
       "cost": 0,
-      "effect": "奉系控制的奉天、吉林、黑龍江城市每回合現金 +1、工廠 +1。本牌每副牌僅 1 張。",
+      "effect": "張控制的奉天、吉林、黑龍江城市每回合現金 +1、工廠 +1。本牌每副牌僅 1 張。",
       "generated_event_cards": []
     },
     {
@@ -416,7 +454,7 @@
       "debt": 100,
       "cash": 90,
       "cost": 0,
-      "effect": "奉系負債 +100，現金 +90。",
+      "effect": "張負債 +100，現金 +90。",
       "generated_event_cards": []
     },
     {
@@ -430,7 +468,7 @@
       "duration_turns": 2,
       "tiles": 4,
       "cost": 0,
-      "effect": "奉系鐵路移動上限由 3 格提高到 4 格，持續 2 回合。",
+      "effect": "張鐵路移動上限由 3 格提高到 4 格，持續 2 回合。",
       "generated_event_cards": []
     },
     {
@@ -455,10 +493,10 @@
       "holdable": true,
       "mechanic": "reserve_loss",
       "unit_type": "cavalry",
-      "min_units": 3,
-      "max_units": 5,
+      "min_units": 1,
+      "max_units": 3,
       "cost": 15,
-      "effect": "指定一名玩家勢力，扣減騎兵預備隊 3-5 營。",
+      "effect": "指定一名玩家勢力，扣減騎兵預備隊 1-3 營。",
       "generated_event_cards": []
     },
     {
@@ -469,10 +507,10 @@
       "holdable": true,
       "mechanic": "reserve_loss",
       "unit_type": "machine_gun",
-      "min_units": 3,
-      "max_units": 5,
+      "min_units": 1,
+      "max_units": 2,
       "cost": 15,
-      "effect": "指定一名玩家勢力，扣減機槍預備隊 3-5 營。",
+      "effect": "指定一名玩家勢力，扣減機槍預備隊 1-2 營。",
       "generated_event_cards": []
     },
     {
@@ -483,10 +521,10 @@
       "holdable": true,
       "mechanic": "reserve_loss",
       "unit_type": "artillery",
-      "min_units": 3,
-      "max_units": 5,
+      "min_units": 1,
+      "max_units": 2,
       "cost": 15,
-      "effect": "指定一名玩家勢力，扣減砲兵預備隊 3-5 營。",
+      "effect": "指定一名玩家勢力，扣減砲兵預備隊 1-2 營。",
       "generated_event_cards": []
     },
     {
@@ -495,7 +533,7 @@
       "deck_type": "function",
       "category": "foreign_credit",
       "holdable": true,
-      "suggested_owner": "奉系 / 張作霖",
+      "suggested_owner": "張 / 張作霖",
       "entry_requirement": "對日關係 >= 6 或控制滿洲",
       "effect": "立即取得日械採購折扣或軍火到貨；同時增加對日債務與政治代價。",
       "generated_event_cards": [

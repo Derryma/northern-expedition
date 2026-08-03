@@ -83,7 +83,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         routes: Dict[str, Callable[[Dict[str, Any]], Any]] = {
             "/api/new-game": self._new_game,
-            "/api/next-turn": lambda payload: ENGINE.next_turn(payload.get("active_player")),
+            "/api/next-turn": self._next_turn,
             "/api/draw-event": lambda _: ENGINE.draw_event(),
             "/api/draw-function": self._draw_function,
             "/api/use-function": self._use_function,
@@ -114,6 +114,10 @@ class PlaytestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")
+
+    def _next_turn(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        force = bool(payload.get("force")) and self.client_address[0] in {"127.0.0.1", "::1"}
+        return ENGINE.next_turn(payload.get("active_player"), force=force)
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         global SHARED_TACTICAL_STATE, SHARED_REVISION
@@ -152,6 +156,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_general_id=payload.get("target_general_id"),
             target_owner=payload.get("target_owner"),
             target_city_id=payload.get("target_city_id"),
+            target_province=payload.get("target_province"),
         )
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:
