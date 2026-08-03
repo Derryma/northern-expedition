@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the Northern Expedition playtest web app."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,4 +11,4 @@ from backend.server import run
 
 
 if __name__ == "__main__":
-    run()
+    run(port=int(os.environ.get("PORT", "8766")))
