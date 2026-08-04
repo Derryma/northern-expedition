@@ -20,10 +20,22 @@ const PORTRAIT_BY_ID = {
   jin_yun_e: "/assets/portraits/靳雲鶚.jpg",
   feng_yuxiang: "/assets/portraits/馮玉祥.jpg",
   wang_chengbin: "/assets/portraits/王承斌.jpg",
+  han_fuqu: "/assets/portraits/韓復榘.jpg",
   sun_chuanfang: "/assets/portraits/孫傳芳.jpg",
   zhou_yinren: "/assets/portraits/周蔭人.jpg",
   li_houji: "/assets/portraits/李厚基.jpg",
   lu_yongxiang: "/assets/portraits/盧永祥.jpg",
+  li_zongren: "/assets/portraits/李宗仁.jpg",
+  yan_xishan: "/assets/portraits/閻錫山.jpg",
+  fu_zuoyi: "/assets/portraits/傅作義.jpg",
+  song_zheyuan: "/assets/portraits/宋哲元.jpg",
+  ma_qi: "/assets/portraits/馬麒.jpg",
+  ma_fuxiang: "/assets/portraits/馬福祥.jpg",
+  he_jian: "/assets/portraits/何鍵.jpg",
+  liu_xiang: "/assets/portraits/劉湘.jpg",
+  liu_wenhui: "/assets/portraits/劉文輝.jpg",
+  tang_jiyao: "/assets/portraits/唐繼堯.jpg",
+  long_yun: "/assets/portraits/龍雲.jpg",
 };
 
 let bootstrap = null;
@@ -40,8 +52,8 @@ let currentPlayer = null;
 let eventHistory = []; // Store all events that have occurred
 let selectedArmyId = null;
 const resolvedArmyIds = new Set();
-const MAX_HAND_SIZE = 4;
-const DEFAULT_FUNCTION_CARD_DRAW_COST = 10;
+const MAX_HAND_SIZE = 6;
+const DEFAULT_FUNCTION_CARD_DRAW_COST = 5;
 let foreignTab = "warlords";
 let dealTarget = null;
 let moveMode = false;
@@ -248,7 +260,12 @@ const TACTIC_LABELS = {
 };
 const OFFENSIVE_TACTICS = ["normal_advance", "probing_attack", "all_out_offense", "pinning_attack"];
 const DEFENSIVE_TACTICS = ["normal_advance", "layered_delaying", "last_stand"];
+const NPC_TACTIC_CHOICES = ["normal_advance", "layered_delaying"];
 const COMBAT_ESTIMATE_CALIBRATION = 0.45;
+const CHINESE_ARMY_NUMERALS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+const CHINESE_ARMY_NUMERAL_VALUES = Object.fromEntries(CHINESE_ARMY_NUMERALS.map((char, index) => [char, index]));
+const OVERRUN_SURRENDER_FORCE = 8;
+const OVERRUN_FORCE_RATIO = 2.5;
 
 const INITIAL_ARMY_CELLS = Object.fromEntries(
   Object.values(ARMY_POSITIONS).flat().map((army) => [army.id, {
@@ -328,6 +345,73 @@ function tacticOptionsMarkup(selectedId, side = null) {
     .join("");
 }
 
+function factionIsNpc(faction) {
+  return FACTIONS[faction]?.type === "npc";
+}
+
+function npcTacticForSide(battle, side) {
+  if (!battle || !factionIsNpc(side === "A" ? battle.attackerFaction : battle.defenderFaction)) return null;
+  if (side === "B") return "layered_delaying";
+  return "normal_advance";
+}
+
+function applyNpcBattleDefaults(battle) {
+  if (!battle) return;
+  battle.tactics ||= { A: "normal_advance", B: "normal_advance" };
+  battle.confirmed ||= { A: false, B: false };
+  battle.tacticRevision ||= { A: true, B: true };
+  for (const side of ["A", "B"]) {
+    const tactic = npcTacticForSide(battle, side);
+    if (!tactic) continue;
+    battle.tactics[side] = tactic;
+    battle.confirmed[side] = true;
+    battle.tacticRevision[side] = false;
+  }
+}
+
+function chineseNumber(value) {
+  const number = Math.max(1, Math.floor(Number(value) || 1));
+  if (number <= 10) return CHINESE_ARMY_NUMERALS[number];
+  if (number < 20) return `十${CHINESE_ARMY_NUMERALS[number - 10]}`;
+  const tens = Math.floor(number / 10);
+  const ones = number % 10;
+  return `${CHINESE_ARMY_NUMERALS[tens]}十${ones ? CHINESE_ARMY_NUMERALS[ones] : ""}`;
+}
+
+function parseChineseNumber(text) {
+  if (!text) return 0;
+  if (Object.hasOwn(CHINESE_ARMY_NUMERAL_VALUES, text)) return CHINESE_ARMY_NUMERAL_VALUES[text];
+  if (text === "十") return 10;
+  if (text.startsWith("十")) return 10 + (CHINESE_ARMY_NUMERAL_VALUES[text.slice(1)] || 0);
+  const match = text.match(/^(.+)十(.+)?$/);
+  if (!match) return 0;
+  const tens = CHINESE_ARMY_NUMERAL_VALUES[match[1]] || 0;
+  const ones = match[2] ? CHINESE_ARMY_NUMERAL_VALUES[match[2]] : 0;
+  return tens > 0 && ones >= 0 ? tens * 10 + ones : 0;
+}
+
+function parseArmyDesignatorNumber(designator) {
+  const text = String(designator || "");
+  const arabic = text.match(/第(\d+)軍/);
+  if (arabic) return Number(arabic[1]) || 0;
+  const chinese = text.match(/第([一二三四五六七八九十]+)軍/);
+  return chinese ? parseChineseNumber(chinese[1]) : 0;
+}
+
+function nextAvailableArmyNumber(faction, excludedArmyId = null) {
+  const used = new Set(allArmies(true)
+    .filter((item) => factionForArmy(item) === faction && item.id !== excludedArmyId)
+    .map((item) => parseArmyDesignatorNumber(item.designator))
+    .filter(Boolean));
+  let candidate = 1;
+  while (used.has(candidate)) candidate += 1;
+  return candidate;
+}
+
+function formatArmyDesignator(number) {
+  return `第${chineseNumber(number)}軍`;
+}
+
 function setupUiTooltip() {
   const tooltip = $("uiTooltip");
   const show = (chip) => {
@@ -376,7 +460,7 @@ async function loadGeneralTreeForFaction(factionCode) {
 }
 
 async function loadAllGeneralTrees() {
-  await Promise.all(["F", "W", "S", "N"].map(async (faction) => {
+  await Promise.all(Object.keys(ARMY_POSITIONS).map(async (faction) => {
     generalTrees[faction] = await api(`/api/general-tree?faction=${faction}`);
     initialGeneralTrees[faction] = JSON.parse(JSON.stringify(generalTrees[faction]));
   }));
@@ -411,6 +495,47 @@ function generalById(generalId) {
   return generalTrees[owner]?.generals?.[generalId]
     || Object.values(generalTrees).map((tree) => tree.generals?.[generalId]).find(Boolean)
     || null;
+}
+
+function mutableGeneralIdsForOwner(owner) {
+  return Object.entries(generalOwners)
+    .filter(([, generalOwner]) => generalOwner === owner)
+    .map(([generalId]) => generalId)
+    .filter((generalId) => {
+      const general = generalById(generalId);
+      return general && general.loyalty !== null && !general.absolute_loyalty && !general.loyalty_exempt;
+    });
+}
+
+function adjustGeneralLoyalty(generalId, amount) {
+  const general = generalById(generalId);
+  if (!general || general.loyalty === null || general.absolute_loyalty || general.loyalty_exempt) return;
+  const fieldArmy = allArmies(true).find((army) => army.generalId === generalId);
+  const current = calculateGeneralLoyalty(general, fieldArmy).value ?? 1;
+  loyaltyOverrides[generalId] = Math.max(1, Math.min(10, current + Number(amount || 0)));
+}
+
+function applyFunctionSideEffects(result) {
+  if (result.target_general_id && result.loyalty_delta) {
+    adjustGeneralLoyalty(result.target_general_id, result.loyalty_delta);
+  }
+  if (result.loyalty_delta_all) {
+    mutableGeneralIdsForOwner(result.loyalty_delta_all.owner)
+      .forEach((generalId) => adjustGeneralLoyalty(generalId, result.loyalty_delta_all.amount));
+  }
+  for (const swing of result.loyalty_swings || []) {
+    mutableGeneralIdsForOwner(swing.owner).forEach((generalId) => adjustGeneralLoyalty(generalId, swing.amount));
+  }
+  if (result.army_unit_delta) {
+    const { general_id: generalId, unit_reserves: units, requires_active: requiresActive } = result.army_unit_delta;
+    const army = allArmies(true).find((item) => item.generalId === generalId);
+    if (!army || (requiresActive && army.status === "jailed")) return;
+    const nextUnits = { ...armyUnits(army) };
+    for (const [unitType, amount] of Object.entries(units || {})) {
+      nextUnits[unitType] = Math.max(0, Math.ceil(Number(nextUnits[unitType] || 0) + Number(amount || 0)));
+    }
+    setArmyTotalUnits(army, nextUnits);
+  }
 }
 
 function descendantGeneralIds(tree, generalId) {
@@ -506,7 +631,9 @@ function applyTacticalSnapshot(snapshot) {
   replaceObject(generalTrees, JSON.parse(JSON.stringify(snapshot.generalTrees || generalTrees)));
   replaceObject(generalOwners, snapshot.generalOwners);
   replaceObject(loyaltyOverrides, snapshot.loyaltyOverrides);
-  for (const faction of Object.keys(jailedGenerals)) {
+  for (const faction of new Set([...Object.keys(jailedGenerals), ...Object.keys(snapshot.jailedGenerals || {})])) {
+    jailedGenerals[faction] ||= [];
+    recruitedGenerals[faction] ||= [];
     replaceArray(jailedGenerals[faction], snapshot.jailedGenerals?.[faction]);
     replaceArray(recruitedGenerals[faction], snapshot.recruitedGenerals?.[faction]);
   }
@@ -865,18 +992,24 @@ function functionPurchasePromptKey(player = currentPlayer) {
 
 function canPurchaseFunctionCard(payload = state?.players?.[currentPlayer], player = currentPlayer) {
   if (!bootstrap?.features?.function_cards || !payload || payload.pending_draw) return false;
-  if (payload.function_purchase_used) return false;
+  if (Number(payload.function_purchase_count || 0) >= functionCardDrawLimit()) return false;
   if ((payload.treasury || 0) < functionCardDrawCost()) return false;
   if (((payload.function_deck || []).length + (payload.discard || []).length) <= 0) return false;
   return !skippedFunctionPurchasePrompts.has(functionPurchasePromptKey(player));
 }
 
+function functionCardDrawLimit() {
+  return bootstrap?.features?.function_card_purchase_limit || 2;
+}
+
 function functionPurchaseMarkup(payload = state?.players?.[currentPlayer], context = "panel") {
   const cost = functionCardDrawCost();
   const deckCount = (payload?.function_deck || []).length + (payload?.discard || []).length;
-  let note = `可支付 ¥${cost} 購買 1 張功能卡；每位玩家每回合限 1 張。`;
+  const used = Number(payload?.function_purchase_count || 0);
+  const limit = functionCardDrawLimit();
+  let note = `可支付 ¥${cost} 抽 1 張功能卡；每位玩家每回合最多 ${limit} 張（已抽 ${used}/${limit}）。`;
   if (payload?.pending_draw) note = "先棄置一張手牌，接收已購買的新功能卡。";
-  else if (payload?.function_purchase_used) note = "本回合已購買過功能卡。";
+  else if (used >= limit) note = `本回合已抽滿 ${limit} 張功能卡。`;
   else if ((payload?.treasury || 0) < cost) note = `現金不足，購買功能卡需要 ¥${cost}。`;
   else if (deckCount <= 0) note = "功能卡牌庫已空。";
   return `
@@ -897,9 +1030,12 @@ async function buyFunctionCard(button) {
     const result = await api("/api/draw-function", { player });
     state = result.state;
     syncStrategicCitiesFromState();
+    const drawCount = Number(state.players[player]?.function_purchase_count || 0);
     uiNotice = result.requires_discard
       ? `已支付 ¥${result.draw_cost} 購買「${result.card.name}」，請棄置一張手牌接收。`
-      : `已支付 ¥${result.draw_cost} 購買「${result.card.name}」。`;
+      : drawCount >= functionCardDrawLimit()
+        ? `已支付 ¥${result.draw_cost} 購買「${result.card.name}」；本回合抽牌已達上限。`
+        : null;
     updateTopBar();
     renderHandDock();
     renderPendingActions();
@@ -965,7 +1101,11 @@ function armyRevealedByIntel(army, observer = currentPlayer) {
 
 function activeEffectsMarkup(payload = state.players[currentPlayer]) {
   const effects = (payload?.timed_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
-  if (!effects.length) return "";
+  const cityEffects = (state.city_output_effects || []).filter((effect) =>
+    effect.kind === "qing_gang_riot"
+    && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
+  );
+  if (!effects.length && !cityEffects.length) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
       const label = effect.kind === "police_system"
@@ -975,7 +1115,26 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
           : `${effect.name || "持續效果"}剩餘 ${effect.remaining_turns} 回合`;
       return `<span>${label}</span>`;
     }).join("")}
+    ${cityEffects.map((effect) => {
+      const role = effect.initiator === currentPlayer ? "發動" : "受害";
+      const progress = `${effect.garrison_progress || 0}/${effect.required_turns || 3}`;
+      return `<span>青幫暴動(${role})：${effect.province}，鎮壓 ${progress}</span>`;
+    }).join("")}
   </div>`;
+}
+
+function qingGangRiotGarrisons() {
+  const report = {};
+  for (const effect of state?.city_output_effects || []) {
+    if (effect.kind !== "qing_gang_riot") continue;
+    report[effect.id] = allArmies().some((army) =>
+      factionForArmy(army) === effect.target_owner
+      && army.status !== "jailed"
+      && provinceForArmy(army) === effect.province
+      && forcePoints(armyUnits(army)) >= Number(effect.required_force || 15)
+    );
+  }
+  return report;
 }
 
 function generalLabel(generalId, owner = null) {
@@ -1013,6 +1172,11 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const sign = action.loyalty_delta_all.amount > 0 ? "+" : "";
     parts.push(`${owner}全體可變忠誠將領忠誠 ${sign}${action.loyalty_delta_all.amount}`);
   }
+  for (const swing of action.loyalty_swings || []) {
+    const owner = factionLabel(swing.owner, swing.owner === viewer);
+    const sign = swing.amount > 0 ? "+" : "";
+    parts.push(`${owner}全體可變忠誠將領忠誠 ${sign}${swing.amount}`);
+  }
   const developments = action.city_developments?.length ? action.city_developments : (action.city_development ? [action.city_development] : []);
   if (developments.length) {
     parts.push(developments.map((development) =>
@@ -1022,8 +1186,25 @@ function functionActionMessage(action, viewer = currentPlayer) {
   if (action.cash_delta) {
     parts.push(`${factionLabel(action.player, action.player === viewer)}現金 ${action.cash_delta > 0 ? "+" : ""}${action.cash_delta}`);
   }
+  if (action.permanent_output_delta) {
+    const delta = action.permanent_output_delta;
+    parts.push(`${factionLabel(delta.owner, delta.owner === viewer)}永久收入 +¥${delta.cash}、工廠 +${delta.factory}/回合`);
+  }
   if (action.debt_delta) {
     parts.push(`${factionLabel(action.player, action.player === viewer)}負債 ${action.debt_delta > 0 ? "+" : ""}${action.debt_delta}`);
+  }
+  if (action.army_unit_delta) {
+    const delta = action.army_unit_delta;
+    const army = allArmies(true).find((item) => item.generalId === delta.general_id);
+    const units = Object.entries(delta.unit_reserves || {})
+      .map(([unitType, amount]) => `${UNIT_META[unitType]?.name || unitType}+${amount}`)
+      .join("、");
+    parts.push(`${army?.general || generalLabel(delta.general_id, delta.owner)}所在軍隊 ${units}`);
+  }
+  if (action.foreign_relation_delta) {
+    const labels = { jp: "日本", su: "蘇聯", uk: "英國", fr: "法國", us: "美國" };
+    const delta = action.foreign_relation_delta;
+    parts.push(`${labels[delta.power] || delta.power}關係 ${delta.before} -> ${delta.after}`);
   }
   if (action.timed_effect) {
     const turns = action.timed_effect.remaining_turns || 0;
@@ -1034,7 +1215,9 @@ function functionActionMessage(action, viewer = currentPlayer) {
       ? `揭露${action.timed_effect.target_province}`
       : action.timed_effect.kind === "police_system"
         ? "反情報保護"
-        : action.timed_effect.name || "持續效果";
+        : action.timed_effect.kind === "rural_movement"
+          ? `鄉村急行 ${action.timed_effect.tiles || 2} 格`
+          : action.timed_effect.name || "持續效果";
     parts.push(`${owners}${effectDetail}啟動 ${turns} 回合`);
   }
   if (action.recurring_effect) {
@@ -1043,9 +1226,13 @@ function functionActionMessage(action, viewer = currentPlayer) {
   if (action.city_disruption) {
     const target = factionLabel(action.city_disruption.target_owner, action.city_disruption.target_owner === viewer);
     const cities = (action.city_disruption.cities || []).map((city) => city.name).join("、");
-    parts.push(`${target}${cities}產出停擺 ${action.city_disruption.remaining_turns} 回合`);
+    if (action.city_disruption.kind === "qing_gang_riot") {
+      parts.push(`${target}${action.city_disruption.province}青幫暴動，城市 ${cities} 產出停擺；需 15 戰力軍隊連續駐留 3 回合鎮壓`);
+    } else {
+      parts.push(`${target}${cities}產出停擺 ${action.city_disruption.remaining_turns} 回合`);
+    }
   }
-  return `${actor}打出「${cardName}」${parts.length ? `：${parts.join("；")}。` : "。"}`;
+  return `${actor}打出「${cardName}」${parts.length ? `：${parts.join("；")}。` : "：無效果，浪費一次出牌。"}`;
 }
 
 function functionActionVisibleTo(action, viewer = currentPlayer) {
@@ -1053,9 +1240,13 @@ function functionActionVisibleTo(action, viewer = currentPlayer) {
   if (action.player === viewer) return true;
   if (action.card?.mechanic === "intel_network") return false;
   if (action.city_disruption?.target_owner === viewer) return true;
+  if (action.city_disruption?.initiator === viewer) return true;
   if ((action.reserve_deltas || []).some((delta) => delta.owner === viewer)) return true;
   if (action.target_owner === viewer) return true;
   if (action.loyalty_delta_all?.owner === viewer) return true;
+  if ((action.loyalty_swings || []).some((swing) => swing.owner === viewer)) return true;
+  if (action.permanent_output_delta?.owner === viewer) return true;
+  if (action.army_unit_delta?.owner === viewer) return true;
   if ((action.timed_effect?.owners || []).includes(viewer)) return true;
   return false;
 }
@@ -1354,13 +1545,11 @@ function recruitCapturedGeneral(record, faction, superiorId, deploymentCell) {
   for (const general of transferred) detachGeneralFromTree(sourceTree, general.id);
   installTransferredCommand(transferred, faction, superiorId, 2);
   const general = transferred[0] || record.general;
-  const nextNumber = allArmies(true)
-    .filter((item) => factionForArmy(item) === faction && item.id !== army.id)
-    .reduce((max, item) => Math.max(max, Number(item.designator?.match(/第(\d+)軍/)?.[1] || 0)), 0) + 1;
+  const nextNumber = nextAvailableArmyNumber(faction, army.id);
   Object.assign(army, {
     faction,
     general: general.name,
-    designator: `第${nextNumber}軍`,
+    designator: formatArmyDesignator(nextNumber),
     status: "active",
     units: { infantry: 5, cavalry: 0, artillery: 0, machine_gun: 0 },
   });
@@ -1373,7 +1562,9 @@ function recruitCapturedGeneral(record, faction, superiorId, deploymentCell) {
     const oldLedger = state.players[record.originFaction]?.army_reinforcements?.[fieldArmy.id];
     if (oldLedger) {
       state.players[faction].army_reinforcements[fieldArmy.id] = { ...oldLedger };
-      delete state.players[record.originFaction].army_reinforcements[fieldArmy.id];
+      if (state.players[record.originFaction]) {
+        delete state.players[record.originFaction].army_reinforcements[fieldArmy.id];
+      }
     }
   }
 }
@@ -1397,13 +1588,16 @@ function transferDefectingCommand(army, destinationFaction, superiorId) {
   for (const general of transferred) detachGeneralFromTree(sourceTree, general.id);
   installTransferredCommand(transferred, destinationFaction, superiorId, 2);
   for (const fieldArmy of allArmies(true).filter((item) => transferredIds.includes(item.generalId))) {
+    fieldArmy.designator = formatArmyDesignator(nextAvailableArmyNumber(destinationFaction, fieldArmy.id));
     fieldArmy.faction = destinationFaction;
     fieldArmy.status = "active";
     markArmyResolved(fieldArmy);
     const oldLedger = state.players[sourceFaction]?.army_reinforcements?.[fieldArmy.id];
     if (oldLedger) {
       state.players[destinationFaction].army_reinforcements[fieldArmy.id] = { ...oldLedger };
-      delete state.players[sourceFaction].army_reinforcements[fieldArmy.id];
+      if (state.players[sourceFaction]) {
+        delete state.players[sourceFaction].army_reinforcements[fieldArmy.id];
+      }
     }
   }
   return transferred;
@@ -1695,12 +1889,12 @@ function renderForeignPanel() {
     ];
     return tabs + `<div class="relations-list">${powers.map((power) => {
       const value = relations[power.key] ?? 0;
-      const relationText = value >= 3 ? "友好" : value <= -3 ? "緊張" : "中立";
+      const relationText = value >= 8 ? "友好" : value < 3 ? "敵對" : "中立";
       return `
         <div class="relation-row">
           <div><b>${power.name}</b><small>${power.territories}</small></div>
-          <span class="power-relation ${value >= 3 ? "good" : value <= -3 ? "poor" : ""}">
-            ${relationText} ${value >= 0 ? "+" : ""}${value}
+          <span class="power-relation ${value >= 8 ? "good" : value < 3 ? "poor" : ""}">
+            ${relationText} ${value}/10
           </span>
         </div>
       `;
@@ -1813,7 +2007,6 @@ function renderCardsPanel() {
       </div>
       <div class="card-category">${card.category || "function"}</div>
       ${card.effect ? `<div class="card-effect">${card.effect}</div>` : ''}
-      ${card.cost ? `<div class="card-cost">費用: ${card.cost}</div>` : ''}
       ${functionCardTargetMarkup(card)}
     </div>
   `).join("");
@@ -1824,7 +2017,7 @@ function renderCardsPanel() {
     ${pendingCard ? `<div class="discard-panel-notice">新牌「${pendingCard.name}」等待加入。請棄置一張現有手牌。</div>` : ""}
     <div style="margin-bottom: 16px; padding: 12px; background: var(--terracotta-tint); border-radius: 8px;">
       <div style="font-size: 13px; color: var(--muted);">
-        牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length} · 棄牌 ${payload.discard.length} · 本回合購買 ${payload.function_purchase_used ? "已用" : "未用"}
+        牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length} · 棄牌 ${payload.discard.length} · 本回合抽牌 ${payload.function_purchase_count || 0}/${functionCardDrawLimit()}
       </div>
     </div>
     <div class="card-detail-list">${cardsHtml}</div>
@@ -1840,6 +2033,13 @@ function attachCardHandlers(root = document) {
     button.addEventListener("click", async () => {
       button.disabled = true;
       try {
+        const card = cardIndex[button.dataset.use];
+        if (card?.mechanic === "army_unit_bundle") {
+          const army = allArmies(true).find((item) => item.generalId === card.target_general_id);
+          if (!army || (card.requires_active !== false && army.status === "jailed")) {
+            throw new Error("指定將領已被俘或不在戰場，不能打出此牌。");
+          }
+        }
         const targetGeneralId = root.querySelector(`[data-card-target="${button.dataset.use}"]`)?.value;
         const result = await api("/api/use-function", {
           player: button.dataset.player,
@@ -1851,25 +2051,7 @@ function attachCardHandlers(root = document) {
           target_province: root.querySelector(`[data-card-target-province="${button.dataset.use}"]`)?.value,
         });
         state = result.state;
-        if (result.target_general_id && result.loyalty_delta) {
-          const target = generalById(result.target_general_id);
-          const fieldArmy = allArmies(true).find((army) => army.generalId === result.target_general_id);
-          if (target && !target.absolute_loyalty) {
-            const current = calculateGeneralLoyalty(target, fieldArmy).value ?? 1;
-            loyaltyOverrides[result.target_general_id] = Math.max(1, Math.min(10, current + result.loyalty_delta));
-          }
-        }
-        if (result.loyalty_delta_all) {
-          const { owner, amount } = result.loyalty_delta_all;
-          Object.entries(generalOwners).forEach(([generalId, generalOwner]) => {
-            if (generalOwner !== owner) return;
-            const general = generalById(generalId);
-            if (!general || general.loyalty === null || general.absolute_loyalty || general.loyalty_exempt) return;
-            const fieldArmy = allArmies(true).find((army) => army.generalId === generalId);
-            const current = calculateGeneralLoyalty(general, fieldArmy).value ?? 1;
-            loyaltyOverrides[generalId] = Math.max(1, Math.min(10, current + Number(amount || 0)));
-          });
-        }
+        applyFunctionSideEffects(result);
         syncStrategicCitiesFromState();
         uiNotice = functionActionMessage(state.last_action, currentPlayer);
         await publishSharedState(true);
@@ -1928,6 +2110,13 @@ function loyaltyCardTargetMarkup(card) {
 }
 
 function functionCardTargetMarkup(card) {
+  if (card.mechanic === "qing_gang_riot") {
+    const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
+    const provinces = provinceOptions();
+    return `
+      <label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>
+      <label class="card-target">指定省份<select data-card-target-province="${card.id}">${provinces.map((province) => `<option value="${province}">${province}</option>`).join("")}</select></label>`;
+  }
   if (["reserve_loss", "communist_riot"].includes(card.mechanic)) {
     const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
     return `<label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>`;
@@ -2691,6 +2880,7 @@ function startBattle(attacker, defender, collisionCell, attackerOrigin, action =
     roundResolvedTurn: null,
     status: "pending",
   };
+  applyNpcBattleDefaults(battle);
   if (action) {
     action.battleId = battle.id;
     action.defenderWasResolved = armyIsResolvedThisTurn(defender);
@@ -2866,8 +3056,9 @@ function transferCityEconomy(city, previousFaction, nextFaction) {
   city.faction = nextFaction;
   queueProvinceClaimIfReady(city.province, nextFaction);
   for (const payload of Object.values(state.players)) {
-    payload.income = (payload.city_economy || []).reduce((sum, item) => sum + (item.cash || 0), 0);
-    payload.factory_income = (payload.city_economy || []).reduce((sum, item) => sum + (item.factory || 0), 0);
+    const bonus = payload.permanent_output_bonus || {};
+    payload.income = (payload.city_economy || []).reduce((sum, item) => sum + (item.cash || 0), 0) + Number(bonus.cash || 0);
+    payload.factory_income = (payload.city_economy || []).reduce((sum, item) => sum + (item.factory || 0), 0) + Number(bonus.factory || 0);
   }
   updateTopBar();
   if ($("panelEconomy")?.classList.contains("active")) renderPanel("economy");
@@ -3142,8 +3333,10 @@ function renderArmyDetail() {
   const joinableBattle = isOwnArmy ? joinableBattleForArmy(army) : null;
   const loyalty = general ? calculateGeneralLoyalty(general, army).value : null;
   const defectionForce = forcePoints(units);
-  const defectionCost = Math.ceil(10 + defectionForce * 3 + Math.max(1, loyalty || 1) * 2);
-  const defectionChance = Math.round(Math.max(0.03, Math.min(0.45, 0.45 - Math.max(1, loyalty || 1) * 0.04 - defectionForce * 0.003)) * 100);
+  const loyaltyForDefection = Math.max(1, loyalty || 1);
+  const defectionCost = Math.ceil((10 + defectionForce * 3 + loyaltyForDefection * 2) * 0.5);
+  const defectionBaseChance = 0.45 - loyaltyForDefection * 0.04 - defectionForce * 0.003;
+  const defectionChance = Math.round(Math.max(0.03, Math.min(0.60, defectionBaseChance * 1.25)) * 100);
   const lieutenants = availableLieutenantGenerals(currentPlayer);
   const canDefect = loyalty !== null && !general?.loyalty_exempt && !general?.absolute_loyalty && lieutenants.length
     && (showComposition ? profile.treasury >= defectionCost : profile.treasury >= 10);
@@ -3303,7 +3496,9 @@ function undoLastArmyOrder() {
           status: action.defenderBefore.status,
         });
         const defenderFaction = factionForArmy(defender);
-        state.players[defenderFaction].army_reinforcements[defender.id] = { ...action.defenderBefore.reinforcements };
+        if (state.players[defenderFaction]) {
+          state.players[defenderFaction].army_reinforcements[defender.id] = { ...action.defenderBefore.reinforcements };
+        }
         if (action.defenderWasResolved) markArmyResolved(defender);
         else clearArmyResolved(defender);
       }
@@ -3383,6 +3578,35 @@ function railwayPath(source, destination) {
       const next = cells[key];
       if (!next || !riverStepAllowed(cell, next, true)) continue;
       visited.add(key);
+      queue.push({ cell: next, path: [...path, next] });
+    }
+  }
+  return null;
+}
+
+function ruralMoveLimit(player = currentPlayer) {
+  const active = state.players[player]?.timed_effects || [];
+  return active.reduce((limit, effect) => {
+    if (effect.kind !== "rural_movement" || Number(effect.remaining_turns || 0) <= 0) return limit;
+    return Math.max(limit, Number(effect.tiles || limit));
+  }, 1);
+}
+
+function ruralMovementPath(source, destination, player = currentPlayer) {
+  const limit = ruralMoveLimit(player);
+  if (limit <= 1) return null;
+  if (destination.city || destination.railroads?.size) return null;
+  const queue = [{ cell: source, path: [source] }];
+  const visited = new Set([source.key]);
+  while (queue.length) {
+    const { cell, path } = queue.shift();
+    if (cell.key === destination.key) return path;
+    if (path.length > limit) continue;
+    for (const next of cellNeighbors(cell)) {
+      if (visited.has(next.key)) continue;
+      if (next.city || next.railroads?.size) continue;
+      if (!riverStepAllowed(cell, next, false)) continue;
+      visited.add(next.key);
       queue.push({ cell: next, path: [...path, next] });
     }
   }
@@ -3521,6 +3745,7 @@ function surrenderArmy(army, captorFaction, battle, action = null) {
   if (reinforcementLedger) delete reinforcementLedger[army.id];
   army.units = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
   army.status = "jailed";
+  jailedGenerals[captorFaction] ||= [];
   jailedGenerals[captorFaction].push(record);
   const affectedDescendants = descendantGeneralIds(generalTrees[originFaction], army.generalId)
     .filter((id) => generalOwners[id] === originFaction);
@@ -3582,6 +3807,33 @@ function moveArmyToCell(army, cell) {
   army.lat = cell.lat;
 }
 
+function battleWinnerSide(result, strengthA, strengthB) {
+  if (result?.winner === "A" || result?.winner === "B") return result.winner;
+  if (result?.winner === "draw" || result?.winner === "undecided") return null;
+  return strengthA === strengthB ? null : (strengthA > strengthB ? "A" : "B");
+}
+
+function overrunSurrenderSide(result, strengthA, strengthB) {
+  const winner = battleWinnerSide(result, strengthA, strengthB);
+  if (!winner) return null;
+  const loser = winner === "A" ? "B" : "A";
+  const winnerStrength = winner === "A" ? strengthA : strengthB;
+  const loserStrength = loser === "A" ? strengthA : strengthB;
+  if (loserStrength <= 0) return loser;
+  if (loserStrength <= OVERRUN_SURRENDER_FORCE && winnerStrength >= loserStrength * OVERRUN_FORCE_RATIO) return loser;
+  return null;
+}
+
+function sideHasRetreatCell(battle, side) {
+  const army = armyById(side === "A" ? battle.attackerId : battle.defenderId);
+  if (!army) return false;
+  if (side === "A") {
+    const origin = cells[battle.attackerOrigin];
+    return Boolean(origin && !allArmies().some((other) => other.id !== army.id && other.cellKey === origin.key));
+  }
+  return Boolean(retreatCellFor(army, null, battle.attackerOrigin));
+}
+
 async function resolveBattleRound(battle) {
   const attacker = armyById(battle.attackerId);
   const defender = armyById(battle.defenderId);
@@ -3618,12 +3870,30 @@ async function resolveBattleRound(battle) {
   const action = armyOrderHistory.find((item) => item.battleId === battle.id) || null;
   const strengthA = forcePoints(result.remaining.A.units);
   const strengthB = forcePoints(result.remaining.B.units);
+  const overrunSide = overrunSurrenderSide(result, strengthA, strengthB);
+  const winnerSide = battleWinnerSide(result, strengthA, strengthB);
   if (strengthA <= 5 && strengthB > 5) {
     for (const army of battleArmies(battle, "A")) surrenderArmy(army, battle.defenderFaction, battle, action);
     battle.surrenderedSide = "A";
   } else if (strengthB <= 5 && strengthA > 5) {
     for (const army of battleArmies(battle, "B")) surrenderArmy(army, battle.attackerFaction, battle, action);
     battle.surrenderedSide = "B";
+  } else if (overrunSide === "A") {
+    for (const army of battleArmies(battle, "A")) surrenderArmy(army, battle.defenderFaction, battle, action);
+    battle.surrenderedSide = "A";
+    uiNotice = "敗軍兵力過小且遭優勢兵力追擊，無法重新整隊，已被迫投降。";
+  } else if (overrunSide === "B") {
+    for (const army of battleArmies(battle, "B")) surrenderArmy(army, battle.attackerFaction, battle, action);
+    battle.surrenderedSide = "B";
+    uiNotice = "敗軍兵力過小且遭優勢兵力追擊，無法重新整隊，已被迫投降。";
+  } else if (winnerSide === "A" && !sideHasRetreatCell(battle, "B")) {
+    for (const army of battleArmies(battle, "B")) surrenderArmy(army, battle.attackerFaction, battle, action);
+    battle.surrenderedSide = "B";
+    uiNotice = "敗軍無可用退路，已被迫投降。";
+  } else if (winnerSide === "B" && !sideHasRetreatCell(battle, "A")) {
+    for (const army of battleArmies(battle, "A")) surrenderArmy(army, battle.defenderFaction, battle, action);
+    battle.surrenderedSide = "A";
+    uiNotice = "敗軍無可用退路，已被迫投降。";
   } else if (result.winner === "undecided") {
     battle.status = "ongoing";
     battle.confirmed = { A: true, B: true };
@@ -3656,7 +3926,9 @@ async function resolveBattleRound(battle) {
   }
   markArmyResolved(attacker);
   markArmyResolved(defender);
-  uiNotice = "戰鬥結束。點擊地圖上的戰鬥圖示可再次查看兵力與分類傷亡。";
+  if (battle.status !== "surrendered" || !uiNotice) {
+    uiNotice = "戰鬥結束。點擊地圖上的戰鬥圖示可再次查看兵力與分類傷亡。";
+  }
   initMap();
   renderPendingActions();
 }
@@ -3666,6 +3938,7 @@ async function confirmBattleTactic(battle, side) {
   battle.confirmed ||= { A: false, B: false };
   battle.confirmed[side] = true;
   battle.tacticRevision[side] = false;
+  applyNpcBattleDefaults(battle);
   renderPendingActions();
   if (!battle.confirmed.A || !battle.confirmed.B) {
     const waitingFaction = side === "A" ? battle.defenderFaction : battle.attackerFaction;
@@ -3875,7 +4148,7 @@ function setupPendingActions() {
       }
       moveMode = !moveMode;
       engineeringMode = null;
-      showNotice(moveMode ? `選擇相鄰地格，或沿鐵路最多 ${railwayMoveLimit(currentPlayer)} 格；跨河需要浮橋或鐵路橋。` : "已取消移動。");
+      showNotice(moveMode ? `選擇相鄰地格；急行軍可走鄉村 ${ruralMoveLimit(currentPlayer)} 格；鐵路最多 ${railwayMoveLimit(currentPlayer)} 格；跨河需要浮橋或鐵路橋。` : "已取消移動。");
       $("mapStage").classList.toggle("move-mode", moveMode);
       renderArmyDetail();
     } else if (operation === "rest") {
@@ -4004,11 +4277,12 @@ function handleMapDestination(destination) {
 
     const adjacent = cellNeighbors(source).some((cell) => cell.key === destination.key);
     const railPath = railwayPath(source, destination);
-    if (!adjacent && !railPath) {
-      showNotice(`一般移動限相鄰地格；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`);
+    const ruralPath = railPath ? null : ruralMovementPath(source, destination, currentPlayer);
+    if (!adjacent && !railPath && !ruralPath) {
+      showNotice(`一般移動限相鄰地格；急行軍可走鄉村 ${ruralMoveLimit(currentPlayer)} 格；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`);
       return;
     }
-    if (adjacent && !railPath && !riverStepAllowed(source, destination, false)) {
+    if (adjacent && !railPath && !ruralPath && !riverStepAllowed(source, destination, false)) {
       showNotice("河流阻擋行軍：需先架設浮橋，或沿設有鐵路橋的鐵路通過。");
       return;
     }
@@ -4036,7 +4310,7 @@ function handleMapDestination(destination) {
         return;
       }
     }
-    const action = beginArmyOrder(army, railPath ? "rail_move" : "move");
+    const action = beginArmyOrder(army, railPath ? "rail_move" : ruralPath ? "forced_march" : "move");
     army.previousCellKey = source.key;
     army.cellKey = destination.key;
     army.lon = destination.lon;
@@ -4128,10 +4402,12 @@ function renderPendingActions() {
     notification.innerHTML = `<b>手牌已滿</b><span>棄置一張牌以接收「${card?.name || "新功能卡"}」</span>`;
   } else if (canPurchaseFunctionCard(payload)) {
     const cost = functionCardDrawCost();
+    const used = Number(payload.function_purchase_count || 0);
+    const limit = functionCardDrawLimit();
     notification.hidden = false;
     notification.innerHTML = `
       <b>回合開始：購買功能卡？</b>
-      <span>可支付 ¥${cost} 抽 1 張功能卡；本回合限 1 張，也可以略過。</span>
+      <span>可支付 ¥${cost} 抽 1 張功能卡；本回合最多 ${limit} 張，目前 ${used}/${limit}，也可以略過。</span>
       <div class="notification-actions">
         <button data-buy-function-card="${currentPlayer}">支付 ¥${cost}</button>
         <button data-skip-function-purchase="${currentPlayer}">略過</button>
@@ -4242,6 +4518,7 @@ async function advanceToNextTurn(force = false) {
     selectArmy(pending[0].id);
     return;
   }
+  for (const battle of activeBattles) applyNpcBattleDefaults(battle);
   const pendingBattle = activeBattles.find((battle) =>
     ["pending", "ongoing"].includes(battle.status)
     && (!battle.confirmed?.A || !battle.confirmed?.B)
@@ -4279,7 +4556,7 @@ async function advanceToNextTurn(force = false) {
     );
     for (const battle of continuingBattles) await resolveBattleRound(battle);
     await cityEconomySync;
-    const result = await api("/api/next-turn", { active_player: currentPlayer, force });
+    const result = await api("/api/next-turn", { active_player: currentPlayer, force, riot_garrisons: qingGangRiotGarrisons() });
     state = result.state;
     syncStrategicCitiesFromState();
     uiNotice = null;

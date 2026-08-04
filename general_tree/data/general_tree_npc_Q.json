@@ -1,0 +1,31 @@
+{
+  "version": "npc-qian-0.1",
+  "great_general_id": "qian_local_militia",
+  "generals": {
+    "qian_local_militia": {
+      "id": "qian_local_militia",
+      "name": "黔軍地方部隊",
+      "role": "great_general",
+      "faction": "黔軍",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 20,
+      "traits": [
+        "local_supply_boss"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 5,
+        "cavalry": 3,
+        "artillery": 0,
+        "machine_gun": 0
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

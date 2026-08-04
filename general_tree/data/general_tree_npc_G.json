@@ -1,0 +1,59 @@
+{
+  "version": "npc-feng-0.1",
+  "great_general_id": "feng_yuxiang",
+  "generals": {
+    "feng_yuxiang": {
+      "id": "feng_yuxiang",
+      "name": "馮玉祥",
+      "role": "great_general",
+      "faction": "西北軍",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 55,
+      "traits": [
+        "christian_general",
+        "soviet_trained"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 10,
+        "cavalry": 5,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": null,
+      "subordinate_slots": 1,
+      "subordinates": [
+        "song_zheyuan"
+      ],
+      "status": "active"
+    },
+    "song_zheyuan": {
+      "id": "song_zheyuan",
+      "name": "宋哲元",
+      "role": "lieutenant_general",
+      "faction": "西北軍",
+      "core_faction": false,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 30,
+      "traits": [
+        "central_plains_veteran"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 7,
+        "cavalry": 4,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": "feng_yuxiang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "version": "experimental-0.2",
+  "version": "experimental-0.3",
   "draw_timing": {
     "event_cards": {
       "scope": "global",
@@ -10,8 +10,9 @@
     "function_cards": {
       "scope": "per_player",
       "draw": "optional paid purchase",
-      "frequency": "each player may pay 10 cash to draw at turn start; limit 1 purchase per turn",
-      "hand_rule": "maximum 4 cards; when a fifth card is drawn, discard one held card before receiving it"
+      "frequency": "each player may pay 5 cash to draw at turn start; limit 2 purchases per turn",
+      "hand_rule": "maximum 6 cards; when a seventh card is drawn, discard one held card before receiving it",
+      "play_cost": "playing a function card has no additional cash cost after it is drawn"
     }
   },
   "dynamic_pool_rules": [
@@ -37,5 +38,13 @@
     ],
     "low_defense_bonus_against_assassination": 3,
     "high_defense_bonus_against_assassination": 6
+  },
+  "foreign_relation_rules": {
+    "scale": "0-10",
+    "hostile_below": 3,
+    "friendly_at_or_above": 8,
+    "relation_cards": "common foreign relation cards grant +2 to one selected power and are capped at 10",
+    "friendly_unlock": "friendly powers add one copy of each unique perk card to the player deck",
+    "hostile_filler": "hostile powers add three no-effect condemnation cards until relations recover"
   }
 }

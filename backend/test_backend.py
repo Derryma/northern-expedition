@@ -108,7 +108,9 @@ class BackendTests(unittest.TestCase):
         weak = weak_engine.attempt_defection_with_force("N", 2, 5)
         strong = strong_engine.attempt_defection_with_force("N", 2, 30)
         self.assertGreater(strong["cost"], weak["cost"])
-        self.assertLessEqual(weak["chance"], 0.45)
+        self.assertEqual(weak["cost"], 15)
+        self.assertEqual(strong["cost"], 52)
+        self.assertLessEqual(weak["chance"], 0.60)
         self.assertLessEqual(strong["chance"], weak["chance"])
 
     def test_training_spends_cash_and_factory_points_by_unit_type(self):
@@ -177,10 +179,17 @@ class BackendTests(unittest.TestCase):
         peace = engine.set_diplomacy("N", "W", "peace")["state"]
         self.assertEqual(peace["players"]["N"]["warlord_relations"]["W"]["status"], "peace")
 
-    def test_fifth_function_card_requires_discard(self):
+    def test_seventh_function_card_requires_discard(self):
         engine = GameEngine(seed=11)
         player = engine.state["players"]["F"]
-        player["hand"] = ["unit_promotion", "local_autonomy_agitation", "unit_promotion", "local_autonomy_agitation"]
+        player["hand"] = [
+            "unit_promotion",
+            "local_autonomy_agitation",
+            "unit_promotion",
+            "local_autonomy_agitation",
+            "reserve_gift_infantry",
+            "city_development",
+        ]
         player["function_deck"] = ["unit_promotion"]
         player["treasury"] = 100
 
@@ -195,11 +204,11 @@ class BackendTests(unittest.TestCase):
         received_id = player["pending_draw"]
         discard_result = engine.discard_for_draw("F", discarded_id)
 
-        self.assertEqual(len(discard_result["state"]["players"]["F"]["hand"]), 4)
+        self.assertEqual(len(discard_result["state"]["players"]["F"]["hand"]), 6)
         self.assertIn(received_id, discard_result["state"]["players"]["F"]["hand"])
         self.assertIn(discarded_id, discard_result["state"]["players"]["F"]["discard"])
 
-    def test_loyalty_function_card_requires_target_and_spends_cash(self):
+    def test_loyalty_function_card_requires_target_and_is_free_to_use(self):
         engine = GameEngine(seed=3)
         engine.state["players"]["F"]["hand"] = ["unit_promotion"]
         before = engine.state["players"]["F"]["treasury"]
@@ -212,7 +221,7 @@ class BackendTests(unittest.TestCase):
         )
 
         self.assertEqual(result["loyalty_delta"], 1)
-        self.assertEqual(result["state"]["players"]["F"]["treasury"], before - 15)
+        self.assertEqual(result["state"]["players"]["F"]["treasury"], before)
         self.assertEqual(result["state"]["last_action"]["player"], "F")
         self.assertEqual(result["state"]["last_action"]["target_general_id"], "yang_yuting")
 
@@ -235,50 +244,135 @@ class BackendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "resolve pending"):
             engine.next_turn()
 
-    def test_function_card_draw_costs_ten_cash(self):
+    def test_function_card_draw_costs_five_cash(self):
         engine = GameEngine(seed=4)
         player = engine.state["players"]["F"]
         before = player["treasury"]
         engine.draw_function("F")
-        self.assertEqual(player["treasury"], before - 10)
+        self.assertEqual(player["treasury"], before - 5)
 
-    def test_function_card_purchase_is_limited_to_once_per_turn(self):
+    def test_function_card_purchase_is_limited_to_twice_per_turn(self):
         engine = GameEngine(seed=4)
         player = engine.state["players"]["F"]
         player["treasury"] = 100
 
         engine.draw_function("F")
+        engine.draw_function("F")
         with self.assertRaisesRegex(ValueError, "purchase limit"):
             engine.draw_function("F")
+        self.assertEqual(player["function_purchase_count"], 2)
 
         engine.next_turn(active_player="F")
         engine.draw_function("F")
         self.assertEqual(player["function_purchase_used"], True)
+        self.assertEqual(player["function_purchase_count"], 1)
 
     def test_function_decks_are_filtered_by_faction(self):
         engine = GameEngine(seed=4)
 
-        self.assertIn("soviet_aid", engine.state["players"]["N"]["function_deck"])
-        self.assertNotIn("soviet_aid", engine.state["players"]["F"]["function_deck"])
-        self.assertIn("japanese_loan", engine.state["players"]["F"]["function_deck"])
+        for payload in engine.state["players"].values():
+            self.assertNotIn("soviet_aid", payload["function_deck"])
+            self.assertNotIn("japanese_loan", payload["function_deck"])
+        self.assertIn("foreign_relation_su", engine.state["players"]["N"]["function_deck"])
+        self.assertIn("foreign_relation_jp", engine.state["players"]["F"]["function_deck"])
+        self.assertEqual(engine.state["players"]["N"]["function_deck"].count("jp_condemnation"), 3)
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("city_development"), 8)
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("foreign_relation_jp"), 4)
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("young_marshal_rises"), 1)
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("wang_yongjiang_financial_reform"), 1)
+        self.assertEqual(engine.state["players"]["N"]["function_deck"].count("forced_march"), 4)
         self.assertIn("zhili_infantry_drill", engine.state["players"]["W"]["function_deck"])
         self.assertIn("zhili_infantry_drill", engine.state["players"]["S"]["function_deck"])
 
-    def test_soviet_aid_adds_debt_and_named_reserves(self):
+    def test_foreign_relation_unlocks_perk_cards(self):
         engine = GameEngine(seed=4)
         player = engine.state["players"]["N"]
-        player["hand"] = ["soviet_aid"]
-        before_debt = player["debt"]
+        player["foreign_relations"]["su"] = 6
+        player["hand"] = ["foreign_relation_su"]
+
+        result = engine.use_function("N", "foreign_relation_su")
+
+        self.assertEqual(result["foreign_relation_delta"]["before"], 6)
+        self.assertEqual(result["foreign_relation_delta"]["after"], 8)
+        self.assertIn("su_rifle_shipment", player["function_deck"])
+        self.assertIn("su_galen_advisers", player["function_deck"])
+
+    def test_foreign_perk_requires_relation_and_adds_reserves(self):
+        engine = GameEngine(seed=4)
+        player = engine.state["players"]["N"]
+        player["foreign_relations"]["su"] = 8
+        player["hand"] = ["su_rifle_shipment"]
         before = dict(player["unit_reserves"])
 
-        result = engine.use_function("N", "soviet_aid")
+        result = engine.use_function("N", "su_rifle_shipment")
         updated = result["state"]["players"]["N"]
 
-        self.assertEqual(updated["debt"], before_debt + 20)
-        self.assertEqual(updated["unit_reserves"]["infantry"], before["infantry"] + 5)
-        self.assertEqual(updated["unit_reserves"]["cavalry"], before["cavalry"] + 5)
-        self.assertEqual(updated["unit_reserves"]["machine_gun"], before["machine_gun"] + 2)
-        self.assertEqual(len(result["reserve_deltas"]), 3)
+        self.assertEqual(updated["unit_reserves"]["infantry"], before["infantry"] + 6)
+        self.assertEqual(updated["unit_reserves"]["machine_gun"], before["machine_gun"] + 1)
+        self.assertEqual(len(result["reserve_deltas"]), 2)
+
+    def test_foreign_perk_is_blocked_if_relation_falls(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["N"]["foreign_relations"]["su"] = 7
+        engine.state["players"]["N"]["hand"] = ["su_rifle_shipment"]
+
+        with self.assertRaisesRegex(ValueError, "foreign relation"):
+            engine.use_function("N", "su_rifle_shipment")
+
+    def test_fengtian_financial_reform_adds_permanent_income(self):
+        engine = GameEngine(seed=4)
+        player = engine.state["players"]["F"]
+        player["hand"] = ["wang_yongjiang_financial_reform"]
+        before_income = player["income"]
+        before_factory_income = player["factory_income"]
+
+        result = engine.use_function("F", "wang_yongjiang_financial_reform")
+        updated = result["state"]["players"]["F"]
+
+        self.assertEqual(result["permanent_output_delta"], {"owner": "F", "cash": 5, "factory": 2})
+        self.assertEqual(updated["income"], before_income + 5)
+        self.assertEqual(updated["factory_income"], before_factory_income + 2)
+
+    def test_young_marshal_card_reports_army_bundle(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["F"]["hand"] = ["young_marshal_rises"]
+
+        result = engine.use_function("F", "young_marshal_rises")
+
+        self.assertEqual(result["army_unit_delta"]["general_id"], "zhang_xueliang")
+        self.assertEqual(result["army_unit_delta"]["unit_reserves"]["infantry"], 10)
+
+    def test_forced_march_creates_rural_movement_effect(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["N"]["hand"] = ["forced_march"]
+
+        result = engine.use_function("N", "forced_march")
+
+        self.assertEqual(result["timed_effect"]["kind"], "rural_movement")
+        self.assertEqual(result["timed_effect"]["tiles"], 2)
+        self.assertEqual(result["timed_effect"]["remaining_turns"], 3)
+
+    def test_first_united_front_adds_reserves_with_loyalty_downside(self):
+        engine = GameEngine(seed=4)
+        player = engine.state["players"]["N"]
+        player["hand"] = ["first_united_front"]
+        before = player["unit_reserves"]["infantry"]
+
+        result = engine.use_function("N", "first_united_front")
+
+        self.assertEqual(result["state"]["players"]["N"]["unit_reserves"]["infantry"], before + 20)
+        self.assertEqual(result["loyalty_delta_all"], {"owner": "N", "amount": -3})
+
+    def test_zhili_anti_communist_declaration_returns_loyalty_swings(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["W"]["hand"] = ["zhili_anti_communist_declaration"]
+
+        result = engine.use_function("W", "zhili_anti_communist_declaration")
+
+        self.assertIn({"owner": "W", "amount": 3}, result["loyalty_swings"])
+        self.assertIn({"owner": "S", "amount": 3}, result["loyalty_swings"])
+        self.assertIn({"owner": "F", "amount": -1}, result["loyalty_swings"])
+        self.assertIn({"owner": "N", "amount": -1}, result["loyalty_swings"])
 
     def test_intel_and_police_cards_create_timed_effects(self):
         engine = GameEngine(seed=4)
@@ -304,6 +398,32 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(result["city_disruption"]["city_ids"]), 2)
         self.assertLess(updated["income"], before_income)
         self.assertLess(updated["factory_income"], before_factory)
+
+    def test_qing_gang_riot_halts_province_and_pays_until_suppressed(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["N"]["hand"] = ["qing_gang_riot"]
+        before_n_cash = engine.state["players"]["N"]["treasury"]
+        before_w_income = engine.state["players"]["W"]["income"]
+        before_w_factory = engine.state["players"]["W"]["factory_income"]
+
+        result = engine.use_function("N", "qing_gang_riot", target_owner="W", target_province="湖北")
+        effect = result["city_disruption"]
+
+        self.assertEqual(effect["province"], "湖北")
+        self.assertGreater(len(effect["city_ids"]), 0)
+        self.assertLess(result["state"]["players"]["W"]["income"], before_w_income)
+        self.assertLess(result["state"]["players"]["W"]["factory_income"], before_w_factory)
+
+        turn = engine.next_turn(active_player="N")
+        self.assertGreater(turn["state"]["players"]["N"]["treasury"], before_n_cash - 10)
+        self.assertTrue(any(item["id"] == effect["id"] for item in engine.state["city_output_effects"]))
+
+        for _ in range(2):
+            engine.next_turn(active_player="N", riot_garrisons={effect["id"]: True})
+        self.assertTrue(any(item["id"] == effect["id"] for item in engine.state["city_output_effects"]))
+
+        engine.next_turn(active_player="N", riot_garrisons={effect["id"]: True})
+        self.assertFalse(any(item.get("id") == effect["id"] for item in engine.state["city_output_effects"]))
 
     def test_forced_next_turn_discards_unresolved_pending_draws(self):
         engine = GameEngine(seed=4)

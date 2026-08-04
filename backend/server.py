@@ -62,6 +62,13 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             'F': 'general_tree/data/general_tree_fengtian.json',   # 奉系 - 張作霖
             'W': 'general_tree/data/general_tree_zhili.json',      # 直系 - 吳佩孚
             'S': 'general_tree/data/general_tree_sunfang.json',    # 五省聯軍 - 孫傳芳
+            'Y': 'general_tree/data/general_tree_npc_Y.json',      # 晉系 - 閻錫山
+            'G': 'general_tree/data/general_tree_npc_G.json',      # 西北軍 - 馮玉祥
+            'M': 'general_tree/data/general_tree_npc_M.json',      # 西北馬家軍
+            'H': 'general_tree/data/general_tree_npc_H.json',      # 湘軍 - 唐生智
+            'C': 'general_tree/data/general_tree_npc_C.json',      # 川軍
+            'D': 'general_tree/data/general_tree_npc_D.json',      # 滇系
+            'Q': 'general_tree/data/general_tree_npc_Q.json',      # 黔軍
         }
 
         filename = tree_files.get(faction, tree_files['N'])
@@ -117,7 +124,11 @@ class PlaytestHandler(BaseHTTPRequestHandler):
 
     def _next_turn(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         force = bool(payload.get("force")) and self.client_address[0] in {"127.0.0.1", "::1"}
-        return ENGINE.next_turn(payload.get("active_player"), force=force)
+        return ENGINE.next_turn(
+            payload.get("active_player"),
+            force=force,
+            riot_garrisons=payload.get("riot_garrisons") or {},
+        )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         global SHARED_TACTICAL_STATE, SHARED_REVISION

@@ -1,5 +1,5 @@
 {
-  "version": "experimental-0.2",
+  "version": "experimental-0.3",
   "source": "北伐風雲遊戲修改.md + PJ Boardgame/北伐風雲_地圖.html",
   "global_rules": {
     "concession_garrisons": "removed",
@@ -22,16 +22,17 @@
         "money": 45
       }
     ],
-    "foreign_growth_every_3_turns": {
-      "per_general_hq": {
-        "infantry": 2
-      }
-    },
     "removed_assets": [
       "Philippines US forces",
       "Leonard Wood",
       "all concession garrison status markers"
-    ]
+    ],
+    "relation_scale": {
+      "min": 0,
+      "max": 10,
+      "hostile_below": 3,
+      "friendly_at_or_above": 8
+    }
   },
   "powers": {
     "japan": {

@@ -1,5 +1,5 @@
 {
-  "version": "experimental-0.2",
+  "version": "experimental-0.3",
   "source": "北伐風雲遊戲修改.md + PJ Boardgame/北伐風雲_地圖.html",
   "major_playable_factions": [
     {
@@ -24,16 +24,14 @@
     }
   ],
   "npc_rules": {
-    "growth_every_3_turns": {
-      "per_general_hq": {
-        "infantry": 1
-      }
-    },
+    "growth": false,
     "autonomous_action": false,
-    "action_driver": "events only",
+    "action_driver": "static map presence only until events or player conquest rules are added",
     "when_attacked": "passive combat only",
     "mobilization_when_attacked": false,
-    "player_control_when_attacked": false
+    "player_control_when_attacked": false,
+    "army_behavior": "initial NPC armies spawn at controlled major cities, do not move, do not recruit, and do not grow by themselves",
+    "recruitment_role": "players can occupy NPC land and recruit captured NPC generals to grow before fighting other players"
   },
   "npc_factions": [
     {
@@ -46,7 +44,31 @@
         "閻錫山",
         "傅作義"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "Y-1",
+          "general": "閻錫山",
+          "spawn_city": "太原",
+          "units": {
+            "infantry": 8,
+            "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "Y-2",
+          "general": "傅作義",
+          "spawn_city": "大同",
+          "units": {
+            "infantry": 6,
+            "cavalry": 4,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        }
+      ]
     },
     {
       "code": "G",
@@ -58,7 +80,31 @@
         "馮玉祥",
         "宋哲元"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "G-1",
+          "general": "馮玉祥",
+          "spawn_city": "西安",
+          "units": {
+            "infantry": 10,
+            "cavalry": 5,
+            "machine_gun": 2,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "G-2",
+          "general": "宋哲元",
+          "spawn_city": "歸綏",
+          "units": {
+            "infantry": 7,
+            "cavalry": 4,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        }
+      ]
     },
     {
       "code": "M",
@@ -70,7 +116,31 @@
         "馬麒",
         "馬福祥"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "M-1",
+          "general": "馬麒",
+          "spawn_city": "西寧",
+          "units": {
+            "infantry": 7,
+            "cavalry": 5,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        },
+        {
+          "id": "M-2",
+          "general": "馬福祥",
+          "spawn_city": "臨夏",
+          "units": {
+            "infantry": 6,
+            "cavalry": 4,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        }
+      ]
     },
     {
       "code": "H",
@@ -82,7 +152,31 @@
         "唐生智",
         "何鍵"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "H-1",
+          "general": "唐生智",
+          "spawn_city": "長沙",
+          "units": {
+            "infantry": 9,
+            "cavalry": 3,
+            "machine_gun": 2,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "H-2",
+          "general": "何鍵",
+          "spawn_city": "衡陽",
+          "units": {
+            "infantry": 7,
+            "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        }
+      ]
     },
     {
       "code": "C",
@@ -94,7 +188,31 @@
         "劉湘",
         "劉文輝"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "C-1",
+          "general": "劉湘",
+          "spawn_city": "成都",
+          "units": {
+            "infantry": 9,
+            "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "C-2",
+          "general": "劉文輝",
+          "spawn_city": "重慶",
+          "units": {
+            "infantry": 8,
+            "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 1
+          }
+        }
+      ]
     },
     {
       "code": "D",
@@ -106,7 +224,31 @@
         "唐繼堯",
         "龍雲"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "D-1",
+          "general": "唐繼堯",
+          "spawn_city": "昆明",
+          "units": {
+            "infantry": 8,
+            "cavalry": 4,
+            "machine_gun": 1,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "D-2",
+          "general": "龍雲",
+          "spawn_city": "大理",
+          "units": {
+            "infantry": 6,
+            "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        }
+      ]
     },
     {
       "code": "Q",
@@ -117,7 +259,20 @@
       "generals": [
         "黔軍地方部隊"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": [
+        {
+          "id": "Q-1",
+          "general": "黔軍地方部隊",
+          "spawn_city": "貴陽",
+          "units": {
+            "infantry": 5,
+            "cavalry": 3,
+            "machine_gun": 0,
+            "artillery": 0
+          }
+        }
+      ]
     },
     {
       "code": "x",
@@ -128,7 +283,8 @@
       "generals": [
         "楊增新"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": []
     },
     {
       "code": "t",
@@ -139,7 +295,8 @@
       "generals": [
         "西藏地方噶廈"
       ],
-      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only"
+      "figure_count_rule": "reduced public NPC roster: keep 1-2 representative figures only",
+      "initial_armies": []
     }
   ]
 }

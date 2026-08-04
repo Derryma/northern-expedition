@@ -1,0 +1,58 @@
+{
+  "version": "npc-ma-0.1",
+  "great_general_id": "ma_qi",
+  "generals": {
+    "ma_qi": {
+      "id": "ma_qi",
+      "name": "馬麒",
+      "role": "great_general",
+      "faction": "西北馬家軍",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 38,
+      "traits": [
+        "cavalry_screen_commander"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 7,
+        "cavalry": 5,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 1,
+      "subordinates": [
+        "ma_fuxiang"
+      ],
+      "status": "active"
+    },
+    "ma_fuxiang": {
+      "id": "ma_fuxiang",
+      "name": "馬福祥",
+      "role": "lieutenant_general",
+      "faction": "西北馬家軍",
+      "core_faction": false,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 28,
+      "traits": [
+        "local_supply_boss"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 6,
+        "cavalry": 4,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": "ma_qi",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

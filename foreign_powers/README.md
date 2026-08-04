@@ -14,6 +14,8 @@ Foreign units that enter cities are ordinary foreign units. They do not transfor
 
 Direct foreign military support is removed. Players should not borrow British, Japanese, French, or Soviet field formations as friendly auxiliaries. Foreign military action against a player only occurs through punitive expeditions.
 
+Foreign relations use a 0-10 scale. Values below 3 are hostile; values 8 or higher are friendly and can unlock that power's function-card perks.
+
 Players may not attack foreign powers or enter foreign territory while not at war, even if relations are bad. Fighting foreign powers happens only when a punitive expedition is active.
 
 Punitive expeditions:
@@ -29,4 +31,3 @@ Punitive expeditions:
 - Remove Leonard Wood.
 - Move 庫倫守軍 back under 外蒙古.
 - Add 霍爾洛·喬巴山 as commander for 庫倫 and Outer Mongolian cavalry.
-- Every three turns, each foreign-power general adds 2 infantry to his HQ.

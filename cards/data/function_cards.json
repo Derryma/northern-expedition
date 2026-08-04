@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 77,
+  "count": 107,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -9,7 +9,7 @@
       "category": "black_gold",
       "holdable": true,
       "entry_requirement": "已收買黑金",
-      "cost": "two opposed d30 rolls; pay sum of both rolls regardless of result",
+      "cost": 0,
       "effect": "透過斧頭幫進行一次暗殺行動，連續與對手對擲 d30 勝利兩次即成功。",
       "generated_event_cards": []
     },
@@ -20,7 +20,7 @@
       "category": "black_gold",
       "holdable": true,
       "entry_requirement": "已收買黑金",
-      "cost": 25,
+      "cost": 0,
       "effect": "獲得 10 個營青幫人力（步兵），可投放至江蘇、浙江、安徽、湖北、河南境內一個或多個城市發動黑幫暴亂。",
       "generated_event_cards": []
     },
@@ -31,7 +31,7 @@
       "category": "black_gold",
       "holdable": true,
       "entry_requirement": "已收買黑金",
-      "cost": 25,
+      "cost": 0,
       "effect": "獲得 10 個營洪門人力（步兵），可投放至江西、湖南、福建、廣東、廣西境內一個或多個城市發動黑幫暴亂。",
       "generated_event_cards": []
     },
@@ -42,7 +42,7 @@
       "category": "black_gold",
       "holdable": true,
       "entry_requirement": "已收買黑金",
-      "cost": 15,
+      "cost": 0,
       "effect": "封鎖上海到漢口間所有長江港口貿易 5 回合，期間無法透過被影響港口購買武器且無港口收入加成。",
       "generated_event_cards": []
     },
@@ -52,7 +52,7 @@
       "deck_type": "function",
       "category": "sabotage",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定炸毀敵方兩座工廠，該兩座工廠停工三回合搶修。",
       "generated_event_cards": []
     },
@@ -62,7 +62,7 @@
       "deck_type": "function",
       "category": "sabotage",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定癱瘓一段中國黑色鐵路：京奉、京漢、津浦、膠濟、正太、隴海、滬寧、粵漢；停運三回合搶修。",
       "generated_event_cards": []
     },
@@ -72,7 +72,7 @@
       "deck_type": "function",
       "category": "sabotage",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定炸毀敵方兩座港口城市的軍港，停工三回合搶修；期間不可生產艦艇。",
       "generated_event_cards": []
     },
@@ -82,7 +82,7 @@
       "deck_type": "function",
       "category": "intelligence",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "去除指定省份戰爭迷霧五回合。",
       "generated_event_cards": []
     },
@@ -92,7 +92,7 @@
       "deck_type": "function",
       "category": "intelligence",
       "holdable": true,
-      "cost": 30,
+      "cost": 0,
       "effect": "成立情報局；此後每過五回合可花 10 元與敵方對骰 d30，勝利即可指定去除敵境一省戰爭迷霧五回合。",
       "generated_event_cards": []
     },
@@ -111,7 +111,8 @@
           "copies": 1,
           "reason": "公開赤化行動刺激英美日法要求剿共。"
         }
-      ]
+      ],
+      "cost": 0
     },
     {
       "id": "rural_surrounds_city",
@@ -128,7 +129,8 @@
           "copies": 1,
           "reason": "農村游擊擴大後觸發反赤國際壓力。"
         }
-      ]
+      ],
+      "cost": 0
     },
     {
       "id": "peoples_anger",
@@ -145,7 +147,8 @@
           "copies": 1,
           "reason": "工運擴大會提高赤色工運類事件進入公共事件池的機率。"
         }
-      ]
+      ],
+      "cost": 0
     },
     {
       "id": "unit_promotion",
@@ -153,7 +156,7 @@
       "deck_type": "function",
       "category": "command",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定一我方將領忠誠 +1；絕對忠誠將領不受影響。",
       "generated_event_cards": []
     },
@@ -163,7 +166,7 @@
       "deck_type": "function",
       "category": "political_warfare",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定敵方三個營自主逃兵；僅適用中方勢力。",
       "generated_event_cards": []
     },
@@ -173,7 +176,7 @@
       "deck_type": "function",
       "category": "political_warfare",
       "holdable": true,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定一敵方非嫡系將領忠誠 -1；絕對忠誠將領不受影響。",
       "generated_event_cards": []
     },
@@ -244,8 +247,8 @@
       "max_cash": 3,
       "min_factory": 1,
       "max_factory": 2,
-      "cost": 15,
-      "effect": "指定一座己方城市，每回合現金 +1-3、工廠 +1-2。",
+      "cost": 0,
+      "effect": "指定一座己方城市，每回合現金 +1-3、工廠 +1-2。打出功能卡不另收費。",
       "generated_event_cards": []
     },
     {
@@ -293,10 +296,21 @@
       "category": "zhili_joint",
       "holdable": true,
       "mechanic": "joint_reserve_gain",
-      "allowed_players": ["W", "S"],
-      "requires_peace_with": ["W", "S"],
-      "owners": ["W", "S"],
-      "unit_reserves": {"infantry": 5},
+      "allowed_players": [
+        "W",
+        "S"
+      ],
+      "requires_peace_with": [
+        "W",
+        "S"
+      ],
+      "owners": [
+        "W",
+        "S"
+      ],
+      "unit_reserves": {
+        "infantry": 5
+      },
       "cost": 0,
       "effect": "孫與吳若未交戰，雙方各獲得步兵預備隊 5 營。",
       "generated_event_cards": []
@@ -308,12 +322,26 @@
       "category": "zhili_joint",
       "holdable": true,
       "mechanic": "timed_combat_effect",
-      "allowed_players": ["W", "S"],
-      "requires_peace_with": ["W", "S"],
-      "effect_owners": ["W", "S"],
+      "allowed_players": [
+        "W",
+        "S"
+      ],
+      "requires_peace_with": [
+        "W",
+        "S"
+      ],
+      "effect_owners": [
+        "W",
+        "S"
+      ],
       "target_faction": "F",
       "duration_turns": 3,
-      "modifiers": [{"stat": "attack", "multiplier": 1.05}],
+      "modifiers": [
+        {
+          "stat": "attack",
+          "multiplier": 1.05
+        }
+      ],
       "cost": 0,
       "effect": "孫與吳若未交戰，雙方對張全兵種攻擊 +5%，持續 3 回合。",
       "generated_event_cards": []
@@ -325,26 +353,21 @@
       "category": "zhili_joint",
       "holdable": true,
       "mechanic": "recurring_cash_transfer",
-      "allowed_players": ["W", "S"],
-      "requires_peace_with": ["W", "S"],
+      "allowed_players": [
+        "W",
+        "S"
+      ],
+      "requires_peace_with": [
+        "W",
+        "S"
+      ],
       "duration_turns": 5,
-      "cash_deltas": {"S": -5, "W": 10},
+      "cash_deltas": {
+        "S": -5,
+        "W": 10
+      },
       "cost": 0,
       "effect": "孫每回合現金 -5，吳每回合現金 +10，持續 5 回合。",
-      "generated_event_cards": []
-    },
-    {
-      "id": "soviet_aid",
-      "name": "蘇聯援助",
-      "deck_type": "function",
-      "category": "nationalist",
-      "holdable": true,
-      "mechanic": "reserve_debt_bundle",
-      "allowed_players": ["N"],
-      "debt": 20,
-      "unit_reserves": {"infantry": 5, "cavalry": 5, "machine_gun": 2},
-      "cost": 0,
-      "effect": "蔣負債 +20，步兵預備隊 +5、騎兵 +5、機槍 +2。",
       "generated_event_cards": []
     },
     {
@@ -354,7 +377,9 @@
       "category": "nationalist",
       "holdable": true,
       "mechanic": "loyalty_all",
-      "allowed_players": ["N"],
+      "allowed_players": [
+        "N"
+      ],
       "loyalty_delta": 2,
       "cost": 0,
       "effect": "蔣全體可變忠誠將領忠誠 +2。",
@@ -367,9 +392,16 @@
       "category": "nationalist",
       "holdable": true,
       "mechanic": "timed_combat_effect",
-      "allowed_players": ["N"],
+      "allowed_players": [
+        "N"
+      ],
       "duration_turns": 3,
-      "modifiers": [{"stat": "attack", "multiplier": 1.1}],
+      "modifiers": [
+        {
+          "stat": "attack",
+          "multiplier": 1.1
+        }
+      ],
       "cost": 0,
       "effect": "蔣全軍攻擊 +10%，持續 3 回合。",
       "generated_event_cards": []
@@ -381,7 +413,9 @@
       "category": "nationalist",
       "holdable": true,
       "mechanic": "cash_gain",
-      "allowed_players": ["N"],
+      "allowed_players": [
+        "N"
+      ],
       "cash": 20,
       "cost": 0,
       "effect": "蔣現金 +20。",
@@ -394,11 +428,16 @@
       "category": "nationalist",
       "holdable": true,
       "mechanic": "reserve_bundle",
-      "allowed_players": ["N"],
-      "unit_reserves": {"infantry": 20},
+      "allowed_players": [
+        "N"
+      ],
+      "unit_reserves": {
+        "infantry": 20
+      },
       "cost": 0,
-      "effect": "蔣步兵預備隊 +20。本牌每副牌僅 1 張。",
-      "generated_event_cards": []
+      "effect": "蔣步兵預備隊 +20；蔣麾下所有可變忠誠將領忠誠 -3。絕對忠誠將領不受影響。本牌每副牌僅 1 張。",
+      "generated_event_cards": [],
+      "loyalty_delta_all": -3
     },
     {
       "id": "northeast_army_rearmament",
@@ -407,68 +446,19 @@
       "category": "fengtian",
       "holdable": true,
       "mechanic": "timed_combat_effect",
-      "allowed_players": ["F"],
+      "allowed_players": [
+        "F"
+      ],
       "duration_turns": 3,
-      "modifiers": [{"stat": "harm_taken", "unit": "infantry", "multiplier": 0.95}],
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 0.95
+        }
+      ],
       "cost": 0,
       "effect": "張步兵承傷 -5%，持續 3 回合。",
-      "generated_event_cards": []
-    },
-    {
-      "id": "kwantung_army_exercise",
-      "name": "關東軍演習",
-      "deck_type": "function",
-      "category": "fengtian",
-      "holdable": true,
-      "mechanic": "timed_combat_effect",
-      "allowed_players": ["F"],
-      "duration_turns": 3,
-      "modifiers": [{"stat": "attack", "unit": "infantry", "multiplier": 1.05}],
-      "cost": 0,
-      "effect": "張步兵攻擊 +5%，持續 3 回合。",
-      "generated_event_cards": []
-    },
-    {
-      "id": "japanese_colonization_group",
-      "name": "日本墾殖團",
-      "deck_type": "function",
-      "category": "fengtian",
-      "holdable": true,
-      "mechanic": "regional_city_development",
-      "allowed_players": ["F"],
-      "provinces": ["奉天", "吉林", "黑龍江"],
-      "cash": 1,
-      "factory": 1,
-      "cost": 0,
-      "effect": "張控制的奉天、吉林、黑龍江城市每回合現金 +1、工廠 +1。本牌每副牌僅 1 張。",
-      "generated_event_cards": []
-    },
-    {
-      "id": "japanese_loan",
-      "name": "日本借款",
-      "deck_type": "function",
-      "category": "fengtian",
-      "holdable": true,
-      "mechanic": "debt_cash",
-      "allowed_players": ["F"],
-      "debt": 100,
-      "cash": 90,
-      "cost": 0,
-      "effect": "張負債 +100，現金 +90。",
-      "generated_event_cards": []
-    },
-    {
-      "id": "manchurian_railway_concession",
-      "name": "滿洲鐵路特許權",
-      "deck_type": "function",
-      "category": "fengtian",
-      "holdable": true,
-      "mechanic": "rail_movement",
-      "allowed_players": ["F"],
-      "duration_turns": 2,
-      "tiles": 4,
-      "cost": 0,
-      "effect": "張鐵路移動上限由 3 格提高到 4 格，持續 2 回合。",
       "generated_event_cards": []
     },
     {
@@ -481,7 +471,7 @@
       "unit_type": "infantry",
       "min_units": 3,
       "max_units": 5,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定一名玩家勢力，扣減步兵預備隊 3-5 營。",
       "generated_event_cards": []
     },
@@ -495,7 +485,7 @@
       "unit_type": "cavalry",
       "min_units": 1,
       "max_units": 3,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定一名玩家勢力，扣減騎兵預備隊 1-3 營。",
       "generated_event_cards": []
     },
@@ -509,7 +499,7 @@
       "unit_type": "machine_gun",
       "min_units": 1,
       "max_units": 2,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定一名玩家勢力，扣減機槍預備隊 1-2 營。",
       "generated_event_cards": []
     },
@@ -523,7 +513,7 @@
       "unit_type": "artillery",
       "min_units": 1,
       "max_units": 2,
-      "cost": 15,
+      "cost": 0,
       "effect": "指定一名玩家勢力，扣減砲兵預備隊 1-2 營。",
       "generated_event_cards": []
     },
@@ -543,7 +533,8 @@
           "copies": 1,
           "reason": "日本債款換械後，日本要求北滿鐵路/礦權/通行特許權作為代價。"
         }
-      ]
+      ],
+      "cost": 0
     },
     {
       "id": "special_service_guard_low",
@@ -553,7 +544,8 @@
       "holdable": true,
       "status": "modelled_on_general",
       "effect": "不再用獨立兵種卡堆疊；使用後將指定將領 body_guard_level 設為 low。遭遇暗殺時提供 +3 防禦。",
-      "generated_event_cards": []
+      "generated_event_cards": [],
+      "cost": 0
     },
     {
       "id": "special_service_guard_high",
@@ -563,7 +555,8 @@
       "holdable": true,
       "status": "modelled_on_general",
       "effect": "不再用機槍營/菁英衛隊等冗餘字段；使用後將指定將領 body_guard_level 設為 high。遭遇暗殺時提供 +6 防禦。",
-      "generated_event_cards": []
+      "generated_event_cards": [],
+      "cost": 0
     },
     {
       "id": "function_日本軍火優惠",
@@ -595,7 +588,8 @@
           "reason": "大量採購日械後，日本可用備件與彈藥供應施壓。"
         }
       ],
-      "foreign_power": "🇯🇵日"
+      "foreign_power": "🇯🇵日",
+      "cost": 0
     },
     {
       "id": "function_蘇援軍火到港",
@@ -627,7 +621,8 @@
           "reason": "接受蘇援後，顧問與工運路線壓力上升。"
         }
       ],
-      "foreign_power": "🇷🇺蘇"
+      "foreign_power": "🇷🇺蘇",
+      "cost": 0
     },
     {
       "id": "function_顧問團擴編",
@@ -654,7 +649,8 @@
           "reason": "顧問團存在後，關係惡化會引發撤離或清洗事件。"
         }
       ],
-      "foreign_power": "🇷🇺蘇"
+      "foreign_power": "🇷🇺蘇",
+      "cost": 0
     },
     {
       "id": "function_華南軍火交易",
@@ -686,7 +682,8 @@
           "reason": "大量採購英械後，英方要求港口與關稅讓步。"
         }
       ],
-      "foreign_power": "🇬🇧英"
+      "foreign_power": "🇬🇧英",
+      "cost": 0
     },
     {
       "id": "function_匯豐銀行特別授信",
@@ -718,7 +715,8 @@
           "reason": "列強銀行授信會在戰事或關係惡化時變成催款壓力。"
         }
       ],
-      "foreign_power": "🇬🇧英"
+      "foreign_power": "🇬🇧英",
+      "cost": 0
     },
     {
       "id": "function_美式軍械採購",
@@ -738,7 +736,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇺🇸美"
+      "foreign_power": "🇺🇸美",
+      "cost": 0
     },
     {
       "id": "function_美國經濟援助",
@@ -763,7 +762,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇺🇸美"
+      "foreign_power": "🇺🇸美",
+      "cost": 0
     },
     {
       "id": "function_法械與外籍兵團教官",
@@ -783,7 +783,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇫🇷法"
+      "foreign_power": "🇫🇷法",
+      "cost": 0
     },
     {
       "id": "function_德國軍事顧問團",
@@ -803,7 +804,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇩🇪德"
+      "foreign_power": "🇩🇪德",
+      "cost": 0
     },
     {
       "id": "function_德國軍火降價",
@@ -823,7 +825,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇩🇪德"
+      "foreign_power": "🇩🇪德",
+      "cost": 0
     },
     {
       "id": "function_軍閥公債",
@@ -854,7 +857,8 @@
           "copies": 1,
           "reason": "發行公債後，逾期或戰敗會引發信用事件。"
         }
-      ]
+      ],
+      "cost": 0
     },
     {
       "id": "function_葉開鑫倒戈",
@@ -881,7 +885,8 @@
           "reason": "買來的倒戈部隊忠誠不穩，可能引發索餉或再倒戈。"
         }
       ],
-      "npc_faction": "湘軍"
+      "npc_faction": "湘軍",
+      "cost": 0
     },
     {
       "id": "function_龍雲政變醞釀",
@@ -908,7 +913,8 @@
           "reason": "買來的倒戈部隊忠誠不穩，可能引發索餉或再倒戈。"
         }
       ],
-      "npc_faction": "滇系"
+      "npc_faction": "滇系",
+      "cost": 0
     },
     {
       "id": "function_橫濱正金銀行借款",
@@ -940,7 +946,8 @@
           "reason": "日方借款常以鐵路、關稅、礦權要求償付。"
         }
       ],
-      "foreign_power": "🇯🇵日"
+      "foreign_power": "🇯🇵日",
+      "cost": 0
     },
     {
       "id": "function_蘇聯建交承認",
@@ -954,7 +961,8 @@
       "base_weight": 5.0,
       "conditions": [],
       "generated_event_cards": [],
-      "foreign_power": "🇷🇺蘇"
+      "foreign_power": "🇷🇺蘇",
+      "cost": 0
     },
     {
       "id": "function_軍校援建",
@@ -974,7 +982,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇷🇺蘇"
+      "foreign_power": "🇷🇺蘇",
+      "cost": 0
     },
     {
       "id": "function_英國承認關稅自主",
@@ -994,7 +1003,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇬🇧英"
+      "foreign_power": "🇬🇧英",
+      "cost": 0
     },
     {
       "id": "function_英商軍火走私",
@@ -1014,7 +1024,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇬🇧英"
+      "foreign_power": "🇬🇧英",
+      "cost": 0
     },
     {
       "id": "function_美國承認與商約",
@@ -1028,7 +1039,8 @@
       "base_weight": 5.0,
       "conditions": [],
       "generated_event_cards": [],
-      "foreign_power": "🇺🇸美"
+      "foreign_power": "🇺🇸美",
+      "cost": 0
     },
     {
       "id": "function_美孚石油供應",
@@ -1042,7 +1054,8 @@
       "base_weight": 4.0,
       "conditions": [],
       "generated_event_cards": [],
-      "foreign_power": "🇺🇸美"
+      "foreign_power": "🇺🇸美",
+      "cost": 0
     },
     {
       "id": "function_美國紅十字救濟",
@@ -1056,7 +1069,8 @@
       "base_weight": 4.0,
       "conditions": [],
       "generated_event_cards": [],
-      "foreign_power": "🇺🇸美"
+      "foreign_power": "🇺🇸美",
+      "cost": 0
     },
     {
       "id": "function_東方匯理銀行貸款",
@@ -1083,7 +1097,8 @@
           "reason": "法方貸款後可能要求滇越線、教案或關稅特權。"
         }
       ],
-      "foreign_power": "🇫🇷法"
+      "foreign_power": "🇫🇷法",
+      "cost": 0
     },
     {
       "id": "function_外籍兵團教官團",
@@ -1097,7 +1112,8 @@
       "base_weight": 3.0,
       "conditions": [],
       "generated_event_cards": [],
-      "foreign_power": "🇫🇷法"
+      "foreign_power": "🇫🇷法",
+      "cost": 0
     },
     {
       "id": "function_滇越鐵路運輸權",
@@ -1117,7 +1133,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇫🇷法"
+      "foreign_power": "🇫🇷法",
+      "cost": 0
     },
     {
       "id": "function_德國工業技術團",
@@ -1137,7 +1154,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇩🇪德"
+      "foreign_power": "🇩🇪德",
+      "cost": 0
     },
     {
       "id": "function_德製兵工廠設備",
@@ -1157,7 +1175,8 @@
         }
       ],
       "generated_event_cards": [],
-      "foreign_power": "🇩🇪德"
+      "foreign_power": "🇩🇪德",
+      "cost": 0
     },
     {
       "id": "function_英國軍事顧問團",
@@ -1184,7 +1203,8 @@
           "reason": "顧問團存在後，關係惡化會引發撤離或清洗事件。"
         }
       ],
-      "foreign_power": "🇬🇧英"
+      "foreign_power": "🇬🇧英",
+      "cost": 0
     },
     {
       "id": "function_日本軍事顧問團",
@@ -1211,7 +1231,8 @@
           "reason": "顧問團存在後，關係惡化會引發撤離或清洗事件。"
         }
       ],
-      "foreign_power": "🇯🇵日"
+      "foreign_power": "🇯🇵日",
+      "cost": 0
     },
     {
       "id": "function_美國軍事顧問團",
@@ -1232,7 +1253,8 @@
           "reason": "顧問團存在後，關係惡化會引發撤離或清洗事件。"
         }
       ],
-      "foreign_power": "🇺🇸美"
+      "foreign_power": "🇺🇸美",
+      "cost": 0
     },
     {
       "id": "function_五國銀行團聯合貸款",
@@ -1263,7 +1285,8 @@
           "copies": 1,
           "reason": "聯合貸款後，列強銀行團會要求監督財政。"
         }
-      ]
+      ],
+      "cost": 0
     },
     {
       "id": "function_西北軍缺餉",
@@ -1283,7 +1306,8 @@
         }
       ],
       "generated_event_cards": [],
-      "npc_faction": "西北軍"
+      "npc_faction": "西北軍",
+      "cost": 0
     },
     {
       "id": "function_鄧錫侯封鎖入川",
@@ -1303,7 +1327,8 @@
         }
       ],
       "generated_event_cards": [],
-      "npc_faction": "川軍"
+      "npc_faction": "川軍",
+      "cost": 0
     },
     {
       "id": "function_胡若愚倒戈",
@@ -1330,7 +1355,8 @@
           "reason": "買來的倒戈部隊忠誠不穩，可能引發索餉或再倒戈。"
         }
       ],
-      "npc_faction": "滇系"
+      "npc_faction": "滇系",
+      "cost": 0
     },
     {
       "id": "function_在野名將投效",
@@ -1356,7 +1382,593 @@
           "copies": 1,
           "reason": "延攬在野宿將後，其舊部可能要求地盤與職位。"
         }
+      ],
+      "cost": 0
+    },
+    {
+      "id": "qing_gang_riot",
+      "name": "青幫暴動",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "mechanic": "qing_gang_riot",
+      "reward_rate": 0.5,
+      "suppression_force": 15,
+      "suppression_turns": 3,
+      "cost": 0,
+      "effect": "指定敵方一個省份發動青幫暴動；該省敵方控制城市產出歸零，且每回合將被截斷現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 3 回合才可平息。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "foreign_relation_jp",
+      "name": "對日交涉",
+      "deck_type": "function",
+      "category": "foreign_relation",
+      "holdable": true,
+      "mechanic": "foreign_relation_delta",
+      "foreign_power_key": "jp",
+      "relation_delta": 2,
+      "cost": 0,
+      "effect": "日本關係 +2。若關係升至 8 以上，會解鎖該列強友好功能卡進入牌庫。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "foreign_relation_su",
+      "name": "對蘇交涉",
+      "deck_type": "function",
+      "category": "foreign_relation",
+      "holdable": true,
+      "mechanic": "foreign_relation_delta",
+      "foreign_power_key": "su",
+      "relation_delta": 2,
+      "cost": 0,
+      "effect": "蘇聯關係 +2。若關係升至 8 以上，會解鎖該列強友好功能卡進入牌庫。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "foreign_relation_uk",
+      "name": "對英交涉",
+      "deck_type": "function",
+      "category": "foreign_relation",
+      "holdable": true,
+      "mechanic": "foreign_relation_delta",
+      "foreign_power_key": "uk",
+      "relation_delta": 2,
+      "cost": 0,
+      "effect": "英國關係 +2。若關係升至 8 以上，會解鎖該列強友好功能卡進入牌庫。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "foreign_relation_fr",
+      "name": "對法交涉",
+      "deck_type": "function",
+      "category": "foreign_relation",
+      "holdable": true,
+      "mechanic": "foreign_relation_delta",
+      "foreign_power_key": "fr",
+      "relation_delta": 2,
+      "cost": 0,
+      "effect": "法國關係 +2。若關係升至 8 以上，會解鎖該列強友好功能卡進入牌庫。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "foreign_relation_us",
+      "name": "對美交涉",
+      "deck_type": "function",
+      "category": "foreign_relation",
+      "holdable": true,
+      "mechanic": "foreign_relation_delta",
+      "foreign_power_key": "us",
+      "relation_delta": 2,
+      "cost": 0,
+      "effect": "美國關係 +2。若關係升至 8 以上，會解鎖該列強友好功能卡進入牌庫。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "jp_mitsui_arms_shipment",
+      "name": "三井步槍機槍轉運",
+      "deck_type": "function",
+      "category": "foreign_units",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "foreign_power_key": "jp",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "日本關係 8+：預備隊步兵 +4、機槍 +1。",
+      "generated_event_cards": [],
+      "unit_reserves": {
+        "infantry": 4,
+        "machine_gun": 1
+      }
+    },
+    {
+      "id": "jp_yokohama_specie_loan",
+      "name": "橫濱正金短貸",
+      "deck_type": "function",
+      "category": "foreign_money",
+      "holdable": true,
+      "mechanic": "debt_cash",
+      "foreign_power_key": "jp",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "日本關係 8+：現金 +45、負債 +55。",
+      "generated_event_cards": [],
+      "cash": 45,
+      "debt": 55
+    },
+    {
+      "id": "jp_infantry_drill_mission",
+      "name": "關東軍步兵教範",
+      "deck_type": "function",
+      "category": "foreign_combat",
+      "holdable": true,
+      "mechanic": "timed_combat_effect",
+      "foreign_power_key": "jp",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "日本關係 8+：步兵攻擊 +8%，持續 3 回合。",
+      "generated_event_cards": [],
+      "duration_turns": 3,
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.08
+        }
       ]
+    },
+    {
+      "id": "jp_south_manchuria_engineers",
+      "name": "南滿鐵路工程隊",
+      "deck_type": "function",
+      "category": "foreign_city",
+      "holdable": true,
+      "mechanic": "regional_city_development",
+      "foreign_power_key": "jp",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "日本關係 8+：你控制的奉天、吉林、黑龍江城市永久現金 +1、工廠 +2。",
+      "generated_event_cards": [],
+      "provinces": [
+        "奉天",
+        "吉林",
+        "黑龍江"
+      ],
+      "cash": 1,
+      "factory": 2
+    },
+    {
+      "id": "su_rifle_shipment",
+      "name": "蘇式步槍船運",
+      "deck_type": "function",
+      "category": "foreign_units",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "foreign_power_key": "su",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "蘇聯關係 8+：預備隊步兵 +6、機槍 +1。",
+      "generated_event_cards": [],
+      "unit_reserves": {
+        "infantry": 6,
+        "machine_gun": 1
+      }
+    },
+    {
+      "id": "su_ruble_subsidy",
+      "name": "盧布秘密補助",
+      "deck_type": "function",
+      "category": "foreign_money",
+      "holdable": true,
+      "mechanic": "cash_gain",
+      "foreign_power_key": "su",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "蘇聯關係 8+：現金 +25。",
+      "generated_event_cards": [],
+      "cash": 25
+    },
+    {
+      "id": "su_galen_advisers",
+      "name": "加倫顧問團",
+      "deck_type": "function",
+      "category": "foreign_combat",
+      "holdable": true,
+      "mechanic": "timed_combat_effect",
+      "foreign_power_key": "su",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "蘇聯關係 8+：步兵與騎兵攻擊 +6%，持續 3 回合。",
+      "generated_event_cards": [],
+      "duration_turns": 3,
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.06
+        },
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.06
+        }
+      ]
+    },
+    {
+      "id": "su_military_academy_mission",
+      "name": "蘇聯軍校教官",
+      "deck_type": "function",
+      "category": "foreign_city",
+      "holdable": true,
+      "mechanic": "city_development",
+      "foreign_power_key": "su",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "蘇聯關係 8+：指定己方城市，現金 +1-2、工廠 +3-4。",
+      "generated_event_cards": [],
+      "min_cash": 1,
+      "max_cash": 2,
+      "min_factory": 3,
+      "max_factory": 4
+    },
+    {
+      "id": "uk_vickers_contract",
+      "name": "維克斯機槍合約",
+      "deck_type": "function",
+      "category": "foreign_units",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "foreign_power_key": "uk",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "英國關係 8+：預備隊機槍 +3。",
+      "generated_event_cards": [],
+      "unit_reserves": {
+        "machine_gun": 3
+      }
+    },
+    {
+      "id": "uk_hsbc_credit",
+      "name": "匯豐周轉授信",
+      "deck_type": "function",
+      "category": "foreign_money",
+      "holdable": true,
+      "mechanic": "debt_cash",
+      "foreign_power_key": "uk",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "英國關係 8+：現金 +60、負債 +70。",
+      "generated_event_cards": [],
+      "cash": 60,
+      "debt": 70
+    },
+    {
+      "id": "uk_machine_gun_advisers",
+      "name": "英械火力教官",
+      "deck_type": "function",
+      "category": "foreign_combat",
+      "holdable": true,
+      "mechanic": "timed_combat_effect",
+      "foreign_power_key": "uk",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "英國關係 8+：機槍攻擊 +14%，持續 2 回合。",
+      "generated_event_cards": [],
+      "duration_turns": 2,
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "machine_gun",
+          "multiplier": 1.14
+        }
+      ]
+    },
+    {
+      "id": "uk_customs_advisers",
+      "name": "海關稅務顧問",
+      "deck_type": "function",
+      "category": "foreign_city",
+      "holdable": true,
+      "mechanic": "city_development",
+      "foreign_power_key": "uk",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "英國關係 8+：指定己方城市，現金 +3-4、工廠 +1-2。",
+      "generated_event_cards": [],
+      "min_cash": 3,
+      "max_cash": 4,
+      "min_factory": 1,
+      "max_factory": 2
+    },
+    {
+      "id": "fr_mountain_gun_mission",
+      "name": "法式山砲軍援",
+      "deck_type": "function",
+      "category": "foreign_units",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "foreign_power_key": "fr",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "法國關係 8+：預備隊砲兵 +2。",
+      "generated_event_cards": [],
+      "unit_reserves": {
+        "artillery": 2
+      }
+    },
+    {
+      "id": "fr_banque_indochine_credit",
+      "name": "東方匯理墊款",
+      "deck_type": "function",
+      "category": "foreign_money",
+      "holdable": true,
+      "mechanic": "debt_cash",
+      "foreign_power_key": "fr",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "法國關係 8+：現金 +30、負債 +25。",
+      "generated_event_cards": [],
+      "cash": 30,
+      "debt": 25
+    },
+    {
+      "id": "fr_artillery_school",
+      "name": "法國砲兵學校",
+      "deck_type": "function",
+      "category": "foreign_combat",
+      "holdable": true,
+      "mechanic": "timed_combat_effect",
+      "foreign_power_key": "fr",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "法國關係 8+：砲兵攻擊 +12%，持續 3 回合。",
+      "generated_event_cards": [],
+      "duration_turns": 3,
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.12
+        }
+      ]
+    },
+    {
+      "id": "fr_concession_engineers",
+      "name": "法租界工程師",
+      "deck_type": "function",
+      "category": "foreign_city",
+      "holdable": true,
+      "mechanic": "city_development",
+      "foreign_power_key": "fr",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "法國關係 8+：指定己方城市，現金 +2-3、工廠 +2-3。",
+      "generated_event_cards": [],
+      "min_cash": 2,
+      "max_cash": 3,
+      "min_factory": 2,
+      "max_factory": 3
+    },
+    {
+      "id": "us_browning_samples",
+      "name": "白朗寧樣品槍",
+      "deck_type": "function",
+      "category": "foreign_units",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "foreign_power_key": "us",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "美國關係 8+：預備隊步兵 +2、機槍 +1、砲兵 +1。",
+      "generated_event_cards": [],
+      "unit_reserves": {
+        "machine_gun": 1,
+        "artillery": 1,
+        "infantry": 2
+      }
+    },
+    {
+      "id": "us_commercial_credit",
+      "name": "美商現金信貸",
+      "deck_type": "function",
+      "category": "foreign_money",
+      "holdable": true,
+      "mechanic": "cash_gain",
+      "foreign_power_key": "us",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "美國關係 8+：現金 +40。",
+      "generated_event_cards": [],
+      "cash": 40
+    },
+    {
+      "id": "us_firepower_doctrine",
+      "name": "美式火力編組",
+      "deck_type": "function",
+      "category": "foreign_combat",
+      "holdable": true,
+      "mechanic": "timed_combat_effect",
+      "foreign_power_key": "us",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "美國關係 8+：機槍攻擊 +10%、砲兵攻擊 +7%，持續 2 回合。",
+      "generated_event_cards": [],
+      "duration_turns": 2,
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "machine_gun",
+          "multiplier": 1.1
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    {
+      "id": "us_industrial_engineers",
+      "name": "美國工業技師",
+      "deck_type": "function",
+      "category": "foreign_city",
+      "holdable": true,
+      "mechanic": "city_development",
+      "foreign_power_key": "us",
+      "requires_relation_min": 8,
+      "cost": 0,
+      "effect": "美國關係 8+：指定己方城市，現金 +2、工廠 +4。",
+      "generated_event_cards": [],
+      "min_cash": 2,
+      "max_cash": 2,
+      "min_factory": 4,
+      "max_factory": 4
+    },
+    {
+      "id": "jp_condemnation",
+      "name": "日本的譴責",
+      "deck_type": "function",
+      "category": "foreign_condemnation",
+      "holdable": true,
+      "mechanic": "no_effect",
+      "foreign_power_key": "jp",
+      "cost": 0,
+      "effect": "無效果。此牌只會佔用抽牌機會，代表列強譴責與外交雜音。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "su_condemnation",
+      "name": "蘇聯的譴責",
+      "deck_type": "function",
+      "category": "foreign_condemnation",
+      "holdable": true,
+      "mechanic": "no_effect",
+      "foreign_power_key": "su",
+      "cost": 0,
+      "effect": "無效果。此牌只會佔用抽牌機會，代表列強譴責與外交雜音。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "uk_condemnation",
+      "name": "英國的譴責",
+      "deck_type": "function",
+      "category": "foreign_condemnation",
+      "holdable": true,
+      "mechanic": "no_effect",
+      "foreign_power_key": "uk",
+      "cost": 0,
+      "effect": "無效果。此牌只會佔用抽牌機會，代表列強譴責與外交雜音。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "fr_condemnation",
+      "name": "法國的譴責",
+      "deck_type": "function",
+      "category": "foreign_condemnation",
+      "holdable": true,
+      "mechanic": "no_effect",
+      "foreign_power_key": "fr",
+      "cost": 0,
+      "effect": "無效果。此牌只會佔用抽牌機會，代表列強譴責與外交雜音。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "us_condemnation",
+      "name": "美國的譴責",
+      "deck_type": "function",
+      "category": "foreign_condemnation",
+      "holdable": true,
+      "mechanic": "no_effect",
+      "foreign_power_key": "us",
+      "cost": 0,
+      "effect": "無效果。此牌只會佔用抽牌機會，代表列強譴責與外交雜音。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "young_marshal_rises",
+      "name": "少帥崛起",
+      "deck_type": "function",
+      "category": "fengtian",
+      "holdable": true,
+      "mechanic": "army_unit_bundle",
+      "allowed_players": [
+        "F"
+      ],
+      "target_general_id": "zhang_xueliang",
+      "requires_active": true,
+      "unit_reserves": {
+        "infantry": 10,
+        "cavalry": 5,
+        "machine_gun": 2,
+        "artillery": 1
+      },
+      "cost": 0,
+      "effect": "僅張可用。若張學良未被俘，張學良所在軍隊立刻增加步兵 10、騎兵 5、機槍 2、砲兵 1。每副牌僅 1 張。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "wang_yongjiang_financial_reform",
+      "name": "王永江金融改革",
+      "deck_type": "function",
+      "category": "fengtian",
+      "holdable": true,
+      "mechanic": "permanent_player_output",
+      "allowed_players": [
+        "F"
+      ],
+      "cash": 5,
+      "factory": 2,
+      "cost": 0,
+      "effect": "僅張可用。永久每回合現金收入 +5、工廠點收入 +2。每副牌僅 1 張。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "zhili_anti_communist_declaration",
+      "name": "聯合反共宣言",
+      "deck_type": "function",
+      "category": "zhili_joint",
+      "holdable": true,
+      "mechanic": "loyalty_swing",
+      "allowed_players": [
+        "W",
+        "S"
+      ],
+      "requires_peace_with": [
+        "W",
+        "S"
+      ],
+      "loyalty_swings": [
+        {
+          "owners": [
+            "W",
+            "S"
+          ],
+          "amount": 3
+        },
+        {
+          "owners": [
+            "F",
+            "N"
+          ],
+          "amount": -1
+        }
+      ],
+      "cost": 0,
+      "effect": "吳與孫未交戰時可用。吳、孫所有可變忠誠將領 +3；張、蔣所有可變忠誠將領 -1。絕對忠誠將領不受影響。每副牌僅 1 張。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "forced_march",
+      "name": "急行軍",
+      "deck_type": "function",
+      "category": "maneuver",
+      "holdable": true,
+      "mechanic": "rural_movement",
+      "duration_turns": 3,
+      "tiles": 2,
+      "cost": 0,
+      "effect": "3 回合內，己方軍隊在非鐵路鄉村地格可移動 2 格；跨河仍需浮橋或鐵路橋。",
+      "generated_event_cards": []
     }
   ]
 }

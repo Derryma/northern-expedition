@@ -1,0 +1,58 @@
+{
+  "version": "npc-chuan-0.1",
+  "great_general_id": "liu_xiang",
+  "generals": {
+    "liu_xiang": {
+      "id": "liu_xiang",
+      "name": "劉湘",
+      "role": "great_general",
+      "faction": "川軍",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 42,
+      "traits": [
+        "entrenched_warlord"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 9,
+        "cavalry": 3,
+        "artillery": 1,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 1,
+      "subordinates": [
+        "liu_wenhui"
+      ],
+      "status": "active"
+    },
+    "liu_wenhui": {
+      "id": "liu_wenhui",
+      "name": "劉文輝",
+      "role": "lieutenant_general",
+      "faction": "川軍",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 30,
+      "traits": [
+        "local_supply_boss"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 8,
+        "cavalry": 3,
+        "artillery": 1,
+        "machine_gun": 1
+      },
+      "parent_id": "liu_xiang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "version": "npc-xiang-0.1",
+  "great_general_id": "tang_shengzhi",
+  "generals": {
+    "tang_shengzhi": {
+      "id": "tang_shengzhi",
+      "name": "唐生智",
+      "role": "great_general",
+      "faction": "湘軍",
+      "core_faction": true,
+      "loyalty": null,
+      "loyalty_exempt": true,
+      "body_guard_level": null,
+      "command_cap": 42,
+      "traits": [
+        "local_supply_boss"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 9,
+        "cavalry": 3,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": null,
+      "subordinate_slots": 1,
+      "subordinates": [
+        "he_jian"
+      ],
+      "status": "active"
+    },
+    "he_jian": {
+      "id": "he_jian",
+      "name": "何鍵",
+      "role": "lieutenant_general",
+      "faction": "湘軍",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 26,
+      "traits": [
+        "entrenched_warlord"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 7,
+        "cavalry": 3,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": "tang_shengzhi",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    }
+  }
+}

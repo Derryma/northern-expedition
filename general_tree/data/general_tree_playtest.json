@@ -12,8 +12,12 @@
       "loyalty_exempt": true,
       "body_guard_level": null,
       "command_cap": 80,
-      "traits": ["shock_column_leader"],
-      "skills": ["fortress_builder"],
+      "traits": [
+        "shock_column_leader"
+      ],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 18,
         "cavalry": 2,
@@ -22,7 +26,11 @@
       },
       "parent_id": null,
       "subordinate_slots": 3,
-      "subordinates": ["he_yingqin", "bai_chongxi", "tang_shengzhi"],
+      "subordinates": [
+        "he_yingqin",
+        "bai_chongxi",
+        "li_zongren"
+      ],
       "status": "active"
     },
     "he_yingqin": {
@@ -36,7 +44,9 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 42,
-      "traits": ["steady_drillmaster"],
+      "traits": [
+        "steady_drillmaster"
+      ],
       "skills": [],
       "units": {
         "infantry": 14,
@@ -59,7 +69,9 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 40,
-      "traits": ["fire_support_savant"],
+      "traits": [
+        "fire_support_savant"
+      ],
       "skills": [],
       "units": {
         "infantry": 12,
@@ -72,18 +84,20 @@
       "subordinates": [],
       "status": "active"
     },
-    "tang_shengzhi": {
-      "id": "tang_shengzhi",
-      "name": "唐生智",
+    "li_zongren": {
+      "id": "li_zongren",
+      "name": "李宗仁",
       "role": "lieutenant_general",
-      "faction": "湘系",
+      "faction": "桂系",
       "core_faction": false,
-      "loyalty": 5,
+      "loyalty": 6,
       "loyalty_exempt": false,
       "body_guard_level": null,
-      "command_cap": 34,
-      "traits": ["local_supply_boss"],
-      "skills": ["pontoon_bridge"],
+      "command_cap": 36,
+      "traits": [
+        "cavalry_screen_commander"
+      ],
+      "skills": [],
       "units": {
         "infantry": 10,
         "cavalry": 3,
