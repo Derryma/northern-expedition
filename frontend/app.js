@@ -109,37 +109,6 @@ const UNIT_DISPLAY_SCALE = {
   artillery: { multiplier: 10, suffix: "門" },
 };
 
-const STRATEGIC_PROVINCE_BY_MODERN_NAME = {
-  "北京市": "直隸",
-  "天津市": "直隸",
-  "河北省": "直隸",
-  "辽宁省": "奉天",
-  "吉林省": "吉林",
-  "黑龙江省": "黑龍江",
-  "山东省": "山東",
-  "河南省": "河南",
-  "湖北省": "湖北",
-  "湖南省": "湖南",
-  "江苏省": "江蘇",
-  "上海市": "江蘇",
-  "安徽省": "安徽",
-  "浙江省": "浙江",
-  "福建省": "福建",
-  "江西省": "江西",
-  "广东省": "廣東",
-  "海南省": "廣東",
-  "广西壮族自治区": "廣西",
-  "四川省": "四川",
-  "重庆市": "四川",
-  "贵州省": "貴州",
-  "云南省": "雲南",
-  "山西省": "山西",
-  "陕西省": "陝西",
-  "甘肃省": "甘肅",
-  "青海省": "青海",
-  "内蒙古自治区": "綏遠",
-  "宁夏回族自治区": "甘肅",
-};
 
 const TRAIT_LABELS = {
   warlord_supremacy: "軍閥統御",
@@ -827,14 +796,33 @@ function indexScenarioCells() {
   }
 }
 
+function nearestFreeCell(origin, occupied) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const cell of Object.values(cells)) {
+    if (!cell.land || occupied.has(cell.key) || cell.city) continue;
+    const distance = (cell.lon - origin.lon) ** 2 + (cell.lat - origin.lat) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = cell;
+    }
+  }
+  return best;
+}
+
 function snapArmiesToStartCities() {
   const occupied = new Set();
   const cityById = new Map((bootstrap.strategic_map?.cities || []).map((city) => [city.id, city]));
   for (const armies of Object.values(ARMY_POSITIONS)) {
     for (const army of armies) {
       const city = cityById.get(army.startCityId);
-      const cell = city?.cellKey ? cells[city.cellKey] : null;
-      if (!cell || occupied.has(cell.key)) continue;
+      const home = city?.cellKey ? cells[city.cellKey] : null;
+      if (!home) continue;
+      // Two armies can share a start city (e.g. 馬家軍 after 導河 left the map);
+      // the second one falls back to the nearest free land cell rather than
+      // being dropped without a position.
+      const cell = occupied.has(home.key) ? nearestFreeCell(home, occupied) : home;
+      if (!cell) continue;
       army.cellKey = cell.key;
       army.lon = cell.lon;
       army.lat = cell.lat;
@@ -975,11 +963,12 @@ function updateTopBar() {
   const profile = state.players[currentPlayer];
   if (!profile) return;
   $("factionStats").innerHTML = `
-    <span title="${debtServiceTitle(profile)}">¥${profile.treasury ?? 0} (+${profile.income ?? 0}/回合)</span>
+    <span title="${debtServiceTitle(profile)}">$${profile.treasury ?? 0} (+${profile.income ?? 0}/回合)</span>
     <span title="可用工廠點與每回合城市產出">工廠 ${profile.factory_points ?? 0} (+${profile.factory_income ?? 0}/回合)</span>
     <span title="預備兵力">預備 ${profile.unit_reserve ?? 0}</span>
     <span title="債務">債 ${profile.debt ?? 0}</span>
   `;
+  refreshLoansIfOpen();
 }
 
 function functionCardDrawCost() {
@@ -1007,10 +996,10 @@ function functionPurchaseMarkup(payload = state?.players?.[currentPlayer], conte
   const deckCount = (payload?.function_deck || []).length + (payload?.discard || []).length;
   const used = Number(payload?.function_purchase_count || 0);
   const limit = functionCardDrawLimit();
-  let note = `可支付 ¥${cost} 抽 1 張功能卡；每位玩家每回合最多 ${limit} 張（已抽 ${used}/${limit}）。`;
+  let note = `可支付 $${cost} 抽 1 張功能卡；每位玩家每回合最多 ${limit} 張（已抽 ${used}/${limit}）。`;
   if (payload?.pending_draw) note = "先棄置一張手牌，接收已購買的新功能卡。";
   else if (used >= limit) note = `本回合已抽滿 ${limit} 張功能卡。`;
-  else if ((payload?.treasury || 0) < cost) note = `現金不足，購買功能卡需要 ¥${cost}。`;
+  else if ((payload?.treasury || 0) < cost) note = `現金不足，購買功能卡需要 $${cost}。`;
   else if (deckCount <= 0) note = "功能卡牌庫已空。";
   return `
     <div class="function-purchase ${context}">
@@ -1018,7 +1007,7 @@ function functionPurchaseMarkup(payload = state?.players?.[currentPlayer], conte
         <b>功能卡購買</b>
         <span>${note}</span>
       </div>
-      <button data-buy-function-card="${currentPlayer}" ${canPurchaseFunctionCard(payload) ? "" : "disabled"}>支付 ¥${cost}</button>
+      <button data-buy-function-card="${currentPlayer}" ${canPurchaseFunctionCard(payload) ? "" : "disabled"}>支付 $${cost}</button>
     </div>
   `;
 }
@@ -1032,9 +1021,9 @@ async function buyFunctionCard(button) {
     syncStrategicCitiesFromState();
     const drawCount = Number(state.players[player]?.function_purchase_count || 0);
     uiNotice = result.requires_discard
-      ? `已支付 ¥${result.draw_cost} 購買「${result.card.name}」，請棄置一張手牌接收。`
+      ? `已支付 $${result.draw_cost} 購買「${result.card.name}」，請棄置一張手牌接收。`
       : drawCount >= functionCardDrawLimit()
-        ? `已支付 ¥${result.draw_cost} 購買「${result.card.name}」；本回合抽牌已達上限。`
+        ? `已支付 $${result.draw_cost} 購買「${result.card.name}」；本回合抽牌已達上限。`
         : null;
     updateTopBar();
     renderHandDock();
@@ -1066,8 +1055,6 @@ function strategicProvinceForCell(cell) {
   if (!cell) return null;
   if (cell.city?.province) return cell.city.province;
   const playableProvinces = new Set(provinceOptions());
-  const translated = STRATEGIC_PROVINCE_BY_MODERN_NAME[cell.province];
-  if (playableProvinces.has(translated)) return translated;
   if (playableProvinces.has(cell.province)) return cell.province;
   const nearestCity = (bootstrap.strategic_map?.cities || []).reduce((nearest, city) => {
     const cityCell = cells[city.cellKey];
@@ -1180,7 +1167,7 @@ function functionActionMessage(action, viewer = currentPlayer) {
   const developments = action.city_developments?.length ? action.city_developments : (action.city_development ? [action.city_development] : []);
   if (developments.length) {
     parts.push(developments.map((development) =>
-      `${cityLabel(development.city_id)}產出 +¥${development.cash}、工廠 +${development.factory}`
+      `${cityLabel(development.city_id)}產出 +$${development.cash}、工廠 +${development.factory}`
     ).join("；"));
   }
   if (action.cash_delta) {
@@ -1188,7 +1175,7 @@ function functionActionMessage(action, viewer = currentPlayer) {
   }
   if (action.permanent_output_delta) {
     const delta = action.permanent_output_delta;
-    parts.push(`${factionLabel(delta.owner, delta.owner === viewer)}永久收入 +¥${delta.cash}、工廠 +${delta.factory}/回合`);
+    parts.push(`${factionLabel(delta.owner, delta.owner === viewer)}永久收入 +$${delta.cash}、工廠 +${delta.factory}/回合`);
   }
   if (action.debt_delta) {
     parts.push(`${factionLabel(action.player, action.player === viewer)}負債 ${action.debt_delta > 0 ? "+" : ""}${action.debt_delta}`);
@@ -1330,6 +1317,9 @@ function renderPanel(panelName) {
     case "economy":
       element.innerHTML = renderEconomyPanel();
       attachEconomyHandlers(element);
+      break;
+    case "loans":
+      renderLoansPanel(element);
       break;
     case "foreign":
       element.innerHTML = renderForeignPanel();
@@ -1623,7 +1613,7 @@ async function attemptArmyDefection(army, superiorId) {
   syncStrategicCitiesFromState();
   updateTopBar();
   if (!result.success) {
-    showNotice(`策反失敗；已支付 ¥${result.cost}（成功率 ${Math.round(result.chance * 100)}%）。`);
+    showNotice(`策反失敗；已支付 $${result.cost}（成功率 ${Math.round(result.chance * 100)}%）。`);
     return;
   }
   const transferred = transferDefectingCommand(army, currentPlayer, superiorId);
@@ -1742,7 +1732,7 @@ function renderRecruitmentPanel() {
           <div class="unit-icon-hoi4">${unitSymbol(type)}</div>
           <div class="unit-details">
             <h3>${unit.name}</h3>
-            <div class="unit-stats">預備 ${reserve} · 現金 ¥${cash} · 工廠 ${factory}</div>
+            <div class="unit-stats">預備 ${reserve} · 現金 $${cash} · 工廠 ${factory}</div>
           </div>
           <div class="unit-cost">
             <button class="train-unit-btn" data-train-unit="${type}">訓練 +1</button>
@@ -1751,7 +1741,7 @@ function renderRecruitmentPanel() {
       `}).join('')}
     </div>
     <div class="panel-note">
-      可用現金 ¥${profile.treasury ?? 0} · 工廠點 ${profile.factory_points ?? 0} · 招募費率 ${Math.round(costModifier * 100)}%
+      可用現金 $${profile.treasury ?? 0} · 工廠點 ${profile.factory_points ?? 0} · 招募費率 ${Math.round(costModifier * 100)}%
     </div>
   `;
 }
@@ -1804,12 +1794,12 @@ function renderEconomyPanel() {
   const debtBreakdown = debtService ? `
     <div class="value-breakdown">
       <b>上回合債務結算</b>
-      <span><i>城市收入</i><strong>+¥${debtService.gross_income ?? 0}</strong></span>
-      <span><i>2% 利息</i><strong>+¥${debtService.interest ?? 0} 債</strong></span>
-      <span><i>強制還債</i><strong>-¥${debtService.forced_repayment ?? 0}</strong></span>
-      <span><i>實收現金</i><strong>+¥${debtService.net_income ?? 0}</strong></span>
+      <span><i>城市收入</i><strong>+$${debtService.gross_income ?? 0}</strong></span>
+      <span><i>2% 利息</i><strong>+$${debtService.interest ?? 0} 債</strong></span>
+      <span><i>逾期強制清償</i><strong>-$${debtService.forced_repayment ?? 0}</strong></span>
+      <span><i>實收現金</i><strong>+$${debtService.net_income ?? 0}</strong></span>
       ${(debtService.cash_effects || []).map((effect) => `
-        <span><i>${effect.name || effect.effect_id}</i><strong>${effect.amount >= 0 ? "+" : ""}¥${effect.amount}</strong></span>
+        <span><i>${effect.name || effect.effect_id}</i><strong>${effect.amount >= 0 ? "+" : ""}$${effect.amount}</strong></span>
       `).join("")}
     </div>
   ` : "";
@@ -1819,8 +1809,8 @@ function renderEconomyPanel() {
     <div class="economy-grid">
       <div class="economy-stat" tabindex="0" title="${debtServiceTitle(payload)}">
         <div class="economy-label">每回合現金</div>
-        <div class="economy-value cash">+¥${payload.income ?? 0}</div>
-        <div class="economy-hint">${(payload.debt || 0) > 0 ? "有債時半數收入自動還債" : "城市稅收"}</div>
+        <div class="economy-value cash">+$${payload.income ?? 0}</div>
+        <div class="economy-hint">${(payload.debt || 0) > 0 ? "逾期貸款才會強制扣收入" : "城市稅收"}</div>
         ${breakdown("cash", "現金")}
       </div>
       <div class="economy-stat" tabindex="0">
@@ -1831,11 +1821,11 @@ function renderEconomyPanel() {
       </div>
       <div class="economy-stat compact">
         <div class="economy-label">金庫</div>
-        <div class="economy-value">¥${payload.treasury ?? 0}</div>
+        <div class="economy-value">$${payload.treasury ?? 0}</div>
       </div>
       <div class="economy-stat compact">
         <div class="economy-label">負債</div>
-        <div class="economy-value debt">¥${payload.debt ?? 0}</div>
+        <div class="economy-value debt">$${payload.debt ?? 0}</div>
         ${debtBreakdown}
       </div>
     </div>
@@ -1845,6 +1835,132 @@ function renderEconomyPanel() {
     </div>
   `;
 }
+
+// ---- 借款面板 ---------------------------------------------------------
+// 上半部：各家銀行的可貸額度、利率、還款期限。下半部：尚未清償的貸款。
+// 兩者都直接讀 /api/loan-offers，所以列強關係一變動，額度與等級即時反映。
+
+let loanPanelCache = null;
+let loanPanelRefreshing = false;
+
+// 借款面板與列強關係即時連動：任何會改變狀態的動作最後都會呼叫 updateTopBar()，
+// 我們在那裡順手把開著的借款面板重新拉一次，額度與等級就會跟著關係值變動。
+function refreshLoansIfOpen() {
+  const panel = document.getElementById("panelLoans");
+  if (!panel || !panel.classList.contains("active") || loanPanelRefreshing) return;
+  loanPanelRefreshing = true;
+  loanPanelCache = null;
+  renderLoansPanel().finally(() => { loanPanelRefreshing = false; });
+}
+
+const TIER_LABEL = { blocked: "不可借貸", standard: "普通借貸", preferred: "優惠借貸" };
+
+function renderLoanOfferRow(row) {
+  const blocked = !row.can_borrow;
+  const rate = row.interest_per_turn == null ? "—" : `${Math.round(row.interest_per_turn * 100)}%／回合`;
+  const term = row.term_turns == null ? "—" : `${row.term_turns} 回合`;
+  const relation = row.relation == null
+    ? '<small class="loan-neutral">中立商行</small>'
+    : `<small>關係 ${row.relation > 0 ? "+" : ""}${row.relation}</small>`;
+  return `
+    <tr class="${blocked ? "loan-blocked" : ""}">
+      <td><b>${row.name}</b><br>${relation}</td>
+      <td>${TIER_LABEL[row.tier] || row.tier_label || "—"}</td>
+      <td class="num">${row.available} / ${row.limit}</td>
+      <td class="num">${rate}</td>
+      <td class="num">${term}</td>
+      <td>${blocked
+        ? `<span class="loan-blocked-note">${row.tier === "blocked" ? "關係交惡" : row.tier_label || "不承作"}</span>`
+        : `<button class="loan-borrow-btn" data-borrow-bank="${row.bank}" data-max="${row.available}">借款</button>`}</td>
+    </tr>
+  `;
+}
+
+function renderLoanRow(loan, turn) {
+  const overdue = loan.overdue;
+  const remaining = loan.turns_remaining;
+  const remainingText = overdue
+    ? `<b class="loan-overdue">逾期 ${Math.abs(remaining)} 回合</b>`
+    : `${remaining} 回合`;
+  return `
+    <tr class="${overdue ? "loan-overdue-row" : ""}">
+      <td>${loan.bank_name}</td>
+      <td class="num">$${loan.outstanding}</td>
+      <td class="num">${Math.round(loan.interest_per_turn * 100)}%</td>
+      <td class="num">${remainingText}</td>
+      <td><small>${loan.source && loan.source.startsWith("card:") ? "功能卡" : "銀行"}</small></td>
+    </tr>
+  `;
+}
+
+function renderLoansMarkup(data) {
+  const offers = data.offers || [];
+  const loans = data.loans || [];
+  const total = loans.reduce((sum, loan) => sum + loan.outstanding, 0);
+  return `
+    <div class="loan-summary">
+      <span>金庫 <b>$${data.treasury ?? 0}</b></span>
+      <span>負債總額 <b class="debt">$${total}</b></span>
+      <span>回合 <b>${data.turn ?? 0}</b></span>
+    </div>
+
+    <h3 class="loan-heading">可借額度</h3>
+    <table class="loan-table">
+      <thead><tr><th>銀行</th><th>等級</th><th>可借／額度</th><th>利率</th><th>期限</th><th></th></tr></thead>
+      <tbody>${offers.map(renderLoanOfferRow).join("")}</tbody>
+    </table>
+
+    <h3 class="loan-heading">未清償貸款</h3>
+    ${loans.length ? `
+      <table class="loan-table">
+        <thead><tr><th>銀行</th><th>餘額</th><th>利率</th><th>到期</th><th>來源</th></tr></thead>
+        <tbody>${loans.map((loan) => renderLoanRow(loan, data.turn)).join("")}</tbody>
+      </table>
+    ` : '<p class="loan-empty">目前沒有未清償的貸款。</p>'}
+  `;
+}
+
+async function renderLoansPanel(element) {
+  const target = element || document.getElementById("loansContent");
+  if (!target) return;
+  target.innerHTML = loanPanelCache ? renderLoansMarkup(loanPanelCache) : '<p class="loan-empty">讀取中…</p>';
+  try {
+    loanPanelCache = await api("/api/loan-offers", { player: currentPlayer });
+    target.innerHTML = renderLoansMarkup(loanPanelCache);
+    attachLoanHandlers(target);
+  } catch (error) {
+    target.innerHTML = `<p class="loan-empty">無法取得借款資料：${error.message}</p>`;
+  }
+}
+
+function attachLoanHandlers(root) {
+  root.querySelectorAll("[data-borrow-bank]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const bank = button.dataset.borrowBank;
+      const max = Number(button.dataset.max || 0);
+      const raw = window.prompt(`借款金額（上限 $${max}）`, String(max));
+      if (raw === null) return;
+      const amount = Number(raw);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        showNotice("借款金額必須是大於 0 的數字。");
+        return;
+      }
+      try {
+        const result = await api("/api/take-loan", { player: currentPlayer, bank, amount });
+        state = result.state;
+        syncStrategicCitiesFromState();
+        updateTopBar();
+        loanPanelCache = null;
+        await renderLoansPanel(root);
+        renderPanel("economy");
+        showNotice(`向${result.loan.bank_name}借款 $${result.loan.principal}，${result.loan.term_turns} 回合到期。`);
+      } catch (error) {
+        showNotice(error.message);
+      }
+    });
+  });
+}
+
 
 function attachEconomyHandlers(root = document) {
   root.querySelector("[data-repay-debt]")?.addEventListener("click", async () => {
@@ -1858,7 +1974,7 @@ function attachEconomyHandlers(root = document) {
       updateTopBar();
       renderPanel("economy");
       renderPendingActions();
-      showNotice(`${factionLabel(currentPlayer)}償還負債 ¥${result.amount}。`);
+      showNotice(`${factionLabel(currentPlayer)}償還負債 $${result.amount}。`);
     } catch (error) {
       showNotice(error.message);
     }
@@ -1889,12 +2005,12 @@ function renderForeignPanel() {
     ];
     return tabs + `<div class="relations-list">${powers.map((power) => {
       const value = relations[power.key] ?? 0;
-      const relationText = value >= 8 ? "友好" : value < 3 ? "敵對" : "中立";
+      const relationText = value >= 6 ? "友好" : value <= -4 ? "敵對" : "中立";
       return `
         <div class="relation-row">
           <div><b>${power.name}</b><small>${power.territories}</small></div>
-          <span class="power-relation ${value >= 8 ? "good" : value < 3 ? "poor" : ""}">
-            ${relationText} ${value}/10
+          <span class="power-relation ${value >= 6 ? "good" : value <= -4 ? "poor" : ""}">
+            ${relationText} ${value > 0 ? "+" : ""}${value}
           </span>
         </div>
       `;
@@ -2127,7 +2243,7 @@ function functionCardTargetMarkup(card) {
   }
   if (card.mechanic === "city_development") {
     const cities = state.players[currentPlayer]?.city_economy || [];
-    return `<label class="card-target">指定城市<select data-card-target-city="${card.id}" ${cities.length ? "" : "disabled"}>${cities.map((city) => `<option value="${city.id}">${city.name} · ¥${city.cash} 工${city.factory}</option>`).join("")}</select></label>`;
+    return `<label class="card-target">指定城市<select data-card-target-city="${card.id}" ${cities.length ? "" : "disabled"}>${cities.map((city) => `<option value="${city.id}">${city.name} · $${city.cash} 工${city.factory}</option>`).join("")}</select></label>`;
   }
   return loyaltyCardTargetMarkup(card);
 }
@@ -2198,7 +2314,7 @@ function updateEventBadge() {
 async function boot() {
   [bootstrap, provinceGeoJson] = await Promise.all([
     api("/api/bootstrap"),
-    fetch("/data/china_provinces.geojson").then((response) => response.json()),
+    fetch("/data/provinces_1926.geojson").then((response) => response.json()),
   ]);
   indexCards();
   indexScenarioCells();
@@ -2318,8 +2434,6 @@ function drawInfrastructure(ctx) {
   ctx.lineWidth = 1.15;
   ctx.setLineDash([8, 6]);
   for (const feature of provinceGeoJson?.features || []) {
-    const name = feature.properties?.name || "";
-    if (/新疆|西藏|台湾|香港|澳门/.test(name)) continue;
     for (const polygon of featurePolygons(feature)) {
       if (!polygon[0]) continue;
       traceGeoLine(ctx, polygon[0]);
@@ -2431,7 +2545,7 @@ function drawCities(ctx) {
     }
     ctx.font = '700 8px Inter';
     ctx.fillStyle = '#fff9e8';
-    ctx.fillText(`¥${city.cash} 工${city.factory}`, x, y + 11);
+    ctx.fillText(`$${city.cash} 工${city.factory}`, x, y + 11);
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#f1ead8';
     ctx.font = '700 10px Inter';
@@ -3293,7 +3407,7 @@ function renderTileInfo() {
       <span>聚落<strong>${city ? `${city.province} · ${city.level} 級城市` : `${strategicProvinceForCell(cell) || "未知省份"} · 鄉村`}</strong></span>
       <span>歸屬<strong>${FACTIONS[cell.fac]?.name || "無控制"}</strong></span>
       <span>工事<strong>${fortifications.join("、") || "無"}</strong></span>
-      <span>產出<strong>¥${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
+      <span>產出<strong>$${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
     </div>
     ${railroads.length ? `<small>鐵路：${railroads.join("、")}</small>` : ""}`;
 }
@@ -3361,7 +3475,7 @@ function renderArmyDetail() {
       </div>
     ` : `<div class="enemy-hidden-composition"><b>兵力不明</b><span>敵軍編制需交戰或情報網揭露。</span></div>`}
     ${isOwnArmy ? absoluteTransferMarkup(army) : ""}
-    ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? `策反費用 ¥${defectionCost} · 成功率 ${defectionChance}%` : "兵力未明，策反費用與成功率不公開"}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
+    ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? `策反費用 $${defectionCost} · 成功率 ${defectionChance}%` : "兵力未明，策反費用與成功率不公開"}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
     ${fightingBattle ? `<div class="active-operation">交戰中：不可移動、休整或補充。請在戰鬥情報中定策。</div>` : ""}
     ${!fightingBattle && resolvedThisTurn ? `<div class="active-operation">本回合軍令已執行。</div>` : ""}
     ${army.specialOperation ? `<div class="active-operation">進行中：${army.specialOperation.label} · 尚需 ${army.specialOperation.turnsRemaining} 回合</div>` : ""}
@@ -4391,7 +4505,7 @@ function renderPendingActions() {
     notification.hidden = false;
     notification.innerHTML = `
       <b>${sender}提出交易</b>
-      <span>資金 ¥${deal.funds}${reserveText}</span>
+      <span>資金 $${deal.funds}${reserveText}</span>
       <div class="notification-actions">
         <button data-deal-response="accept" data-deal-id="${deal.id}">接受</button>
         <button data-deal-response="decline" data-deal-id="${deal.id}">拒絕</button>
@@ -4407,9 +4521,9 @@ function renderPendingActions() {
     notification.hidden = false;
     notification.innerHTML = `
       <b>回合開始：購買功能卡？</b>
-      <span>可支付 ¥${cost} 抽 1 張功能卡；本回合最多 ${limit} 張，目前 ${used}/${limit}，也可以略過。</span>
+      <span>可支付 $${cost} 抽 1 張功能卡；本回合最多 ${limit} 張，目前 ${used}/${limit}，也可以略過。</span>
       <div class="notification-actions">
-        <button data-buy-function-card="${currentPlayer}">支付 ¥${cost}</button>
+        <button data-buy-function-card="${currentPlayer}">支付 $${cost}</button>
         <button data-skip-function-purchase="${currentPlayer}">略過</button>
       </div>`;
   } else if (bootstrap.features?.function_cards && state.last_action?.type === "function_card" && functionActionVisibleTo(state.last_action, currentPlayer)) {

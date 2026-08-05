@@ -2611,3 +2611,51 @@ button, select, input, textarea {
   color: var(--muted);
   font-style: italic;
 }
+
+/* ---- 借款面板 ---- */
+.loan-summary {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line, #3a3320);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.loan-summary b { font-size: 15px; }
+.loan-summary b.debt { color: #d08770; }
+.loan-heading {
+  margin: 18px 0 8px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--line, #3a3320);
+  padding-bottom: 4px;
+}
+.loan-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.loan-table th {
+  text-align: left;
+  font-weight: 500;
+  opacity: 0.7;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line, #3a3320);
+}
+.loan-table td { padding: 8px; border-bottom: 1px solid rgba(120, 105, 70, 0.25); vertical-align: middle; }
+.loan-table td.num { text-align: right; white-space: nowrap; }
+.loan-table small { opacity: 0.65; }
+.loan-table tr.loan-blocked { opacity: 0.5; }
+.loan-blocked-note { font-size: 12px; opacity: 0.75; }
+.loan-borrow-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--line, #3a3320);
+  border-radius: 4px;
+  background: rgba(200, 170, 90, 0.16);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+.loan-borrow-btn:hover { background: rgba(200, 170, 90, 0.3); }
+.loan-overdue { color: #d08770; }
+.loan-overdue-row { background: rgba(208, 121, 112, 0.1); }
+.loan-neutral { opacity: 0.6; }
+.loan-empty { opacity: 0.7; font-size: 13px; padding: 8px 0; }

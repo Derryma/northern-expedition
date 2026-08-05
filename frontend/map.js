@@ -210,13 +210,13 @@ export const ARMY_POSITIONS = {
     { id: 'N-4', generalId: 'li_zongren', general: '李宗仁', designator: '第四軍', startCityId: 'guilin', lon: 110.3, lat: 25.3, units: { infantry: 10, cavalry: 3, artillery: 1, machine_gun: 2 } },
   ],
   F: [
-    { id: 'F-1', generalId: 'zhang_zuolin', general: '張作霖', designator: '第一軍', startCityId: 'shenyang', lon: 123.4, lat: 41.8, units: { infantry: 24, cavalry: 8, artillery: 6, machine_gun: 8 } },
+    { id: 'F-1', generalId: 'zhang_zuolin', general: '張作霖', designator: '第一軍', startCityId: 'fengtian', lon: 123.4, lat: 41.8, units: { infantry: 24, cavalry: 8, artillery: 6, machine_gun: 8 } },
     { id: 'F-2', generalId: 'zhang_xueliang', general: '張學良', designator: '第二軍', startCityId: 'tianjin', lon: 117.2, lat: 39.1, units: { infantry: 16, cavalry: 4, artillery: 4, machine_gun: 4 } },
     { id: 'F-3', generalId: 'yang_yuting', general: '楊宇霆', designator: '第三軍', startCityId: 'beijing', lon: 116.4, lat: 39.9, units: { infantry: 12, cavalry: 4, artillery: 3, machine_gun: 4 } },
     { id: 'F-4', generalId: 'zhang_zongchang', general: '張宗昌', designator: '第四軍', startCityId: 'jinan', lon: 117.0, lat: 36.7, units: { infantry: 14, cavalry: 6, artillery: 4, machine_gun: 4 } },
   ],
   W: [
-    { id: 'W-1', generalId: 'wu_peifu', general: '吳佩孚', designator: '第一軍', startCityId: 'wuhan', lon: 114.3, lat: 30.6, units: { infantry: 20, cavalry: 6, artillery: 5, machine_gun: 6 } },
+    { id: 'W-1', generalId: 'wu_peifu', general: '吳佩孚', designator: '第一軍', startCityId: 'hankou', lon: 114.3, lat: 30.6, units: { infantry: 20, cavalry: 6, artillery: 5, machine_gun: 6 } },
     { id: 'W-2', generalId: 'jin_yun_e', general: '靳雲鶚', designator: '第二軍', startCityId: 'zhengzhou', lon: 113.6, lat: 34.7, units: { infantry: 16, cavalry: 4, artillery: 3, machine_gun: 4 } },
     { id: 'W-3', generalId: 'han_fuqu', general: '韓復榘', designator: '第三軍', startCityId: 'luoyang', lon: 112.4, lat: 34.6, units: { infantry: 12, cavalry: 4, artillery: 2, machine_gun: 3 } },
     { id: 'W-4', generalId: 'wang_chengbin', general: '王承斌', designator: '第四軍', startCityId: 'yichang', lon: 111.3, lat: 30.7, units: { infantry: 12, cavalry: 2, artillery: 1, machine_gun: 2 } },
@@ -237,7 +237,7 @@ export const ARMY_POSITIONS = {
   ],
   M: [
     { id: 'M-1', generalId: 'ma_qi', general: '馬麒', designator: '第一軍', startCityId: 'xining', lon: 101.8, lat: 36.6, units: { infantry: 7, cavalry: 5, artillery: 0, machine_gun: 1 } },
-    { id: 'M-2', generalId: 'ma_fuxiang', general: '馬福祥', designator: '第二軍', startCityId: 'linxia', lon: 103.2, lat: 35.6, units: { infantry: 6, cavalry: 4, artillery: 0, machine_gun: 1 } },
+    { id: 'M-2', generalId: 'ma_fuxiang', general: '馬福祥', designator: '第二軍', startCityId: 'xining', lon: 101.8, lat: 36.6, units: { infantry: 6, cavalry: 4, artillery: 0, machine_gun: 1 } },
   ],
   H: [
     { id: 'H-1', generalId: 'tang_shengzhi', general: '唐生智', designator: '第一軍', startCityId: 'changsha', lon: 112.9, lat: 28.2, units: { infantry: 9, cavalry: 3, artillery: 1, machine_gun: 2 } },

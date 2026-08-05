@@ -451,32 +451,112 @@ class BackendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires peace"):
             engine.use_function("W", "anti_fengtian_alignment")
 
-    def test_turn_debt_service_adds_interest_and_forced_repayment(self):
+    def test_turn_accrues_interest_without_seizing_income(self):
+        """3.2/3.4 — interest every turn, but income is the player's to spend."""
         engine = GameEngine(seed=4)
         player = engine.state["players"]["N"]
-        player.update({"treasury": 10, "debt": 60})
+        player["treasury"] = 10
+        engine.take_loan("N", "deutsch_asiatische", 20)
+        self.assertEqual(player["treasury"], 30)
         income = player["income"]
-        interest = round(player["debt"] * 0.02)
-        repayment = min(player["debt"] + interest, income // 2)
 
         result = engine.next_turn(active_player="N")
         updated = result["state"]["players"]["N"]
 
-        self.assertEqual(updated["treasury"], 10 + income - repayment)
-        self.assertEqual(updated["debt"], 60 + interest - repayment)
-        self.assertEqual(updated["last_debt_service"]["interest"], interest)
-        self.assertEqual(updated["last_debt_service"]["forced_repayment"], repayment)
+        self.assertEqual(updated["last_debt_service"]["interest"], 1)  # round(20 * 0.03)
+        self.assertEqual(updated["debt"], 21)
+        self.assertEqual(updated["last_debt_service"]["forced_repayment"], 0)
+        self.assertEqual(updated["treasury"], 30 + income)
 
     def test_manual_debt_repayment_is_capped_by_cash_and_debt(self):
         engine = GameEngine(seed=4)
         player = engine.state["players"]["N"]
-        player.update({"treasury": 30, "debt": 50})
+        engine.take_loan("N", "deutsch_asiatische", 20)
+        player["treasury"] = 12
 
         result = engine.repay_debt("N", 40)
 
-        self.assertEqual(result["amount"], 30)
+        self.assertEqual(result["amount"], 12)
         self.assertEqual(result["state"]["players"]["N"]["treasury"], 0)
-        self.assertEqual(result["state"]["players"]["N"]["debt"], 20)
+        self.assertEqual(result["state"]["players"]["N"]["debt"], 8)
+
+    def test_overdue_loan_seizes_cash_on_hand(self):
+        """3.5 — on the turn a loan runs past due, cash on hand is taken first."""
+        engine = GameEngine(seed=4)
+        player = engine.state["players"]["N"]
+        engine.take_loan("N", "deutsch_asiatische", 20)   # 3-turn term, due on turn 3
+        player["treasury"] = 5
+
+        for _ in range(3):
+            engine.next_turn(active_player="N", force=True)
+        before = engine.state["players"]["N"]["treasury"]
+        owed = engine.state["players"]["N"]["debt"]
+        self.assertEqual(engine.state["players"]["N"]["last_debt_service"]["seized_cash"], 0)
+
+        engine.next_turn(active_player="N", force=True)
+        updated = engine.state["players"]["N"]
+        service = updated["last_debt_service"]
+
+        self.assertEqual(engine.state["turn"], 4)
+        self.assertEqual(service["seized_cash"], owed + service["interest"])
+        self.assertEqual(updated["debt"], 0)
+        self.assertEqual(updated["treasury"], before - service["seized_cash"] + service["net_income"])
+
+    def test_overdue_loan_falls_back_to_seizing_income(self):
+        """3.5 — when cash will not cover it, that turn's income goes too, and keeps going."""
+        engine = GameEngine(seed=4)
+        player = engine.state["players"]["N"]
+        engine.take_loan("N", "citibank", 30)             # us +1 -> standard, due on turn 3
+        engine.take_loan("N", "yokohama_specie", 26)      # jp -1 -> standard
+        player["treasury"] = 0
+
+        for _ in range(4):
+            engine.next_turn(active_player="N", force=True)
+            engine.state["players"]["N"]["treasury"] = 0  # spent it all each turn
+        service = engine.state["players"]["N"]["last_debt_service"]
+
+        self.assertGreater(service["seized_income"], 0)
+        self.assertEqual(service["net_income"], service["gross_income"] - service["seized_income"])
+        self.assertGreater(engine.state["players"]["N"]["debt"], 0)
+
+        # arrears survive into the next turn and keep taking the income
+        engine.next_turn(active_player="N", force=True)
+        self.assertGreater(engine.state["players"]["N"]["last_debt_service"]["seized_income"], 0)
+
+    def test_hostile_relation_calls_the_loan_in(self):
+        """3.6.1 — falling into the hostile band makes that bank's loans due at once."""
+        engine = GameEngine(seed=4)
+        engine.take_loan("F", "yokohama_specie", 10)      # 奉系 starts at jp +8
+        engine.state["players"]["F"]["foreign_relations"]["jp"] = -6
+
+        engine.next_turn(active_player="F", force=True)
+        service = engine.state["players"]["F"]["last_debt_service"]
+
+        self.assertTrue(service["called_in"])
+
+    def test_starting_debt_is_zero_for_every_faction(self):
+        engine = GameEngine(seed=4)
+        for code in ("F", "W", "S", "N"):
+            self.assertEqual(engine.state["players"][code]["debt"], 0)
+            self.assertEqual(engine.state["players"][code]["loans"], [])
+
+    def test_starting_relations_come_from_foreign_powers_data(self):
+        engine = GameEngine(seed=4)
+        self.assertEqual(engine.state["players"]["F"]["foreign_relations"]["jp"], 8)
+        self.assertEqual(engine.state["players"]["N"]["foreign_relations"]["uk"], -8)
+        self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["su"], -8)
+
+    def test_function_card_loan_joins_the_loan_list(self):
+        """3.3 — a card-issued loan is a loan like any other."""
+        engine = GameEngine(seed=4)
+        player = engine.state["players"]["F"]
+        before = len(player["loans"])
+        engine._record_card_loan("F", {"id": "jp_yokohama_specie_loan"}, 55)
+        self.assertEqual(len(player["loans"]), before + 1)
+        loan = player["loans"][-1]
+        self.assertEqual(loan["bank"], "yokohama_specie")
+        self.assertEqual(loan["outstanding"], 55)
+        self.assertEqual(player["debt"], 55)
 
     def test_initial_reserves_are_halved(self):
         engine = GameEngine(seed=4)

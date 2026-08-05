@@ -5,7 +5,7 @@ Card data for *Northern Expedition*.
 There are two card types:
 
 - `event` cards are drawn automatically each turn and represent China-wide or world events that may affect all sides.
-- `function` cards are optionally purchased by each player at turn start for ¥5, at most twice per turn, and kept in hand until used. Playing a drawn function card has no additional cash cost.
+- `function` cards are optionally purchased by each player at turn start for $5, at most twice per turn, and kept in hand until used. Playing a drawn function card has no additional cash cost.
 
 ## Files
 
@@ -60,7 +60,7 @@ Cards that are really player choices, such as loans, advisor missions, arms-purc
 
 ## Live Function Deck
 
-Only the cards below are placed into live player decks by `backend/card_engine.py`. Function cards cost money only when drawn: ¥5 per draw, up to 2 draws per turn, with a 6-card hand limit. Playing a function card has no extra cash cost.
+Only the cards below are placed into live player decks by `backend/card_engine.py`. Function cards cost money only when drawn: $5 per draw, up to 2 draws per turn, with a 6-card hand limit. Playing a function card has no extra cash cost.
 
 Initial deck sizes, including hostile foreign condemnation fillers, are 張 88, 吳 88, 孫 85, 蔣 85. Foreign relations use a 0-10 scale: below 3 is hostile, 8+ is friendly.
 
@@ -94,7 +94,7 @@ Initial deck sizes, including hostile foreign condemnation fillers, are 張 88, 
 | 蔣 only | 國共合作 | 1 | 蔣 1.2% | 蔣 infantry reserves +20, but 蔣 mutable-loyalty generals loyalty -3. |
 | 張 only | 東北軍整武 | 2 | 張 2.3% | 張 infantry harm taken -5% for 3 turns. |
 | 張 only | 少帥崛起 | 1 | 張 1.1% | If 張學良 is not captive, add infantry +10, cavalry +5, machine gun +2, artillery +1 to 張學良's army. |
-| 張 only | 王永江金融改革 | 1 | 張 1.1% | 張 permanent income +¥5 and factory income +2 per turn. |
+| 張 only | 王永江金融改革 | 1 | 張 1.1% | 張 permanent income +$5 and factory income +2 per turn. |
 
 ## Foreign Relation Cards
 
