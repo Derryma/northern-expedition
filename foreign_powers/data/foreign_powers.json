@@ -28,10 +28,11 @@
       "all concession garrison status markers"
     ],
     "relation_scale": {
-      "min": 0,
+      "min": -10,
       "max": 10,
-      "hostile_below": 3,
-      "friendly_at_or_above": 8
+      "hostile_at_or_below": -4,
+      "friendly_at_or_above": 6,
+      "notes": "與 economy/data/banks.json 的借貸等級同界：-10~-4 交惡（不可借貸），-3~5 普通，6~10 友好（優惠借貸）。"
     }
   },
   "powers": {
@@ -133,6 +134,48 @@
       "notes": [
         "中立且受英法保護; not an active lending/support power."
       ]
+    }
+  },
+  "initial_relations": {
+    "notes": "1926 年 6 月的實際外交位置。德國於 1921 年中德協約後放棄在華特權，不列入列強關係。",
+    "scale": "-10 ~ 10",
+    "by_faction": {
+      "F": {
+        "label": "奉系（張作霖）",
+        "jp": 8,
+        "su": -7,
+        "uk": 4,
+        "us": 2,
+        "fr": 1,
+        "basis": "關東軍與滿鐵為其後盾；中東路與蘇聯長期衝突"
+      },
+      "W": {
+        "label": "直系（吳佩孚）",
+        "jp": -3,
+        "su": -8,
+        "uk": 6,
+        "us": 5,
+        "fr": 2,
+        "basis": "傳統英美派；1923 年鎮壓京漢鐵路大罷工，與共產國際勢不兩立"
+      },
+      "S": {
+        "label": "五省聯軍（孫傳芳）",
+        "jp": 3,
+        "su": -6,
+        "uk": 5,
+        "us": 4,
+        "fr": 3,
+        "basis": "據長江下游，仰賴上海英美商業利益，亦護持公共租界"
+      },
+      "N": {
+        "label": "國民革命軍（國民政府）",
+        "jp": -1,
+        "su": 9,
+        "uk": -8,
+        "us": 1,
+        "fr": -4,
+        "basis": "聯俄容共；沙基慘案後省港大罷工進行中，對英法極度惡化"
+      }
     }
   }
 }

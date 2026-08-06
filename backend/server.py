@@ -101,6 +101,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/train-unit": self._train_unit,
             "/api/reinforce-army": self._reinforce_army,
             "/api/repay-debt": self._repay_debt,
+            "/api/loan-offers": self._loan_offers,
+            "/api/take-loan": self._take_loan,
             "/api/capture-city": self._capture_city,
             "/api/recruit-captive-general": self._recruit_captive_general,
             "/api/attempt-defection": self._attempt_defection,
@@ -180,6 +182,12 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             str(payload["status"]),
             peace_card_id=payload.get("peace_card_id"),
         )
+
+    def _loan_offers(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.loan_offers(str(payload["player"]))
+
+    def _take_loan(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.take_loan(str(payload["player"]), str(payload["bank"]), int(payload["amount"]))
 
     def _capture_city(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.capture_city(str(payload["city_id"]), str(payload["faction"]))

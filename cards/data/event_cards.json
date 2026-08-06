@@ -709,12 +709,12 @@
       "status": "active",
       "foreign_power": null,
       "npc_faction": "湘軍",
-      "effect": "唐生智因北面壓境對外求援：控制武漢或廣州者可付 20 元，使其率長沙、岳陽所部（步 ×3、機 ×1）整體歸附（§7.7）。",
+      "effect": "唐生智因北面壓境對外求援：控制漢口或廣州者可付 20 元，使其率長沙、岳陽所部（步 ×3、機 ×1）整體歸附（§7.7）。",
       "base_weight": 6.0,
       "requirement_expression": "s.av.xiang&&s.gn['唐生智']",
       "conditions": [
         {
-          "description": "我方控制武漢或廣州",
+          "description": "我方控制漢口或廣州",
           "multiplier": 2.5,
           "expression": "s.holdWuhanGz"
         },
@@ -799,7 +799,7 @@
       "status": "active",
       "foreign_power": null,
       "npc_faction": "馬家軍",
-      "effect": "回族騎兵出擊：控制蘭州、西寧、臨夏者，該城本回合產出 -2 且不可徵兵；可付 15 元換取一回合互不侵犯。",
+      "effect": "回族騎兵出擊：控制蘭州、西寧者，該城本回合產出 -2 且不可徵兵；可付 15 元換取一回合互不侵犯。",
       "base_weight": 4.0,
       "requirement_expression": "s.av.ma&&s.gn['馬麒']&&!s.maAlly",
       "conditions": [

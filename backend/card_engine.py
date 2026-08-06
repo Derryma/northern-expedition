@@ -9,13 +9,18 @@ from typing import Any, Dict, Iterable, Optional
 
 from .data_store import load_game_data
 
+from economy import LoanBook, scaled_city_value, treaty_port_bonus, is_settlement_turn
+from economy.loans import TIER_BLOCKED
+from foreign_powers.relations import RELATION_KEYS, clamp as clamp_relation, relation_bounds, starting_relations
+
+LOANS = LoanBook()
+
 
 DEFAULT_PLAYERS = ("F", "W", "S", "N")
 MAX_HAND_SIZE = 6
 FUNCTION_CARD_DRAW_COST = 5
 FUNCTION_CARD_DRAW_LIMIT = 2
-FOREIGN_RELATION_MIN = 0
-FOREIGN_RELATION_MAX = 10
+FOREIGN_RELATION_MIN, FOREIGN_RELATION_MAX = relation_bounds()
 WARLORD_CODES = ("F", "W", "S", "N", "Y", "G", "M", "H", "C", "D", "Q")
 UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
 RECRUIT_COSTS = {
@@ -116,50 +121,37 @@ FEATURES = {
     "function_card_purchase_limit": FUNCTION_CARD_DRAW_LIMIT,
     "function_card_max_hand_size": MAX_HAND_SIZE,
 }
-ECONOMY_SCALE = {"cash": 0.25, "factory": 0.35}
 NORTHEAST_PROVINCES = {"奉天", "吉林", "黑龍江"}
 
-
-def scaled_city_value(city: Dict[str, Any], field: str) -> int:
-    value = int(city.get(field, 0))
-    return max(1, round(value * ECONOMY_SCALE[field])) if value else 0
 
 FACTION_PROFILES = {
     "F": {
         "treasury": 75,
         "income": 55,
-        "debt": 180,
         "unit_reserve": 41,
         "unit_reserves": {"infantry": 27, "cavalry": 7, "machine_gun": 4, "artillery": 3},
         "recruitment_cost_modifier": 1.10,
-        "foreign_relations": {"jp": 6, "su": 0, "uk": 2, "fr": 2, "us": 3},
     },
     "W": {
         "treasury": 50,
         "income": 40,
-        "debt": 150,
         "unit_reserve": 30,
         "unit_reserves": {"infantry": 20, "cavalry": 5, "machine_gun": 3, "artillery": 2},
         "recruitment_cost_modifier": 1.00,
-        "foreign_relations": {"jp": 2, "su": 3, "uk": 2, "fr": 3, "us": 3},
     },
     "S": {
         "treasury": 65,
         "income": 58,
-        "debt": 105,
         "unit_reserve": 34,
         "unit_reserves": {"infantry": 23, "cavalry": 4, "machine_gun": 4, "artillery": 3},
         "recruitment_cost_modifier": 0.95,
-        "foreign_relations": {"jp": 3, "su": 2, "uk": 5, "fr": 4, "us": 4},
     },
     "N": {
         "treasury": 40,
         "income": 34,
-        "debt": 60,
         "unit_reserve": 25,
         "unit_reserves": {"infantry": 18, "cavalry": 3, "machine_gun": 2, "artillery": 2},
         "recruitment_cost_modifier": 0.90,
-        "foreign_relations": {"jp": 0, "su": 6, "uk": 3, "fr": 3, "us": 5},
     },
 }
 
@@ -221,6 +213,10 @@ class GameEngine:
             profile["timed_effects"] = []
             profile["last_debt_service"] = None
             profile["permanent_output_bonus"] = {"cash": 0, "factory": 0}
+            profile["foreign_relations"] = starting_relations(player)
+            profile["loans"] = []
+            profile["next_loan_id"] = 1
+            profile["debt"] = 0
             return profile
 
         self.state = {
@@ -337,29 +333,75 @@ class GameEngine:
 
     def _apply_turn_economy(self) -> Dict[str, Any]:
         self._refresh_city_income()
+        turn = int(self.state["turn"])
         log: Dict[str, Any] = {}
         for player, payload in self.state["players"].items():
-            gross_income = int(payload.get("income", 0))
-            debt_before = int(round(payload.get("debt", 0)))
-            interest = int(round(debt_before * 0.02)) if debt_before > 0 else 0
-            debt_after_interest = debt_before + interest
-            forced_repayment = min(debt_after_interest, gross_income // 2) if debt_after_interest > 0 else 0
-            net_income = gross_income - forced_repayment
+            loans = payload.setdefault("loans", [])
+            relations = payload.get("foreign_relations", {})
+            debt_before = LOANS.total_outstanding(loans)
 
+            # 3.4 — one turn of interest on every loan, before anything else happens.
+            interest = LOANS.accrue_interest(loans)
+
+            # 3.6.1 — a power that has turned hostile calls its loans in.
+            called_in = []
+            for bank in LOANS.data["banks"]:
+                if bank.get("neutral"):
+                    continue
+                relation = int(relations.get(bank["relations_key"], 0))
+                if LOANS.tier_for_relation(relation) == TIER_BLOCKED:
+                    called_in.extend(loan["id"] for loan in LOANS.call_in_bank(loans, bank["id"]))
+
+            # 3.5 — anything past its due turn stops being the player's choice.
+            LOANS.mark_overdue(loans, turn)
+
+            gross_income = int(payload.get("income", 0))
+            seized_cash = 0
+            seized_income = 0
+            arrears = LOANS.overdue_outstanding(loans)
+            if arrears > 0:
+                on_hand = int(payload.get("treasury", 0))
+                if on_hand > 0:
+                    result = LOANS.repay(loans, min(on_hand, arrears), overdue_only=True)
+                    seized_cash = result["paid"]
+                    payload["treasury"] = on_hand - seized_cash
+                remaining = LOANS.overdue_outstanding(loans)
+                if remaining > 0 and gross_income > 0:
+                    result = LOANS.repay(loans, min(gross_income, remaining), overdue_only=True)
+                    seized_income = result["paid"]
+
+            net_income = gross_income - seized_income
             payload["treasury"] += net_income
             payload["factory_points"] += int(payload.get("factory_income", 0))
-            payload["debt"] = int(max(0, debt_after_interest - forced_repayment))
+            payload["debt"] = LOANS.total_outstanding(loans)
             service = {
                 "gross_income": gross_income,
                 "interest": interest,
-                "forced_repayment": forced_repayment,
+                "seized_cash": seized_cash,
+                "seized_income": seized_income,
+                "forced_repayment": seized_cash + seized_income,
                 "net_income": net_income,
                 "debt_before": debt_before,
                 "debt_after": payload["debt"],
+                "overdue": LOANS.overdue_outstanding(loans),
+                "called_in": called_in,
                 "cash_effects": [],
             }
             payload["last_debt_service"] = service
             log[player] = deepcopy(service)
+
+        for player, bonus in self._treaty_port_bonuses().items():
+            payload = self.state["players"][player]
+            payload["treasury"] += bonus["cash"]
+            payload["factory_points"] += bonus["factory"]
+            entry = {
+                "name": "租界與港口加成",
+                "amount": bonus["cash"],
+                "factory": bonus["factory"],
+                "cities": bonus["cities"],
+            }
+            payload["last_debt_service"].setdefault("cash_effects", []).append(entry)
+            log[player].setdefault("cash_effects", []).append(entry)
 
         for reward in self._qing_gang_riot_rewards():
             initiator = reward["initiator"]
@@ -431,6 +473,25 @@ class GameEngine:
             city["factory"] = factory
             city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["faction"])
         return strategic_map
+
+    def _treaty_port_bonuses(self) -> Dict[str, Dict[str, Any]]:
+        """租界與港口加成，結算週期見 economy/output.py。"""
+        if not is_settlement_turn(int(self.state["turn"])):
+            return {}
+        bonuses: Dict[str, Dict[str, Any]] = {}
+        for city in self.data["strategic_map"]["cities"]:
+            bonus = treaty_port_bonus(city)
+            cash, factory = bonus["cash"], bonus["factory"]
+            if not cash and not factory:
+                continue
+            owner = self.state["city_owners"].get(city["id"], city["faction"])
+            if owner not in self.state["players"]:
+                continue
+            entry = bonuses.setdefault(owner, {"cash": 0, "factory": 0, "cities": []})
+            entry["cash"] += cash
+            entry["factory"] += factory
+            entry["cities"].append(city["name"])
+        return bonuses
 
     def _city_economy_for(self, player: str) -> list[Dict[str, Any]]:
         development = self.state.get("city_development", {})
@@ -682,7 +743,7 @@ class GameEngine:
             self.state.setdefault("recurring_effects", []).append(recurring_effect)
         elif mechanic == "reserve_debt_bundle":
             debt_delta = int(card.get("debt", 0))
-            player_state["debt"] = int(round(player_state.get("debt", 0) + debt_delta))
+            self._record_card_loan(player, card, debt_delta)
             for unit_type, amount in card.get("unit_reserves", {}).items():
                 self._add_reserve(player, str(unit_type), int(amount))
                 reserve_deltas.append({"owner": player, "unit_type": str(unit_type), "amount": int(amount)})
@@ -723,7 +784,7 @@ class GameEngine:
         elif mechanic == "debt_cash":
             debt_delta = int(card.get("debt", 0))
             cash_delta = int(card.get("cash", 0))
-            player_state["debt"] = int(round(player_state.get("debt", 0) + debt_delta))
+            self._record_card_loan(player, card, debt_delta)
             player_state["treasury"] += cash_delta
         elif mechanic == "army_unit_bundle":
             army_unit_delta = {
@@ -1087,22 +1148,123 @@ class GameEngine:
         reinforcement[unit_type] += count
         return {"state": self.snapshot()}
 
+    # ---- 借款系統 ------------------------------------------------------
+
+    CARD_BANKS = {
+        "jp_yokohama_specie_loan": "yokohama_specie",
+        "uk_hsbc_credit": "hsbc",
+        "fr_banque_indochine_credit": "banque_de_l_indochine",
+        "us_commercial_credit": "citibank",
+        "su_ruble_subsidy": None,
+    }
+
+    def _next_loan_id(self, player: str) -> int:
+        payload = self._player(player)
+        loan_id = int(payload.get("next_loan_id", 1))
+        payload["next_loan_id"] = loan_id + 1
+        return loan_id
+
+    def _record_card_loan(self, player: str, card: Dict[str, Any], amount: int) -> Optional[Dict[str, Any]]:
+        """3.3 — a loan a function card hands out joins the same list as a bank loan.
+
+        Card loans bypass the credit limit (the card is the negotiation) but take the
+        bank's current terms, and fall back to 德華 when the card names no lender.
+        """
+        if amount <= 0:
+            return None
+        payload = self._player(player)
+        loans = payload.setdefault("loans", [])
+        bank_id = self.CARD_BANKS.get(str(card.get("id"))) or "deutsch_asiatische"
+        relations = payload.get("foreign_relations", {})
+        terms = LOANS.terms_for_bank(bank_id, relations) or LOANS.terms_for_bank("deutsch_asiatische", {})
+        turn = int(self.state["turn"])
+        loan = {
+            "id": f"L{self._next_loan_id(player)}",
+            "bank": bank_id,
+            "bank_name": LOANS.banks[bank_id]["name"],
+            "principal": amount,
+            "outstanding": amount,
+            "interest_per_turn": terms["interest_per_turn"],
+            "term_turns": terms["term_turns"],
+            "tier": terms["tier"],
+            "taken_turn": turn,
+            "due_turn": turn + terms["term_turns"],
+            "overdue": False,
+            "source": f"card:{card.get('id')}",
+        }
+        loans.append(loan)
+        payload["debt"] = LOANS.total_outstanding(loans)
+        return loan
+
+    def loan_data_for_snapshot(self, player: str) -> Dict[str, Any]:
+        return {"offers": self.loan_offers(player)["offers"], "loans": self._loan_rows(player)}
+
+    def loan_offers(self, player: str) -> Dict[str, Any]:
+        payload = self._player(player)
+        loans = payload.setdefault("loans", [])
+        return {
+            "player": player,
+            "turn": int(self.state["turn"]),
+            "treasury": int(payload.get("treasury", 0)),
+            "debt": LOANS.total_outstanding(loans),
+            "offers": LOANS.offers(payload.get("foreign_relations", {}), loans, int(self.state["turn"])),
+            "loans": self._loan_rows(player),
+        }
+
+    def _loan_rows(self, player: str) -> list:
+        payload = self._player(player)
+        turn = int(self.state["turn"])
+        rows = []
+        for loan in payload.get("loans", []):
+            rows.append({
+                **deepcopy(loan),
+                "turns_remaining": int(loan["due_turn"]) - turn,
+            })
+        return rows
+
+    def take_loan(self, player: str, bank_id: str, amount: int) -> Dict[str, Any]:
+        payload = self._player(player)
+        loans = payload.setdefault("loans", [])
+        relations = payload.get("foreign_relations", {})
+        # Validate before consuming an id so a rejected request leaves no gap.
+        LOANS.borrow(list(loans), str(bank_id), int(amount), relations, int(self.state["turn"]), 0)
+        loan = LOANS.borrow(
+            loans,
+            str(bank_id),
+            int(amount),
+            relations,
+            int(self.state["turn"]),
+            self._next_loan_id(player),
+        )
+        payload["treasury"] = int(payload.get("treasury", 0)) + int(loan["principal"])
+        payload["debt"] = LOANS.total_outstanding(loans)
+        self.state["last_action"] = {
+            "type": "take_loan",
+            "player": player,
+            "bank": loan["bank"],
+            "amount": loan["principal"],
+        }
+        return {"loan": loan, "state": self.snapshot()}
+
     def repay_debt(self, player: str, amount: int) -> Dict[str, Any]:
         player_state = self._player(player)
         amount = max(0, int(amount))
         if amount <= 0:
             raise ValueError("debt repayment must be positive")
-        paid = min(amount, int(player_state.get("treasury", 0)), int(player_state.get("debt", 0)))
-        if paid <= 0:
+        loans = player_state.setdefault("loans", [])
+        payable = min(amount, int(player_state.get("treasury", 0)), LOANS.total_outstanding(loans))
+        if payable <= 0:
             raise ValueError("no debt can be repaid")
-        player_state["treasury"] -= paid
-        player_state["debt"] = int(max(0, round(player_state.get("debt", 0) - paid)))
+        result = LOANS.repay(loans, payable)
+        player_state["treasury"] -= result["paid"]
+        player_state["debt"] = LOANS.total_outstanding(loans)
         self.state["last_action"] = {
             "type": "repay_debt",
             "player": player,
-            "amount": paid,
+            "amount": result["paid"],
+            "cleared": result["cleared"],
         }
-        return {"amount": paid, "state": self.snapshot()}
+        return {"amount": result["paid"], "cleared": result["cleared"], "state": self.snapshot()}
 
     def _add_reserve(self, player: str, unit_type: str, amount: int) -> None:
         if unit_type not in UNIT_TYPES:
