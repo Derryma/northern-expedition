@@ -4,7 +4,25 @@ City output, factory points, and the bank loan book.
 
 ## Files
 
-- `output.py` — how a city's raw `cash`/`factory` figures become per-turn income: the `ECONOMY_SCALE` reduction, and the concession/port bonus that settles every third turn.
+- `output.py` — per-turn city output and the concession bonus.
+
+## City output
+
+Output comes from the city's level and nothing else. Level 1 pays 2 cash and 1
+factory a turn; every level above that adds 1 to each, to a maximum of level 5.
+
+| Level | Cash | Factory |
+|---|---|---|
+| 1 | 2 | 1 |
+| 2 | 3 | 2 |
+| 3 | 4 | 3 |
+| 4 | 5 | 4 |
+| 5 | 6 | 5 |
+
+The `cash` and `factory` figures still present in `scenario/data/strategic_map.json`
+are no longer read; `level` is the only input. Ports carry no economic effect at all —
+`port: "river"` is a label. Concessions pay +2 cash and +2 factory every third turn,
+on top of the level output.
 - `loans.py` — the loan book: tiers, credit limits, interest accrual, overdue seizure, and oldest-first repayment.
 - `data/banks.json` — the banks, their limits per tier, and the tier definitions.
 - `test_economy.py` — one test per rule below.

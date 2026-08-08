@@ -130,6 +130,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             payload.get("active_player"),
             force=force,
             riot_garrisons=payload.get("riot_garrisons") or {},
+            city_garrisons=payload.get("city_garrisons") or {},
         )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -170,6 +171,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_owner=payload.get("target_owner"),
             target_city_id=payload.get("target_city_id"),
             target_province=payload.get("target_province"),
+            target_railway=payload.get("target_railway"),
         )
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:

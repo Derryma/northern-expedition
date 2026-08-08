@@ -720,6 +720,20 @@ button, select, input, textarea {
   margin-bottom: 2px;
 }
 
+.tree-guard,
+.tree-killed {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.tree-guard { border: 1px solid #5b86a6; color: #8fc0dc; }
+.tree-killed { border: 1px solid #a45b5b; color: #dc8f8f; }
+
 .tree-faction {
   font-size: 11px;
   color: var(--muted);
@@ -922,6 +936,19 @@ button, select, input, textarea {
   margin-bottom: 8px;
 }
 
+/* 卡面故事：規則之上的一段敘事，字體偏斜、顏色淡，與規則區明顯分開。 */
+.card-story {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--terracotta, #b5654a);
+  background: var(--terracotta-tint, rgba(181, 101, 74, 0.08));
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 .card-effect {
   margin-top: 12px;
   padding: 12px;
@@ -930,6 +957,14 @@ button, select, input, textarea {
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink);
+}
+
+.hand-card-mini .hand-card-story {
+  margin-bottom: 4px;
+  padding-left: 6px;
+  border-left: 2px solid var(--terracotta, #b5654a);
+  font-style: italic;
+  -webkit-line-clamp: 3;
 }
 
 .card-cost {
@@ -2659,3 +2694,43 @@ button, select, input, textarea {
 .loan-overdue-row { background: rgba(208, 121, 112, 0.1); }
 .loan-neutral { opacity: 0.6; }
 .loan-empty { opacity: 0.7; font-size: 13px; padding: 8px 0; }
+
+/* ---- 旗幟 ---- */
+.flag-chip {
+  display: inline-block;
+  flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  overflow: hidden;
+  line-height: 0;
+  vertical-align: middle;
+}
+.flag-chip svg { display: block; width: 100%; height: 100%; }
+.faction-flag { width: 33px; height: 22px; margin-right: 7px; }
+.faction-name { font-weight: 500; margin-right: 10px; }
+.relation-flag { width: 30px; height: 20px; margin-right: 10px; }
+.bank-flag { width: 24px; height: 16px; margin-right: 8px; }
+.relation-row { display: flex; align-items: center; }
+.loan-bank-cell { display: flex; align-items: center; }
+.loan-bank-cell > span { min-width: 0; }
+
+/* ---- 地格資訊：租界標示 ---- */
+.tile-concession {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(120, 105, 70, 0.3);
+  font-size: 12px;
+}
+.tile-tag {
+  padding: 1px 7px;
+  border-radius: 3px;
+  letter-spacing: 1px;
+}
+.tile-tag-concession { border: 1px solid #c9a227; color: #e6c65c; }
+.tile-tag-port { border: 1px solid #5b86a6; color: #8fc0dc; }
+.tile-concession-power { display: inline-flex; align-items: center; }
+.concession-flag { width: 20px; height: 13px; margin-right: 4px; }

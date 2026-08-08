@@ -86,7 +86,16 @@ class LoanBook:
 
     @staticmethod
     def owed_to(loans: Iterable[Dict[str, Any]], bank_id: str) -> int:
-        return sum(int(loan["outstanding"]) for loan in loans if loan["bank"] == bank_id)
+        """Debt at one bank that counts against its credit line.
+
+        A loan flagged `off_quota` was negotiated by a function card outside the
+        bank's normal facility: still owed, but it does not block new borrowing.
+        """
+        return sum(
+            int(loan["outstanding"])
+            for loan in loans
+            if loan["bank"] == bank_id and not loan.get("off_quota")
+        )
 
     def available_credit(self, bank_id: str, relations: Dict[str, int], loans: List[Dict[str, Any]]) -> int:
         terms = self.terms_for_bank(bank_id, relations)

@@ -22,10 +22,10 @@ export const MAPW = (MAX_LON - MIN_LON) * KX;
 export const MAPH = (MAX_LAT - MIN_LAT) * KY;
 
 export const FACTIONS = {
-  F: { name: '張', shortName: '張', type: 'player', color: '#546e7a' },
-  W: { name: '吳', shortName: '吳', type: 'player', color: '#6a1b9a' },
-  S: { name: '孫', shortName: '孫', type: 'player', color: '#2e7d32' },
-  N: { name: '蔣', shortName: '蔣', type: 'player', color: '#d89b1d' },
+  F: { name: '奉系', shortName: '奉系', type: 'player', color: '#546e7a' },
+  W: { name: '直系', shortName: '直系', type: 'player', color: '#6a1b9a' },
+  S: { name: '五省聯軍', shortName: '五省聯軍', type: 'player', color: '#2e7d32' },
+  N: { name: '國民革命軍', shortName: '國民革命軍', type: 'player', color: '#d89b1d' },
   Y: { name: '晉系（閻錫山）', shortName: '晉', type: 'npc', color: '#6d4c41' },
   G: { name: '西北軍（馮玉祥）', shortName: '西北軍', type: 'npc', color: '#ad496f' },
   M: { name: '西北馬家軍', shortName: '馬', type: 'npc', color: '#16877b' },

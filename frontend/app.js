@@ -1,3 +1,5 @@
+import { factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
+import { RIVERS } from './map.js';
 import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s } from './map.js';
 
 const portraits = {
@@ -88,6 +90,8 @@ let sharedEngineHash = "";
 let sharedSyncInFlight = false;
 let sharedReady = false;
 const skippedFunctionPurchasePrompts = new Set();
+// 後端寫給某一勢力的通知（紅軍起義、鐵路搶修等），已讀的記在這裡。
+const readNotifications = new Set();
 const DEBUG_MODE = ["localhost", "127.0.0.1"].includes(window.location.hostname);
 const outsideMapArt = new Image();
 outsideMapArt.src = "/assets/shiju-border.png";
@@ -485,6 +489,7 @@ function adjustGeneralLoyalty(generalId, amount) {
 }
 
 function applyFunctionSideEffects(result) {
+  if (result.assassination) applyAssassination(result.assassination);
   if (result.target_general_id && result.loyalty_delta) {
     adjustGeneralLoyalty(result.target_general_id, result.loyalty_delta);
   }
@@ -758,6 +763,11 @@ function indexScenarioCells() {
     cell.railroads = new Set();
     cell.railNeighbors = new Set();
     cell.railBridge = false;
+    // 河港會把地格改成水域。先記下天然河道，重建時還原，否則第二次開局
+    // assignCityCells 會把這些格子當成無橋水域而排除，城市指派就會漂移。
+    if (cell.naturalRiver === undefined) cell.naturalRiver = cell.river;
+    cell.river = cell.naturalRiver;
+    cell.portWater = false;
   }
   for (const railroad of scenario.railroads || []) {
     const route = railroadRouteCells(railroad);
@@ -794,6 +804,40 @@ function indexScenarioCells() {
     cell.city = city;
     occupiedCityCells.add(cell.key);
   }
+
+  markRiverPortWater();
+}
+
+// 河港城市的地格一律視為水域。天然河道保留原名，其餘標為內河。
+function markRiverPortWater() {
+  for (const cell of Object.values(cells)) {
+    if (cell.city?.port !== "river") continue;
+    cell.portWater = true;
+    if (!cell.river) cell.river = nearestRiverName(cell) || "內河";
+  }
+}
+
+function nearestRiverName(cell, maxDegrees = 1.6) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const river of RIVERS) {
+    for (let i = 0; i < river.pts.length - 1; i++) {
+      const distance = pointSegmentDistance(cell.lon, cell.lat, river.pts[i], river.pts[i + 1]);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = river.name;
+      }
+    }
+  }
+  return bestDistance <= maxDegrees ? best : null;
+}
+
+function pointSegmentDistance(x, y, [ax, ay], [bx, by]) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / lengthSquared)) : 0;
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
 }
 
 function nearestFreeCell(origin, occupied) {
@@ -963,6 +1007,8 @@ function updateTopBar() {
   const profile = state.players[currentPlayer];
   if (!profile) return;
   $("factionStats").innerHTML = `
+    ${factionFlagMarkup(currentPlayer, "flag-chip faction-flag")}
+    <span class="faction-name">${FACTIONS[currentPlayer]?.name || currentPlayer}</span>
     <span title="${debtServiceTitle(profile)}">$${profile.treasury ?? 0} (+${profile.income ?? 0}/回合)</span>
     <span title="可用工廠點與每回合城市產出">工廠 ${profile.factory_points ?? 0} (+${profile.factory_income ?? 0}/回合)</span>
     <span title="預備兵力">預備 ${profile.unit_reserve ?? 0}</span>
@@ -1092,14 +1138,23 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     effect.kind === "qing_gang_riot"
     && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
   );
-  if (!effects.length && !cityEffects.length) return "";
+  const uprisings = (state.city_output_effects || []).filter((effect) =>
+    effect.kind === "red_army_uprising"
+    && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
+  );
+  const railways = (state.railway_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
+  const economyFlags = Boolean(payload?.loan_penalties?.length || payload?.soong_patronage
+    || payload?.bank_success_rate || payload?.loan_interest_override);
+  if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length && !economyFlags) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
       const label = effect.kind === "police_system"
         ? `警政保護剩餘 ${effect.remaining_turns} 回合`
         : effect.kind === "intel_network"
           ? `情報網：${effect.target_province}，剩餘 ${effect.remaining_turns} 回合`
-          : `${effect.name || "持續效果"}剩餘 ${effect.remaining_turns} 回合`;
+          : effect.kind === "ideology_shield"
+            ? `${effect.name || "自由中國教育家"}：免疫共黨暴動與紅軍起義，剩餘 ${effect.remaining_turns} 回合`
+            : `${effect.name || "持續效果"}剩餘 ${effect.remaining_turns} 回合`;
       return `<span>${label}</span>`;
     }).join("")}
     ${cityEffects.map((effect) => {
@@ -1107,6 +1162,19 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
       const progress = `${effect.garrison_progress || 0}/${effect.required_turns || 3}`;
       return `<span>青幫暴動(${role})：${effect.province}，鎮壓 ${progress}</span>`;
     }).join("")}
+    ${uprisings.map((effect) => {
+      const role = effect.initiator === currentPlayer ? "發動" : "受害";
+      const names = (effect.cities || []).map((city) => city.name).join("、");
+      return `<span>${effect.name || "紅軍起義"}(${role})：${names}，需駐 ${effect.required_battalions || 5} 營</span>`;
+    }).join("")}
+    ${railways.map((effect) => `<span>${effect.railway} 搶修中，剩餘 ${effect.remaining_turns} 回合</span>`).join("")}
+    ${(payload?.loan_penalties || []).map((clause) => `<span>${clause.label || "貸款違約條款"}${
+      clause.remaining_turns === null || clause.remaining_turns === undefined
+        ? "（永久）" : `，剩餘 ${clause.remaining_turns} 回合`}</span>`).join("")}
+    ${payload?.soong_patronage ? `<span>上海宋家支持：每三回合 +$${payload.soong_patronage.cash}、工廠 +${payload.soong_patronage.factory}</span>` : ""}
+    ${payload?.loan_interest_override !== null && payload?.loan_interest_override !== undefined
+      ? `<span>中央銀行：新借款利率 ${Math.round(payload.loan_interest_override * 100)}%、期限 +${payload.loan_term_bonus || 0}</span>` : ""}
+    ${payload?.bank_success_rate ? `<span>信用受損：列強銀行申貸成功率 ${Math.round(payload.bank_success_rate * 100)}%</span>` : ""}
   </div>`;
 }
 
@@ -1120,6 +1188,25 @@ function qingGangRiotGarrisons() {
       && provinceForArmy(army) === effect.province
       && forcePoints(armyUnits(army)) >= Number(effect.required_force || 15)
     );
+  }
+  return report;
+}
+
+// 紅軍起義：回報受影響城市裡「目標勢力自己的」駐軍營數，一個單位算一營。
+function uprisingCityGarrisons() {
+  const report = {};
+  for (const effect of state?.city_output_effects || []) {
+    if (effect.kind !== "red_army_uprising") continue;
+    for (const cityId of effect.city_ids || []) {
+      const city = (bootstrap.strategic_map?.cities || []).find((item) => item.id === cityId);
+      if (!city) continue;
+      const battalions = allArmies()
+        .filter((army) => factionForArmy(army) === effect.target_owner
+          && army.status !== "jailed"
+          && army.cellKey === city.cellKey)
+        .reduce((total, army) => total + Object.values(armyUnits(army)).reduce((sum, count) => sum + count, 0), 0);
+      report[cityId] = Math.max(report[cityId] || 0, battalions);
+    }
   }
   return report;
 }
@@ -1153,6 +1240,38 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const target = generalLabel(action.target_general_id, action.target_owner);
     const sign = action.loyalty_delta > 0 ? "+" : "";
     parts.push(`${target}忠誠 ${sign}${action.loyalty_delta}`);
+  }
+  if (action.assassination) {
+    const hit = action.assassination;
+    const target = generalLabel(hit.target_general_id, hit.target_owner);
+    const rate = `成功率 ${Math.round(hit.chance * 100)}%`;
+    const guard = hit.guard_reduction ? `（親衛隊 −${Math.round(hit.guard_reduction * 100)}%）` : "";
+    parts.push(hit.success
+      ? `暗殺${target}得手，該人物身亡，麾下少將忠誠歸零（${rate}${guard}）`
+      : `暗殺${target}未得手（${rate}${guard}）`);
+  }
+  if (action.loan_effect) {
+    const loan = action.loan_effect;
+    const rate = loan.interest_per_turn !== null ? `利率 ${Math.round(loan.interest_per_turn * 100)}%` : "";
+    parts.push(`現金 +$${loan.cash}、負債 +${loan.debt}（${rate}，第 ${loan.due_turn} 回合到期）`);
+    if (loan.bank_success_rate) parts.push(`此後列強銀行申貸成功率 ${Math.round(loan.bank_success_rate * 100)}%`);
+  }
+  if (action.unlock_effect?.kind === "central_bank") {
+    const bank = action.unlock_effect;
+    parts.push(`此後新借款利率一律 ${Math.round(bank.interest_per_turn * 100)}%、期限 +${bank.loan_term_bonus} 回合`);
+  }
+  if (action.unlock_effect?.kind === "ideology_counter") {
+    const cleared = [...new Set(action.unlock_effect.cleared || [])].map((code) => factionLabel(code, code === viewer));
+    parts.push(`壓制了 ${cleared.join("、")} 的自由中國教育家`);
+  }
+  if (action.timed_effect?.kind === "ideology_shield") {
+    const cancelled = action.timed_effect.cancelled_effects || [];
+    parts.push(`免疫紅軍起義與共黨暴動 ${action.timed_effect.remaining_turns} 回合`
+      + (cancelled.length ? `，並使本回合的${cancelled.join("、")}失效` : ""));
+  }
+  if (action.body_guard) {
+    const guard = action.body_guard;
+    parts.push(`${generalLabel(guard.general_id, guard.owner)}編成親衛隊，第 ${guard.active_from_turn} 回合起生效`);
   }
   if (action.loyalty_delta_all) {
     const owner = factionLabel(action.loyalty_delta_all.owner, action.loyalty_delta_all.owner === viewer);
@@ -1635,6 +1754,11 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
   const loyalty = calculateGeneralLoyalty(general, fieldArmy);
   const lowLoyalty = loyalty.value !== null && loyalty.value < 6;
   const loyaltyText = loyalty.value !== null ? loyalty.value : '—';
+  const guard = state?.body_guards?.[general.id];
+  const guardTag = guard
+    ? `<span class="tree-guard">親衛隊${Number(state.turn || 0) < Number(guard.active_from_turn || 0) ? "（下回合生效）" : ""}</span>`
+    : "";
+  const killedTag = general.status === "killed" ? `<span class="tree-killed">已身亡</span>` : "";
 
   return `
     <div class="tree-general-card ${lowLoyalty ? 'low-loyalty' : ''}" data-general="${general.id}">
@@ -1642,7 +1766,7 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
         ? `<img class="tree-portrait" src="${portrait}" alt="${general.name}">`
         : `<div class="tree-portrait portrait-placeholder">${general.name.charAt(0)}</div>`}
       <div class="tree-info">
-        <div class="tree-name">${general.name}</div>
+        <div class="tree-name">${general.name}${killedTag}${guardTag}</div>
         <div class="tree-faction">${general.faction}</div>
         <div class="tree-units">${unitsText}</div>
         <div class="tree-traits">${(general.traits || []).map(traitChip).join("")}</div>
@@ -1724,8 +1848,10 @@ function renderRecruitmentPanel() {
   return `
     <div class="recruitment-grid">
       ${Object.entries(UNIT_META).map(([type, unit]) => {
-        const cash = Math.ceil((costs[type]?.cash ?? 0) * costModifier);
-        const factory = costs[type]?.factory ?? 0;
+        // 卡片給的固定加減（汪精衛復出：步兵 -1）疊在陣營費率之後，下限 1。
+        const adjustment = profile.recruit_cost_adjustment?.[type] || {};
+        const cash = Math.max(1, Math.ceil((costs[type]?.cash ?? 0) * costModifier) + Number(adjustment.cash || 0));
+        const factory = Math.max(0, (costs[type]?.factory ?? 0) + Number(adjustment.factory || 0));
         const reserve = profile.unit_reserves?.[type] ?? 0;
         return `
         <div class="unit-option" data-unit="${type}">
@@ -1864,7 +1990,7 @@ function renderLoanOfferRow(row) {
     : `<small>關係 ${row.relation > 0 ? "+" : ""}${row.relation}</small>`;
   return `
     <tr class="${blocked ? "loan-blocked" : ""}">
-      <td><b>${row.name}</b><br>${relation}</td>
+      <td class="loan-bank-cell">${powerFlagMarkup(row.power, "flag-chip bank-flag")}<span><b>${row.name}</b><br>${relation}</span></td>
       <td>${TIER_LABEL[row.tier] || row.tier_label || "—"}</td>
       <td class="num">${row.available} / ${row.limit}</td>
       <td class="num">${rate}</td>
@@ -1884,7 +2010,7 @@ function renderLoanRow(loan, turn) {
     : `${remaining} 回合`;
   return `
     <tr class="${overdue ? "loan-overdue-row" : ""}">
-      <td>${loan.bank_name}</td>
+      <td class="loan-bank-cell">${powerFlagMarkup(loan.bank_power, "flag-chip bank-flag")}<span>${loan.bank_name}</span></td>
       <td class="num">$${loan.outstanding}</td>
       <td class="num">${Math.round(loan.interest_per_turn * 100)}%</td>
       <td class="num">${remainingText}</td>
@@ -2008,6 +2134,7 @@ function renderForeignPanel() {
       const relationText = value >= 6 ? "友好" : value <= -4 ? "敵對" : "中立";
       return `
         <div class="relation-row">
+          ${flagMarkup(power.key, "flag-chip relation-flag")}
           <div><b>${power.name}</b><small>${power.territories}</small></div>
           <span class="power-relation ${value >= 6 ? "good" : value <= -4 ? "poor" : ""}">
             ${relationText} ${value > 0 ? "+" : ""}${value}
@@ -2122,6 +2249,7 @@ function renderCardsPanel() {
           : `<button class="card-use-btn" data-use="${card.id}" data-player="${currentPlayer}">打出</button>`}
       </div>
       <div class="card-category">${card.category || "function"}</div>
+      ${card.story ? `<div class="card-story">${card.story}</div>` : ''}
       ${card.effect ? `<div class="card-effect">${card.effect}</div>` : ''}
       ${functionCardTargetMarkup(card)}
     </div>
@@ -2165,6 +2293,7 @@ function attachCardHandlers(root = document) {
             || generalOwners[targetGeneralId],
           target_city_id: root.querySelector(`[data-card-target-city="${button.dataset.use}"]`)?.value,
           target_province: root.querySelector(`[data-card-target-province="${button.dataset.use}"]`)?.value,
+          target_railway: root.querySelector(`[data-card-target-railway="${button.dataset.use}"]`)?.value,
         });
         state = result.state;
         applyFunctionSideEffects(result);
@@ -2219,6 +2348,51 @@ function loyaltyCardTargets(card) {
   });
 }
 
+// ---- 暗殺與親衛隊 ---------------------------------------------------------
+
+function generalIsAlive(general) {
+  return Boolean(general) && general.status !== "killed";
+}
+
+// 「任意一位敵方人物」：所有非我方陣營的在世將領，含大帥與 NPC 陣營。
+function assassinationTargets() {
+  return Object.entries(generalOwners).flatMap(([generalId, owner]) => {
+    if (owner === currentPlayer) return [];
+    const general = generalById(generalId);
+    if (!generalIsAlive(general)) return [];
+    return [{ general, owner, guarded: Boolean(state?.body_guards?.[generalId]) }];
+  });
+}
+
+// 親衛隊只給自己人，而且每人全場一支。
+function bodyGuardTargets() {
+  return Object.entries(generalOwners)
+    .filter(([generalId, owner]) => owner === currentPlayer && !state?.body_guards?.[generalId])
+    .map(([generalId]) => generalById(generalId))
+    .filter(generalIsAlive);
+}
+
+// 後端只回報成敗，實際把人從將領樹上抹掉是前端的事，
+// 規則沿用 general_tree.kill_general：本人陣亡，麾下少將忠誠歸零。
+function applyAssassination(outcome) {
+  if (!outcome?.success) return;
+  const generalId = outcome.target_general_id;
+  const owner = generalOwners[generalId];
+  const tree = generalTrees[owner];
+  const general = tree?.generals?.[generalId];
+  if (!general) return;
+  general.status = "killed";
+  for (const army of allArmies(true)) {
+    if (army.generalId === generalId) army.status = "killed";
+  }
+  for (const childId of descendantGeneralIds(tree, generalId)) {
+    const child = tree.generals?.[childId];
+    if (!child || child.role !== "major_general") continue;
+    if (child.absolute_loyalty || child.loyalty_exempt || child.loyalty === null) continue;
+    loyaltyOverrides[childId] = 0;
+  }
+}
+
 function loyaltyCardTargetMarkup(card) {
   if (!["unit_promotion", "local_autonomy_agitation"].includes(card.id)) return "";
   const targets = loyaltyCardTargets(card);
@@ -2233,9 +2407,29 @@ function functionCardTargetMarkup(card) {
       <label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>
       <label class="card-target">指定省份<select data-card-target-province="${card.id}">${provinces.map((province) => `<option value="${province}">${province}</option>`).join("")}</select></label>`;
   }
-  if (["reserve_loss", "communist_riot"].includes(card.mechanic)) {
+  if (card.mechanic === "railway_sabotage") {
+    const downed = disabledRailways();
+    const lines = (card.railways || []).filter((name) => !downed.has(name));
+    if (!lines.length) return `<div class="card-target-note">所有可指定的鐵路都已在搶修中</div>`;
+    return `<label class="card-target">指定鐵路<select data-card-target-railway="${card.id}">${lines.map((name) => `<option value="${name}">${name}</option>`).join("")}</select></label>`;
+  }
+  if (["reserve_loss", "communist_riot", "red_army_uprising"].includes(card.mechanic)) {
     const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
     return `<label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "assassination") {
+    const targets = assassinationTargets();
+    if (!targets.length) return `<div class="card-target-note">目前沒有可指定的敵方人物</div>`;
+    // target_owner 由 use-function 從 generalOwners[目標] 推導，不必另外附欄位。
+    return `<label class="card-target">指定人物<select data-card-target="${card.id}">${targets
+      .map(({ general, owner, guarded }) => `<option value="${general.id}" data-owner="${owner}">${FACTIONS[owner]?.shortName || owner} · ${general.name}${guarded ? "（有親衛隊）" : ""}</option>`)
+      .join("")}</select></label>`;
+  }
+  if (card.mechanic === "body_guard") {
+    const targets = bodyGuardTargets();
+    if (!targets.length) return `<div class="card-target-note">己方人物都已編成親衛隊</div>`;
+    return `<label class="card-target">指定人物<select data-card-target="${card.id}">${targets
+      .map((general) => `<option value="${general.id}">${general.name}</option>`).join("")}</select></label>`;
   }
   if (card.mechanic === "intel_network") {
     const provinces = provinceOptions();
@@ -2265,6 +2459,7 @@ function renderHandDock() {
       <article class="hand-card-mini" style="--card-index:${index}" tabindex="0">
         <div class="hand-card-category">${card.category || "功能"}</div>
         <h3>${card.name}</h3>
+        ${card.story ? `<p class="hand-card-story">${card.story}</p>` : ""}
         <p>${card.effect || "無效果文字"}</p>
         ${functionCardTargetMarkup(card)}
         ${pendingCard
@@ -2754,7 +2949,8 @@ function renderArmyMarkers(faction) {
 
   const armies = Object.values(ARMY_POSITIONS).flatMap((factionArmies) =>
     factionArmies.map((army) => ({ army, armyFaction: factionForArmy(army) }))
-  ).filter(({ army, armyFaction }) => army.status !== "jailed" && armyIsVisible(army, armyFaction, faction));
+  ).filter(({ army, armyFaction }) => army.status !== "jailed" && army.status !== "killed"
+    && armyIsVisible(army, armyFaction, faction));
   const occupancy = new Map();
 
   armies.forEach(({ army, armyFaction }, idx) => {
@@ -2844,7 +3040,7 @@ function currentArmies() {
 
 function allArmies(includeInactive = false) {
   const armies = Object.values(ARMY_POSITIONS).flat();
-  return includeInactive ? armies : armies.filter((army) => army.status !== "jailed");
+  return includeInactive ? armies : armies.filter((army) => army.status !== "jailed" && army.status !== "killed");
 }
 
 function armyById(armyId) {
@@ -3399,6 +3595,16 @@ function renderTileInfo() {
   if (completedPontoons.has(cell.key)) fortifications.push("浮橋");
   if (cell.railBridge) fortifications.push("鐵路橋");
   const railroads = [...(cell.railroads || [])];
+  // 租界僅標明身分與租界國，不寫加成數字。港口同樣只標身分。
+  const concessionPowers = Array.isArray(city?.concession) ? city.concession : [];
+  const tags = [];
+  if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
+  if (concessionPowers.length) {
+    tags.push(`<span class="tile-tag tile-tag-concession">租界城市</span>` + concessionPowers.map((key) => `
+      <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
+    `).join(""));
+  }
+  const concessionRow = tags.length ? `<div class="tile-concession">${tags.join("")}</div>` : "";
   root.hidden = false;
   root.innerHTML = `
     <div class="tile-info-heading"><b>${city?.name || "鄉野地格"}</b><span>${FACTIONS[cell.fac]?.shortName || "無控制"}</span></div>
@@ -3409,7 +3615,8 @@ function renderTileInfo() {
       <span>工事<strong>${fortifications.join("、") || "無"}</strong></span>
       <span>產出<strong>$${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
     </div>
-    ${railroads.length ? `<small>鐵路：${railroads.join("、")}</small>` : ""}`;
+    ${concessionRow}
+    ${railroads.length ? `<small>鐵路：${railroads.map((name) => (disabledRailways().has(name) ? `${name}（搶修中）` : name)).join("、")}</small>` : ""}`;
 }
 
 function engineeringOperationsFor(army) {
@@ -3671,15 +3878,41 @@ function canUndoArmyOrder() {
   return armyOrderHistory.some((action) => action.player === currentPlayer);
 }
 
+// ---- 崩鐵玩家：搶修中的鐵路 ----------------------------------------------
+
+function disabledRailways() {
+  return new Set((state?.railway_effects || [])
+    .filter((effect) => Number(effect.remaining_turns || 0) > 0)
+    .map((effect) => effect.railway));
+}
+
+// 一段鐵路連線只有在兩端共用一條「還在運轉」的鐵路時才算通。
+function railLinkUsable(from, to, downed = disabledRailways()) {
+  if (!downed.size) return true;
+  for (const name of from.railroads || []) {
+    if ((to.railroads || new Set()).has(name) && !downed.has(name)) return true;
+  }
+  return false;
+}
+
+// 位於搶修中鐵路沿線的部隊每回合只能走 1 格，連急行軍都不行。
+function cellUnderRailwaySabotage(cell, downed = disabledRailways()) {
+  if (!cell || !downed.size) return false;
+  return [...(cell.railroads || [])].some((name) => downed.has(name));
+}
+
 function riverStepAllowed(from, to, railwayMovement = false) {
   const riverCells = [from, to].filter((cell) => cell.river);
   if (!riverCells.length) return true;
-  return riverCells.every((cell) => completedPontoons.has(cell.key)
+  // 河港開放陸軍自由通行，不需要浮橋。
+  return riverCells.every((cell) => cell.city?.port === "river"
+    || completedPontoons.has(cell.key)
     || (railwayMovement && cell.railBridge));
 }
 
 function railwayPath(source, destination) {
   if (!source.railNeighbors?.size || !destination.railroads?.size) return null;
+  const downed = disabledRailways();
   const railLimit = railwayMoveLimit(currentPlayer);
   const queue = [{ cell: source, path: [source] }];
   const visited = new Set([source.key]);
@@ -3690,7 +3923,8 @@ function railwayPath(source, destination) {
     for (const key of cell.railNeighbors || []) {
       if (visited.has(key)) continue;
       const next = cells[key];
-      if (!next || !riverStepAllowed(cell, next, true)) continue;
+      if (!next || !railLinkUsable(cell, next, downed)) continue;
+      if (!riverStepAllowed(cell, next, true)) continue;
       visited.add(key);
       queue.push({ cell: next, path: [...path, next] });
     }
@@ -3709,6 +3943,8 @@ function ruralMoveLimit(player = currentPlayer) {
 function ruralMovementPath(source, destination, player = currentPlayer) {
   const limit = ruralMoveLimit(player);
   if (limit <= 1) return null;
+  // 崩鐵玩家：沿線地格出發的部隊本回合只剩 1 格，急行軍失效。
+  if (cellUnderRailwaySabotage(source)) return null;
   if (destination.city || destination.railroads?.size) return null;
   const queue = [{ cell: source, path: [source] }];
   const visited = new Set([source.key]);
@@ -4149,6 +4385,12 @@ function setupPendingActions() {
       skipProvinceClaim(skipClaimButton.dataset.skipProvinceClaim, skipClaimButton.dataset.claimFaction || currentPlayer);
       return;
     }
+    const readButton = event.target.closest("[data-read-notifications]");
+    if (readButton) {
+      unreadNotifications().forEach((item) => readNotifications.add(item.key));
+      renderPendingActions();
+      return;
+    }
     const buyButton = event.target.closest("[data-buy-function-card]");
     if (buyButton) {
       await buyFunctionCard(buyButton);
@@ -4441,6 +4683,16 @@ function handleMapDestination(destination) {
     if (!enemy || activeBattles.at(-1)?.status === "surrendered") initMap();
 }
 
+function notificationKey(player, index, item) {
+  return `${player}:${index}:${item.turn}`;
+}
+
+function unreadNotifications(payload = state.players[currentPlayer]) {
+  return (payload?.notifications || [])
+    .map((item, index) => ({ ...item, key: notificationKey(currentPlayer, index, item) }))
+    .filter((item) => !readNotifications.has(item.key));
+}
+
 function renderPendingActions() {
   const pending = pendingArmies();
   const fighting = activeBattles.filter((battle) =>
@@ -4494,6 +4746,15 @@ function renderPendingActions() {
       <div class="notification-actions">
         <button data-claim-province="${provinceClaim.province}" data-claim-faction="${currentPlayer}">宣告接管</button>
         <button data-skip-province-claim="${provinceClaim.province}" data-claim-faction="${currentPlayer}">稍後再說</button>
+      </div>`;
+  } else if (unreadNotifications(payload).length) {
+    const unread = unreadNotifications(payload);
+    notification.hidden = false;
+    notification.innerHTML = `
+      <b>戰報</b>
+      <span>${unread.map((item) => item.text).join("<br>")}</span>
+      <div class="notification-actions">
+        <button data-read-notifications="${currentPlayer}">知道了</button>
       </div>`;
   } else if (uiNotice) {
     notification.hidden = false;
@@ -4670,7 +4931,12 @@ async function advanceToNextTurn(force = false) {
     );
     for (const battle of continuingBattles) await resolveBattleRound(battle);
     await cityEconomySync;
-    const result = await api("/api/next-turn", { active_player: currentPlayer, force, riot_garrisons: qingGangRiotGarrisons() });
+    const result = await api("/api/next-turn", {
+      active_player: currentPlayer,
+      force,
+      riot_garrisons: qingGangRiotGarrisons(),
+      city_garrisons: uprisingCityGarrisons(),
+    });
     state = result.state;
     syncStrategicCitiesFromState();
     uiNotice = null;
