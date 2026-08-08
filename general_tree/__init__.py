@@ -16,6 +16,7 @@ from .general_tree import (
     recruit_general,
     set_body_guard_level,
     subtree_force_strength,
+    transfer_troops_between_absolute_loyal_pair,
     validate_tree,
 )
 
@@ -35,5 +36,6 @@ __all__ = [
     "recruit_general",
     "set_body_guard_level",
     "subtree_force_strength",
+    "transfer_troops_between_absolute_loyal_pair",
     "validate_tree",
 ]

@@ -189,8 +189,8 @@ class OutputTests(unittest.TestCase):
         self.assertEqual([t for t in range(1, 10) if is_settlement_turn(t)], [3, 6, 9])
 
     def test_output_comes_from_level(self) -> None:
-        """1 級 cash 2 / factory 1，每升一級各 +1。"""
-        expected = {1: (2, 1), 2: (3, 2), 3: (4, 3), 4: (5, 4), 5: (6, 5)}
+        """1 級 cash 1 / factory 1，每升一級各 +1。"""
+        expected = {1: (1, 1), 2: (2, 2), 3: (3, 3), 4: (4, 4), 5: (5, 5)}
         for level, (cash, factory) in expected.items():
             city = {"level": level}
             self.assertEqual(scaled_city_value(city, "cash"), cash, level)
@@ -200,7 +200,7 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(city_level({"level": 0}), 1)
         self.assertEqual(city_level({"level": 9}), 5)
         self.assertEqual(city_level({}), 1)
-        self.assertEqual(scaled_city_value({"level": 9}, "cash"), 6)
+        self.assertEqual(scaled_city_value({"level": 9}, "cash"), 5)
 
     def test_raw_cash_field_is_ignored(self) -> None:
         """產出只看等級，資料檔裡的 cash/factory 欄位不再參與計算。"""

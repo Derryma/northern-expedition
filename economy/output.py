@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-# 城市產出由等級決定：1 級 cash 2 / factory 1，每升一級各 +1，最高 5 級。
+# 城市產出由等級決定：1 級 cash 1 / factory 1，每升一級各 +1，最高 5 級。
 CITY_LEVEL_MIN = 1
 CITY_LEVEL_MAX = 5
-CITY_BASE_OUTPUT = {"cash": 2, "factory": 1}
+CITY_BASE_OUTPUT = {"cash": 1, "factory": 1}
 CITY_OUTPUT_PER_LEVEL = {"cash": 1, "factory": 1}
 
 # 租界加成：每三回合結算一次，與城市等級產出分開計算。
@@ -27,7 +27,7 @@ def city_level(city: Dict[str, Any]) -> int:
 def scaled_city_value(city: Dict[str, Any], field: str) -> int:
     """Per-turn output for one field, derived from the city's level.
 
-    Level 1 pays 2 cash and 1 factory; every level above that adds 1 to each,
+    Level 1 pays 1 cash and 1 factory; every level above that adds 1 to each,
     up to level 5. The raw `cash`/`factory` figures in the scenario file are no
     longer read — level is the only input.
     """

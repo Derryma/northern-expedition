@@ -59,6 +59,13 @@ class GeneralTreeTests(unittest.TestCase):
         self.assertIn("new_major", tree["generals"]["he_yingqin"]["subordinates"])
         self.assertEqual(tree["generals"]["new_major"]["role"], "major_general")
 
+    def test_affiliation_slots_cap_at_three_for_lieutenants_only(self):
+        tree = load_template()
+        increase_affiliation_slots(tree, "he_yingqin", amount=5)
+        self.assertEqual(tree["generals"]["he_yingqin"]["subordinate_slots"], 3)
+        with self.assertRaises(ValueError):
+            increase_affiliation_slots(tree, "chiang_kai_shek")
+
     def test_battle_loss_removes_units_and_reduces_loyalty(self):
         tree = load_template()
         record_battle_loss(tree, "bai_chongxi", {"infantry": 3, "machine_gun": 1})

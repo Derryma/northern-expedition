@@ -55,7 +55,7 @@
         "machine_gun": 4
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     },
@@ -80,7 +80,7 @@
         "machine_gun": 3
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     },
@@ -105,7 +105,7 @@
         "machine_gun": 2
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     }

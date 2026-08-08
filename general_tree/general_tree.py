@@ -156,7 +156,10 @@ def increase_affiliation_slots(tree: GeneralTree, general_id: str, amount: int =
         raise ValueError("amount must be positive")
     general = _general(tree, general_id)
     role = str(general.get("role"))
-    general["subordinate_slots"] = int(general.get("subordinate_slots", DEFAULT_SLOTS[role])) + amount
+    if role != "lieutenant_general":
+        raise ValueError("only lieutenant generals can gain extra major-general slots")
+    current = int(general.get("subordinate_slots", DEFAULT_SLOTS[role]))
+    general["subordinate_slots"] = min(3, current + amount)
     return tree
 
 

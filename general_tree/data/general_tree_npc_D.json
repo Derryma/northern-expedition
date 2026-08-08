@@ -23,7 +23,7 @@
         "machine_gun": 1
       },
       "parent_id": null,
-      "subordinate_slots": 1,
+      "subordinate_slots": 3,
       "subordinates": [
         "long_yun"
       ],
@@ -50,7 +50,7 @@
         "machine_gun": 1
       },
       "parent_id": "tang_jiyao",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     }

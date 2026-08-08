@@ -72,7 +72,17 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         }
 
         filename = tree_files.get(faction, tree_files['N'])
-        return load_json(filename)
+        tree = load_json(filename)
+        for general in tree.get("generals", {}).values():
+            role = general.get("role")
+            if role == "great_general":
+                general["subordinate_slots"] = 3
+            elif role == "lieutenant_general":
+                general["subordinate_slots"] = min(3, max(2, int(general.get("subordinate_slots", 2))))
+            else:
+                general["subordinate_slots"] = 0
+                general["subordinates"] = []
+        return tree
 
     def do_HEAD(self) -> None:
         try:

@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 106,
+  "count": 107,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -2085,6 +2085,17 @@
       "tiles": 2,
       "cost": 0,
       "effect": "3 回合內，己方軍隊在非鐵路鄉村地格可移動 2 格；跨河仍需浮橋或鐵路橋。",
+      "generated_event_cards": []
+    },
+    {
+      "id": "affiliation_slot_upgrade",
+      "name": "擴編直屬",
+      "deck_type": "function",
+      "category": "command",
+      "holdable": true,
+      "mechanic": "affiliation_slot",
+      "cost": 0,
+      "effect": "指定一位己方中將，直屬名額 +1，最多擴到 3 格。",
       "generated_event_cards": []
     },
     {
