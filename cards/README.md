@@ -1,117 +1,193 @@
-# Cards
+# 卡片
 
-Card data for *Northern Expedition*.
+《北伐風雲》的卡片資料。
 
-There are two card types:
+卡片分兩種：
 
-- `event` cards are drawn automatically each turn and represent China-wide or world events that may affect all sides.
-- `function` cards are optionally purchased by each player at turn start for $5, at most twice per turn, and kept in hand until used. Playing a drawn function card has no additional cash cost.
+- **事件卡**每回合自動抽出，代表全國或國際局勢的變化，可能同時影響各方。
+- **功能卡**由玩家在回合開始時自由決定是否花 $5 購買，每回合最多兩張，抽到後留在手上直到使用。打出手上的功能卡不再額外收費。
 
-## Files
+## 檔案
 
-- `data/event_cards.json` contains the cleaned automatic event deck. Old direct foreign attack cards were removed.
-- `data/function_cards.json` contains player-held action cards, including many cards migrated out of the old event deck.
-- `data/injected_event_cards.json` contains consequence event cards that enter the event pool later due to player choices.
-- `data/card_pool_rules.json` describes draw timing and dynamic pool mutation.
+- `data/event_cards.json`：整理過的自動事件牌堆，舊版「列強直接軍事打擊」類卡片已剔除。
+- `data/function_cards.json`：玩家持有的行動卡，包含大量從舊事件牌堆遷移過來的卡片。
+- `data/injected_event_cards.json`：因玩家選擇而在後續加入事件牌池的後果卡。
+- `data/card_pool_rules.json`：抽牌時機與牌池動態變化的規則。
 
-## Dynamic Event Pool
+`data/function_cards.json` 目前收錄 111 張卡。只有下面列出的會實際進入牌庫，其餘是從原始素材沿用下來的目錄項目，沒有 `mechanic` 欄位，引擎會拒絕打出。
 
-Function cards can inject event cards into the event pool.
+## 規則寫在哪裡
 
-Example:
+這個資料夾裡的 JSON 是純資料。下面表格提到的每一個機制都實作在 `backend/card_engine.py`，由 `backend/data_store.py` 讀取這些檔案。卡片會用到的經濟規則——城市產出、借款帳、結算週期——住在 `economy/`；列強關係尺度住在 `foreign_powers/`。
+
+**改數字**是改這裡的 JSON；**改行為**要動 `backend/card_engine.py`。
+
+## 動態事件牌池
+
+功能卡可以把事件卡塞進事件牌池：
 
 ```json
 {
   "id": "japanese_debt_for_firearms",
   "name": "日本債款換械",
   "generated_event_cards": [
-    {
-      "id": "north_manchuria_railway_concession_demand",
-      "name": "要求北滿鐵路特許權",
-      "copies": 1
-    }
+    { "id": "north_manchuria_railway_concession_demand", "name": "要求北滿鐵路特許權", "copies": 1 }
   ]
 }
 ```
 
-So if 張作霖 uses Japanese debt for firearms, `要求北滿鐵路特許權` can be inserted into the future event deck.
+所以張作霖若使用「日本債款換械」，「要求北滿鐵路特許權」就可能被插入後續的事件牌堆。
 
-## Body Guards
+## 親衛隊
 
-Body guards should not be represented as redundant unit/card state such as extra `機槍營` or separate `菁英衛隊` records.
+親衛隊不再用多餘的單位狀態（例如額外的「機槍營」紀錄）表示。「組建親衛隊」是唯一的衛隊卡：使用後在引擎狀態中替指定人物登記一支永久親衛隊，自**下一回合**起，任何針對他的暗殺成功率降低 5 個百分點。每位人物全場只能編成一支。
 
-Use the general-tree field instead:
+舊版的「特勤衛隊：普通」與「特勤衛隊：菁英」已從卡池移除。將領樹仍保留當時設計的 `body_guard_level` 欄位（`null`、`low`、`high`），但已經沒有任何卡片會寫入它。
 
-```json
-{
-  "body_guard_level": null
-}
-```
+## 整理備註
 
-Valid levels are `null`, `low`, and `high`.
+原始 HTML 中仍留有舊版的「列強直接軍援」「列強懲罰性打擊」「租界駐軍」等敘述。整理後的 `event_cards.json` 直接捨棄那些列強直接攻擊卡，而不是留在自動牌堆裡。
 
-Function cards `特勤衛隊：普通` and `特勤衛隊：菁英` simply set that field on a selected general.
+真正屬於玩家選擇的內容——借款、顧問團、軍火採購機會、策反、招募行動——一律放在 `function_cards.json`。
 
-## Cleanup Notes
+## 現役功能卡牌庫
 
-The source HTML still contains old direct foreign military support, foreign punitive attack, and concession-garrison wording. The cleaned `event_cards.json` discards those direct foreign attack cards instead of keeping them in the automatic deck.
+功能卡只在抽牌時花錢：每張 $5，每回合最多抽 2 張，手牌上限 6 張。打出時不再額外收費。
 
-Cards that are really player choices, such as loans, advisor missions, arms-purchase opportunities, defections, and recruitment actions, belong in `function_cards.json`.
+列強關係採 **−10 到 10** 的尺度。**6 以上為友好**，會解鎖該國的友好卡（程式裡叫 perk 卡）；**−4 以下為交惡**，該國銀行停止放款並塞入譴責卡。四家開局關係不同：
 
-## Live Function Deck
+| 陣營 | 日 | 蘇 | 英 | 法 | 美 | 開局牌庫 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 奉系（F） | 8 | −7 | 4 | 1 | 2 | 115 |
+| 直系（W） | −3 | −8 | 6 | 2 | 5 | 118 |
+| 五省聯軍（S） | 3 | −6 | 5 | 3 | 4 | 114 |
+| 國民革命軍（N） | −1 | 9 | −8 | −4 | 1 | 122 |
 
-Only the cards below are placed into live player decks by `backend/card_engine.py`. Function cards cost money only when drawn: $5 per draw, up to 2 draws per turn, with a 6-card hand limit. Playing a function card has no extra cash cost.
+牌庫張數已含交惡時的譴責卡，以及開局關係就已解鎖的友好卡，因此會隨關係變動而增減。
 
-Initial deck sizes, including hostile foreign condemnation fillers, are 張 88, 吳 88, 孫 85, 蔣 85. Foreign relations use a 0-10 scale: below 3 is hostile, 8+ is friendly.
+### 通用卡
 
-| Scope | Card | Copies | Initial draw rate | Current implemented effect |
-| --- | --- | ---: | --- | --- |
-| Common | 部隊晉升 | 4 | 張/吳 4.5%; 孫/蔣 4.7% | One own mutable-loyalty general gains loyalty +1. Absolute-loyalty generals ignore this. |
-| Common | 鼓吹地方自治 | 4 | 張/吳 4.5%; 孫/蔣 4.7% | One opposing non-core, mutable-loyalty general loses loyalty -1. Absolute-loyalty generals ignore this. |
-| Common | 步槍補給 | 4 | 張/吳 4.5%; 孫/蔣 4.7% | Gain infantry reserves +2 to +5 battalions. |
-| Common | 馬隊徵發 | 2 | 張/吳 2.3%; 孫/蔣 2.4% | Gain cavalry reserves +1 to +3 battalions. |
-| Common | 機槍到貨 | 2 | 張/吳 2.3%; 孫/蔣 2.4% | Gain machine-gun reserves +1 to +2 battalions. |
-| Common | 火砲撥補 | 1 | 張/吳 1.1%; 孫/蔣 1.2% | Gain artillery reserves +1 to +2 battalions. |
-| Common | 城市建設 | 8 | 張/吳 9.1%; 孫/蔣 9.4% | Choose one controlled city; permanent city output increases by cash +1 to +3 and factory +1 to +2. |
-| Common | 情報網 | 6 | 張/吳 6.8%; 孫/蔣 7.1% | Choose one playable 民國 province; for 1 turn, reveal enemy army icons and compositions in that province unless protected by `警政系統`. |
-| Common | 警政系統 | 4 | 張/吳 4.5%; 孫/蔣 4.7% | For 3 turns, armies outside normal enemy sight are immune to enemy province intel reveals. |
-| Common | 共黨暴動 | 3 | 張/吳 3.4%; 孫/蔣 3.5% | Choose one opponent; two random target cities have cash and factory output set to 0 for 3 turns. |
-| Common | 青幫暴動 | 3 | 張/吳 3.4%; 孫/蔣 3.5% | Choose one enemy province; all target-owned cities there halt output indefinitely. Initiator receives half halted cash and factory each turn. Target suppresses with 15+ force in province for 3 consecutive turns. |
-| Common | 反戰演講：步兵逃散 | 5 | 張/吳 5.7%; 孫/蔣 5.9% | Choose one opponent; remove infantry reserves -3 to -5 battalions, capped by available reserves. |
-| Common | 反戰演講：馬隊離營 | 2 | 張/吳 2.3%; 孫/蔣 2.4% | Choose one opponent; remove cavalry reserves -1 to -3 battalions, capped by available reserves. |
-| Common | 反戰演講：火力排抗命 | 2 | 張/吳 2.3%; 孫/蔣 2.4% | Choose one opponent; remove machine-gun reserves -1 to -2 battalions, capped by available reserves. |
-| Common | 反戰演講：砲兵厭戰 | 1 | 張/吳 1.1%; 孫/蔣 1.2% | Choose one opponent; remove artillery reserves -1 to -2 battalions, capped by available reserves. |
-| Common | 急行軍 | 4 | 張/吳 4.5%; 孫/蔣 4.7% | For 3 turns, armies may move 2 rural tiles per turn outside rail movement; rivers still need bridge/pontoon access. |
-| Common foreign relation | 對日/對蘇/對英/對法/對美交涉 | 4 each | 張/吳 4.5%; 孫/蔣 4.7% each | Chosen power relation +2, capped to 0-10. Relation 8+ unlocks that power's friendly perk cards. |
-| Foreign filler | 日本/蘇聯/英國/法國/美國的譴責 | 3 if relation <3 | depends on faction relation | No effect. Wastes a draw while relations are hostile; undrawn copies are removed once relation recovers. |
-| 吳/孫 only | 直系步兵操練 | 2 | 吳 2.3%; 孫 2.4% | Usable only while 吳 and 孫 are not at war; both gain infantry reserves +5. |
-| 吳/孫 only | 討奉反正 | 2 | 吳 2.3%; 孫 2.4% | Usable only while 吳 and 孫 are not at war; both gain all-unit attack +5% against 張 for 3 turns. |
-| 吳/孫 only | 大帥恩情還不完 | 2 | 吳 2.3%; 孫 2.4% | Usable only while 吳 and 孫 are not at war; 孫 cash -5 per turn and 吳 cash +10 per turn for 5 turns. |
-| 吳/孫 only | 聯合反共宣言 | 1 | 吳 1.1%; 孫 1.2% | Usable only while 吳 and 孫 are not at war; 吳/孫 mutable-loyalty generals +3, 張/蔣 mutable-loyalty generals -1. |
-| 蔣 only | 黃埔精神 | 2 | 蔣 2.4% | All 蔣 mutable-loyalty generals gain loyalty +2. |
-| 蔣 only | 誓師北伐 | 2 | 蔣 2.4% | 蔣 all-unit attack +10% for 3 turns. |
-| 蔣 only | 僑胞匯款 | 2 | 蔣 2.4% | 蔣 cash +20. |
-| 蔣 only | 國共合作 | 1 | 蔣 1.2% | 蔣 infantry reserves +20, but 蔣 mutable-loyalty generals loyalty -3. |
-| 張 only | 東北軍整武 | 2 | 張 2.3% | 張 infantry harm taken -5% for 3 turns. |
-| 張 only | 少帥崛起 | 1 | 張 1.1% | If 張學良 is not captive, add infantry +10, cavalry +5, machine gun +2, artillery +1 to 張學良's army. |
-| 張 only | 王永江金融改革 | 1 | 張 1.1% | 張 permanent income +$5 and factory income +2 per turn. |
+| 卡片 | 份數 | 效果 |
+| --- | ---: | --- |
+| 部隊晉升 | 4 | 己方一位可變忠誠將領忠誠 +1。絕對忠誠將領不受影響。 |
+| 鼓吹地方自治 | 4 | 敵方一位非核心、可變忠誠的將領忠誠 −1。 |
+| 步槍補給 | 4 | 步兵預備隊 +2 至 +5 營。 |
+| 馬隊徵發 | 2 | 騎兵預備隊 +1 至 +3 營。 |
+| 機槍到貨 | 2 | 機槍預備隊 +1 至 +2 營。 |
+| 火砲撥補 | 1 | 砲兵預備隊 +1 至 +2 營。 |
+| 城市建設 | 8 | 指定一座己方城市，永久產出現金 +1 至 +3、工廠 +1 至 +2。 |
+| 情報網 | 6 | 揭露指定一省內敵軍位置與編制 1 回合，受「警政系統」保護者除外。 |
+| 警政系統 | 4 | 3 回合內，位於敵方正常視野外的己方部隊免疫敵方情報網揭露。 |
+| 急行軍 | 4 | 3 回合內，部隊可在鐵路運輸之外每回合走 2 格鄉村。 |
+| 反戰演講：步兵逃散 | 5 | 指定一名對手，其步兵預備隊 −3 至 −5 營，以實有數為上限。 |
+| 反戰演講：馬隊離營 | 2 | 騎兵 −1 至 −3 營，同上。 |
+| 反戰演講：火力排抗命 | 2 | 機槍 −1 至 −2 營，同上。 |
+| 反戰演講：砲兵厭戰 | 1 | 砲兵 −1 至 −2 營，同上。 |
+| 杜月笙的豪賭 | 2 | 指定敵方一省（限江蘇、浙江、安徽、河南、湖北），該省敵方控制城市產出無限期歸零，被截斷的現金與工廠每回合有一半轉給發動者。目標須以 15 以上戰力在該省連續駐留 3 回合才能平息。 |
+| 洪門起義 | 2 | 同上，範圍為廣東、廣西、福建、湖南、江西。 |
+| 敵後破壞 | 4 | 指定一名對手，其隨機兩座城市工廠產出歸零 3 回合，現金不受影響。 |
+| 崩鐵玩家 | 4 | 癱瘓京奉、京漢、津浦、膠濟、正太、隴海、滬寧、粵漢其中一線 3 回合。該線停止鐵路運輸，位於沿線地格的部隊每回合僅能移動 1 格。 |
+| 王亞樵來投 | 4 | 一次暗殺行動，成功率 20%，可指定任意敵方人物，含大帥與 NPC 陣營。成功者當場身亡，其麾下少將忠誠歸零；失敗無任何後果。 |
+| 組建親衛隊 | 8 | 為己方一位人物編成永久親衛隊：遭遇暗殺時成功率降低 5 個百分點，自下一回合起生效，每位人物全場限一支。 |
+| 軍閥公債 | 4 | 現金 +50、負債 +25，利率每回合 5%，3 回合到期。此後向任何列強銀行借款皆只有 75% 成功率。 |
+| 僑胞匯款 | 2 | 完全控制廣東或福建的任一陣營皆可使用，每控制一省現金 +15。需對蘇關係 5 以下。 |
+| 對日／對蘇／對英／對法／對美交涉 | 各 4 | **70% 機率談成**，成功則該國關係 +2（範圍限制在 −10 至 10），失敗則毫無效果，白費一張牌。 |
 
-## Foreign Relation Cards
+### 陣營專屬卡
 
-Relation values 8+ unlock one copy of each friendly perk card for that power. Relation values below 3 add three `...的譴責` filler cards for that power.
+| 陣營 | 卡片 | 份數 | 效果 |
+| --- | --- | ---: | --- |
+| 吳／孫 | 直系步兵操練 | 2 | 限吳、孫未交戰時使用；雙方步兵預備隊各 +5。 |
+| 吳／孫 | 討奉反正 | 2 | 限未交戰時使用；雙方對張全兵種攻擊 +5%，持續 3 回合。 |
+| 吳／孫 | 大帥恩情還不完 | 2 | 限未交戰時使用；孫每回合現金 −5、吳每回合現金 +10，持續 5 回合。 |
+| 吳／孫 | 直系反共宣言 | 1 | 限未交戰時使用，且對蘇關係須在 5 以下；吳、孫麾下可變忠誠將領 +2，所有當下與蘇聯友好的陣營 −1。親蘇陣營在打出當下判定，不是寫死在資料裡。**使用後對蘇 −2、對英 +1、對日 +1。** |
+| 蔣 | 國家的干城 | 2 | 蔣麾下所有可變忠誠將領忠誠 +2。 |
+| 蔣 | 誓師北伐 | 2 | 蔣全兵種攻擊 +10%，持續 3 回合。 |
+| 蔣 | 汪精衛復出 | 1 | 永久陣營狀態：步兵生產現金成本 −1、每回合工廠 +1，並使「國共合作」進入牌庫。 |
+| 張 | 東北軍整武 | 2 | 張步兵受傷害 −5%，持續 3 回合。 |
+| 張 | 少帥崛起 | 1 | 張學良未被俘時，其部隊步兵 +10、騎兵 +5、機槍 +2、砲兵 +1。 |
+| 張 | 王永江金融改革 | 1 | 張永久每回合收入 +$5、工廠 +2。 |
 
-| Power | Unit perk | Money perk | Combat perk | Production perk |
+### 解鎖卡
+
+這幾張不在開局牌庫裡，要等前置條件達成後才會洗進牌庫。
+
+| 卡片 | 份數 | 解鎖條件 | 效果 |
+| --- | ---: | --- | --- |
+| 國共合作 | 1 | 汪精衛復出 | 蔣步兵預備隊 +20，但麾下所有可變忠誠將領 −2。 |
+| 上海灘宋貴人 | 1 | 結盟江浙財團 | 控制上海期間，每三回合額外現金 +5、工廠 +3，並免疫「杜月笙的豪賭」。 |
+| 孔祥熙從政 | 1 | 結盟江浙財團 | 此後新借的每一筆款項利率一律 2%、還款期限 +1 回合。已借出的舊債維持原條件。 |
+
+### 條件卡
+
+進入條件在**打出時**檢查，不是抽到時。
+
+| 卡片 | 份數 | 條件 | 效果 |
+| --- | ---: | --- | --- |
+| 結盟江浙財團 | 1 | 完全控制江蘇與浙江，且對蘇關係 5 以下 | 每控制一省現金 +25，兩省共 +50，並解鎖「孔祥熙從政」與「上海灘宋貴人」。 |
+| 自由中國教育家 | 2 | 對蘇關係 5 以下，且控制北京 | 免疫「共黨暴動」與「紅軍起義」10 回合。同回合稍早已對你打出的這兩張牌會被追溯取消。**使用後對蘇 −2、對英 +1、對日 +1。** |
+| 北京大學共運 | 2 | 對蘇關係 6 以上 | 使場上所有生效中的「自由中國教育家」立即失效。若場上沒有可壓制的目標則無法打出。 |
+
+「控制某省」指持有該省**全部**城市，與盤面上觸發「宣告接管全省」的門檻相同。
+
+### 卡片造成的外交後果
+
+有些卡除了本身效果之外，還會連帶動到列強關係。這些變動在卡片機制跑完之後才結算，
+所以卡片若因條件不符被擋下，外交後果也不會發生；數值一律夾在 −10 至 10 之間。
+
+| 卡片 | 對蘇 | 對英 | 對日 | 對美 | 對法 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 直系反共宣言（反共類） | −2 | +1 | +1 | — | — |
+| 自由中國教育家（反共類） | −2 | +1 | +1 | — | — |
+| 紅軍起義 | — | −1 | −1 | −1 | −1 |
+
+關係一有變動，友好卡與譴責卡的進出會立刻重算，所以打完反共卡有可能當場解鎖英日的友好卡。
+
+## 卡面故事
+
+部分卡片帶有 `story` 欄位，是規則之外的一段敘事。前端會把它顯示在卡面上——手牌面板與
+下方手牌列都有，位置在卡名之下、效果之上，以斜體與左側色條和規則區分開。
+
+`story` 純粹是敘事，**不影響任何判定**；規則一律寫在 `effect` 裡。目前 17 張現役卡帶有故事，
+其餘卡片沒有這個欄位，卡面就不顯示故事區。
+
+## 列強關係卡
+
+關係 6 以上，該國每張友好卡各發 1 份進牌庫；「共黨暴動」與「紅軍起義」則各發 2 份。關係 −4 以下，塞入 3 張該國的「⋯的譴責」廢牌。兩個方向每回合都會重新同步，所以關係一旦回落，友好卡會再被收走。
+
+友好卡**不專屬任何陣營**。任何陣營只要關係達標都拿得到；國民革命軍只是開局對蘇就有 9。
+
+| 列強 | 兵員 | 金錢 | 戰鬥 | 生產 |
 | --- | --- | --- | --- | --- |
-| 日本 | 三井步槍機槍轉運: 步兵 +4, 機槍 +1 | 橫濱正金短貸: cash +45, debt +55 | 關東軍步兵教範: infantry attack +8% for 3 turns | 南滿鐵路工程隊: controlled 奉天/吉林/黑龍江 cities cash +1, factory +2 |
-| 蘇聯 | 蘇式步槍船運: 步兵 +6, 機槍 +1 | 盧布秘密補助: cash +25 | 加倫顧問團: infantry and cavalry attack +6% for 3 turns | 蘇聯軍校教官: one city cash +1-2, factory +3-4 |
-| 英國 | 維克斯機槍合約: 機槍 +3 | 匯豐周轉授信: cash +60, debt +70 | 英械火力教官: machine-gun attack +14% for 2 turns | 海關稅務顧問: one city cash +3-4, factory +1-2 |
-| 法國 | 法式山砲軍援: 砲兵 +2 | 東方匯理墊款: cash +30, debt +25 | 法國砲兵學校: artillery attack +12% for 3 turns | 法租界工程師: one city cash +2-3, factory +2-3 |
-| 美國 | 白朗寧樣品槍: 步兵 +2, 機槍 +1, 砲兵 +1 | 美商現金信貸: cash +40 | 美式火力編組: machine-gun attack +10%, artillery attack +7% for 2 turns | 美國工業技師: one city cash +2, factory +4 |
+| 日本 | 三井商社輕兵器採購：步兵 +4、機槍 +1 | 橫濱正金短貸：現金 +50、負債 +40，3% 三回合 | 關東軍步兵教範：步兵攻擊 +8%，3 回合 | 滿州墾殖團：須完全控制奉天、吉林、黑龍江；該三省城市現金 +1、工廠 +2 |
+| 蘇聯 | 蘇援槍械抵華：步兵 +6、機槍 +1 | 盧布秘密補助：現金 +25 | 加倫顧問團：步兵與騎兵攻擊 +6%，3 回合 | 共黨暴動 ×2、紅軍起義 ×2（見下） |
+| 英國 | 維克斯機槍合約：機槍 +3 | 匯豐周轉授信：現金 +65、負債 +50，3% 三回合 | 英械火力教官：機槍攻擊 +14%，2 回合 | 怡和洋行投資案：須控制至少一座英租界城市；所有己方英租界城市現金 +2、工廠 +2 |
+| 法國 | 法式山砲軍援：砲兵 +2 | 東方匯理墊款：現金 +30、負債 +25 | 法國砲兵學校：砲兵攻擊 +12%，3 回合 | 滇越鐵路沿線擴建：須完全控制雲南；雲南所有城市現金 +2、工廠 +2 |
+| 美國 | 白朗寧軍火到貨：步兵 +2、機槍 +1、砲兵 +1 | 花旗工業貸款：現金 +50、負債 +40，3% 三回合 | 美式火力編組：機槍攻擊 +10%、砲兵攻擊 +7%，2 回合 | 美商投資公共租界：須控制至少一座美租界城市；所有己方美租界城市現金 +2、工廠 +4 |
 
-## War Fog And Intelligence
+### 蘇聯的兩張暴動卡
 
-- Enemy army icons are normally visible only when inside sight range of one of your armies, or while they are in an active battle.
-- Seeing an enemy icon does not reveal its unit composition.
-- Enemy composition is revealed only in battle or through `情報網`.
-- `情報網` reveals one province for 1 turn and is private to the player using it.
-- `警政系統` blocks enemy `情報網` reveals against protected armies that are outside normal sight. It does not hide armies already visible by ordinary army sight or battle contact.
+| 卡片 | 份數 | 效果 |
+| --- | ---: | --- |
+| 共黨暴動 | 2 | 指定一名對手，其隨機兩座城市現金與工廠產出歸零 3 回合。 |
+| 紅軍起義 | 2 | 指定一名對手，其隨機兩座城市產出歸零且**無期限**；每座城市須由目標派駐一個旅（5 營）才會恢復。**使用後對英、日、美、法關係各 −1。** |
+
+### 專案貸款
+
+橫濱正金短貸、匯豐周轉授信、花旗工業貸款不是一般借款。三者各自帶著自己的利率與到期日，**不佔用該行的授信額度**，而且到期未清償時會觸發該國的接管條款。債務仍然要還、原本的逾期強制扣款照扣，接管條款是**另外疊加**上去的。
+
+| 卡片 | 違約後果 |
+| --- | --- |
+| 花旗工業貸款 | 美方接管你產出最高 3 座城市的全部工廠產出，持續 5 回合。 |
+| 橫濱正金短貸 | 日方接管你產出最高 2 座城市的全部現金與工廠產出，持續 5 回合。 |
+| 匯豐周轉授信 | 英方**永久**抽取你產出最高 1 個省份 15% 的現金與工廠產出。 |
+
+「產出最高」按當下產出（現金 + 工廠）計算，且每回合重算——失去一座城，條款就會轉移到下一座。
+
+## 戰爭迷霧與情報
+
+- 敵軍圖示通常只在進入己方部隊視野範圍內、或正在交戰時才看得見。
+- 看見敵軍圖示不代表知道其編制。
+- 敵軍編制只有在交戰中或透過「情報網」才會揭露。
+- 「情報網」揭露一省 1 回合，且只有使用者本人看得到。
+- 「警政系統」擋下敵方對受保護部隊的情報網揭露，但不會隱藏原本就在視野內或已接戰的部隊。

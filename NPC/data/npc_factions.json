@@ -4,23 +4,27 @@
   "major_playable_factions": [
     {
       "code": "S",
-      "name": "孫",
-      "leader": "孫傳芳"
+      "name": "五省聯軍",
+      "leader": "孫傳芳",
+      "flag": "wuse"
     },
     {
       "code": "W",
-      "name": "吳",
-      "leader": "吳佩孚"
+      "name": "直系",
+      "leader": "吳佩孚",
+      "flag": "wuse"
     },
     {
       "code": "F",
-      "name": "張",
-      "leader": "張作霖"
+      "name": "奉系",
+      "leader": "張作霖",
+      "flag": "wuse"
     },
     {
       "code": "N",
-      "name": "蔣",
-      "leader": "蔣中正"
+      "name": "國民革命軍",
+      "leader": "蔣中正",
+      "flag": "roc"
     }
   ],
   "npc_rules": {

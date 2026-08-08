@@ -11,7 +11,13 @@ from .data_store import load_game_data
 
 from economy import LoanBook, scaled_city_value, treaty_port_bonus, is_settlement_turn
 from economy.loans import TIER_BLOCKED
-from foreign_powers.relations import RELATION_KEYS, clamp as clamp_relation, relation_bounds, starting_relations
+from foreign_powers.relations import (
+    RELATION_KEYS,
+    clamp as clamp_relation,
+    relation_bounds,
+    relation_scale,
+    starting_relations,
+)
 
 LOANS = LoanBook()
 
@@ -46,8 +52,9 @@ FUNCTION_CARD_COPIES = {
     "city_development": 8,
     "intel_network": 6,
     "police_system": 4,
-    "communist_riot": 3,
-    "qing_gang_riot": 3,
+    "du_yuesheng_gamble": 2,
+    "hongmen_uprising": 2,
+    "behind_enemy_lines_sabotage": 4,
     "antiwar_speech_infantry": 5,
     "antiwar_speech_cavalry": 2,
     "antiwar_speech_machine_gun": 2,
@@ -55,14 +62,21 @@ FUNCTION_CARD_COPIES = {
     "zhili_infantry_drill": 2,
     "anti_fengtian_alignment": 2,
     "marshal_gratitude": 2,
-    "whampoa_spirit": 2,
+    "national_bulwark": 2,
     "northern_expedition_oath": 2,
     "overseas_chinese_remittance": 2,
-    "first_united_front": 1,
     "northeast_army_rearmament": 2,
     "young_marshal_rises": 1,
     "wang_yongjiang_financial_reform": 1,
     "zhili_anti_communist_declaration": 1,
+    "wang_jingwei_return": 1,
+    "railway_saboteur": 4,
+    "wang_yaqiao_assassination": 4,
+    "body_guard_squad": 8,
+    "function_軍閥公債": 4,
+    "jiangzhe_financiers": 1,
+    "free_china_educators": 2,
+    "peking_university_movement": 2,
     "forced_march": 4,
     "foreign_relation_jp": 4,
     "foreign_relation_su": 4,
@@ -70,9 +84,15 @@ FUNCTION_CARD_COPIES = {
     "foreign_relation_fr": 4,
     "foreign_relation_us": 4,
 }
-FOREIGN_FRIENDLY_THRESHOLD = 7
-FOREIGN_HOSTILE_THRESHOLD = 3
+# 與 foreign_powers/data/foreign_powers.json 同一組切點：友好 >= 6、交惡 <= -4。
+# 這兩個常數原本是舊的 0~10 刻度遺留值（7 與 3），在 -10~10 刻度下會讓關係 0~2
+# 誤判為交惡。
+_RELATION_SCALE = relation_scale()
+FOREIGN_FRIENDLY_THRESHOLD = int(_RELATION_SCALE["friendly_at_or_above"])
+FOREIGN_HOSTILE_THRESHOLD = int(_RELATION_SCALE["hostile_at_or_below"])
 FOREIGN_PERK_CARD_COPIES = 1
+# 少數 perk 卡發兩份以上
+FOREIGN_PERK_CARD_COPIES_BY_ID = {"communist_riot": 2, "red_army_uprising": 2}
 FOREIGN_CONDEMNATION_COPIES = 3
 FOREIGN_PERK_CARDS = {
     "jp": [
@@ -82,10 +102,11 @@ FOREIGN_PERK_CARDS = {
         "jp_south_manchuria_engineers",
     ],
     "su": [
+        "communist_riot",
+        "red_army_uprising",
         "su_rifle_shipment",
         "su_ruble_subsidy",
         "su_galen_advisers",
-        "su_military_academy_mission",
     ],
     "uk": [
         "uk_vickers_contract",
@@ -122,6 +143,7 @@ FEATURES = {
     "function_card_max_hand_size": MAX_HAND_SIZE,
 }
 NORTHEAST_PROVINCES = {"奉天", "吉林", "黑龍江"}
+POWER_NAMES = {"jp": "日", "su": "蘇", "uk": "英", "fr": "法", "us": "美", "de": "德"}
 
 
 FACTION_PROFILES = {
@@ -216,6 +238,15 @@ class GameEngine:
             profile["foreign_relations"] = starting_relations(player)
             profile["loans"] = []
             profile["next_loan_id"] = 1
+            # 軍閥公債留下的信用瑕疵；None 代表借款必成。
+            profile["bank_success_rate"] = None
+            # 孔祥熙從政之後新借款的期限加成。
+            profile["loan_term_bonus"] = 0
+            profile["loan_penalties"] = []
+            profile["unlocks"] = []
+            # 汪精衛復出這類卡片對單位生產成本的固定加減，單位是現金。
+            profile["recruit_cost_adjustment"] = {}
+            profile["notifications"] = []
             profile["debt"] = 0
             return profile
 
@@ -225,6 +256,12 @@ class GameEngine:
             "city_owners": {city["id"]: city["faction"] for city in cities},
             "city_development": {},
             "city_output_effects": [],
+            # 崩鐵玩家癱瘓中的鐵路。
+            "railway_effects": [],
+            # 組建親衛隊：general_id -> 一支永久親衛隊。全場每人只能有一支。
+            "body_guards": {},
+            # 每次暗殺的結果，成敗都留紀錄。
+            "assassination_log": [],
             "npc_accounts": {
                 code: {
                     "treasury": 60,
@@ -294,6 +331,7 @@ class GameEngine:
         *,
         force: bool = False,
         riot_garrisons: Optional[Dict[str, bool]] = None,
+        city_garrisons: Optional[Dict[str, int]] = None,
     ) -> Dict[str, Any]:
         if active_player is not None:
             self._player(active_player)
@@ -314,6 +352,7 @@ class GameEngine:
         self.state["turn"] += 1
         self.state["last_event"] = None
         self._update_qing_gang_riots(riot_garrisons or {})
+        self._update_red_army_uprisings(city_garrisons or {})
         economy_log = self._apply_turn_economy()
         self._tick_timed_effects()
         for player, payload in self.state["players"].items():
@@ -353,7 +392,9 @@ class GameEngine:
                     called_in.extend(loan["id"] for loan in LOANS.call_in_bank(loans, bank["id"]))
 
             # 3.5 — anything past its due turn stops being the player's choice.
-            LOANS.mark_overdue(loans, turn)
+            newly_overdue = LOANS.mark_overdue(loans, turn)
+            # 專案貸款逾期會另外觸發列強的接管條款，與下面的強制扣款疊加。
+            triggered = self._trigger_loan_penalties(player, newly_overdue)
 
             gross_income = int(payload.get("income", 0))
             seized_cash = 0
@@ -370,9 +411,12 @@ class GameEngine:
                     result = LOANS.repay(loans, min(gross_income, remaining), overdue_only=True)
                     seized_income = result["paid"]
 
-            net_income = gross_income - seized_income
+            # 列強接管的產出在強制扣款之後才拿走，兩者互不抵銷。
+            penalty_cash, penalty_factory, penalty_entries = self._apply_loan_penalties(player)
+            net_income = max(0, gross_income - seized_income - penalty_cash)
+            net_factory = max(0, int(payload.get("factory_income", 0)) - penalty_factory)
             payload["treasury"] += net_income
-            payload["factory_points"] += int(payload.get("factory_income", 0))
+            payload["factory_points"] += net_factory
             payload["debt"] = LOANS.total_outstanding(loans)
             service = {
                 "gross_income": gross_income,
@@ -385,23 +429,47 @@ class GameEngine:
                 "debt_after": payload["debt"],
                 "overdue": LOANS.overdue_outstanding(loans),
                 "called_in": called_in,
+                "penalties_triggered": triggered,
+                "penalty_cash": penalty_cash,
+                "penalty_factory": penalty_factory,
+                "penalties": penalty_entries,
                 "cash_effects": [],
             }
             payload["last_debt_service"] = service
             log[player] = deepcopy(service)
 
-        for player, bonus in self._treaty_port_bonuses().items():
+        for player, bonus in self._concession_bonuses().items():
             payload = self.state["players"][player]
             payload["treasury"] += bonus["cash"]
             payload["factory_points"] += bonus["factory"]
             entry = {
-                "name": "租界與港口加成",
+                "name": "租界加成",
                 "amount": bonus["cash"],
                 "factory": bonus["factory"],
                 "cities": bonus["cities"],
             }
             payload["last_debt_service"].setdefault("cash_effects", []).append(entry)
             log[player].setdefault("cash_effects", []).append(entry)
+
+        # 上海灘宋貴人：與租界同一個三回合週期，前提是上海還在手上。
+        if is_settlement_turn(turn):
+            for code, payload in self.state["players"].items():
+                patronage = payload.get("soong_patronage")
+                if not patronage:
+                    continue
+                city_id = str(patronage.get("city_id", "shanghai"))
+                if self.state["city_owners"].get(city_id) != code:
+                    continue
+                payload["treasury"] += int(patronage.get("cash", 0))
+                payload["factory_points"] += int(patronage.get("factory", 0))
+                entry = {
+                    "name": "上海宋家支持",
+                    "amount": int(patronage.get("cash", 0)),
+                    "factory": int(patronage.get("factory", 0)),
+                    "cities": [self._city_name(city_id)],
+                }
+                payload["last_debt_service"].setdefault("cash_effects", []).append(entry)
+                log[code].setdefault("cash_effects", []).append(entry)
 
         for reward in self._qing_gang_riot_rewards():
             initiator = reward["initiator"]
@@ -448,9 +516,11 @@ class GameEngine:
                     effect["remaining_turns"] = remaining
                     active_effects.append(effect)
             payload["timed_effects"] = active_effects
+        self._tick_railway_effects()
         active_city_effects = []
         for effect in self.state.get("city_output_effects", []):
-            if effect.get("kind") == "qing_gang_riot":
+            # 這兩種暴動沒有回合上限，解除條件是駐軍而不是時間。
+            if effect.get("kind") in ("qing_gang_riot", "red_army_uprising"):
                 active_city_effects.append(effect)
                 continue
             remaining = int(effect.get("remaining_turns", 0)) - 1
@@ -474,8 +544,8 @@ class GameEngine:
             city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["faction"])
         return strategic_map
 
-    def _treaty_port_bonuses(self) -> Dict[str, Dict[str, Any]]:
-        """租界與港口加成，結算週期見 economy/output.py。"""
+    def _concession_bonuses(self) -> Dict[str, Dict[str, Any]]:
+        """租界加成，結算週期見 economy/output.py。港口無經濟效果。"""
         if not is_settlement_turn(int(self.state["turn"])):
             return {}
         bonuses: Dict[str, Dict[str, Any]] = {}
@@ -648,6 +718,7 @@ class GameEngine:
         target_owner: Optional[str] = None,
         target_city_id: Optional[str] = None,
         target_province: Optional[str] = None,
+        target_railway: Optional[str] = None,
     ) -> Dict[str, Any]:
         player_state = self._player(player)
         if card_id not in player_state["hand"]:
@@ -673,6 +744,11 @@ class GameEngine:
         timed_effect: Optional[Dict[str, Any]] = None
         recurring_effect: Optional[Dict[str, Any]] = None
         city_disruption: Optional[Dict[str, Any]] = None
+        railway_effect: Optional[Dict[str, Any]] = None
+        unlock_effect: Optional[Dict[str, Any]] = None
+        assassination: Optional[Dict[str, Any]] = None
+        body_guard: Optional[Dict[str, Any]] = None
+        loan_effect: Optional[Dict[str, Any]] = None
         if mechanic == "loyalty":
             if not target_general_id or not target_owner:
                 raise ValueError("a target general is required")
@@ -757,8 +833,18 @@ class GameEngine:
                     owners = [item for item in DEFAULT_PLAYERS if item != player]
                 elif owners == "self":
                     owners = [player]
+                elif owners == "pro_soviet":
+                    owners = self._pro_soviet_players()
                 for owner in owners or []:
                     loyalty_swings.append({"owner": str(owner), "amount": int(swing.get("amount", 0))})
+        elif mechanic == "cash_per_province":
+            provinces = list(card.get("provinces", []))
+            per_province = int(card.get("cash_per_province", 0))
+            owned = self._controlled_provinces(player, provinces)
+            if not owned:
+                raise ValueError(f"需控制 {'、'.join(provinces)} 其中至少一省才可使用")
+            cash_delta = per_province * len(owned)
+            player_state["treasury"] += cash_delta
         elif mechanic == "cash_gain":
             cash_delta = int(card.get("cash", 0))
             player_state["treasury"] += cash_delta
@@ -775,6 +861,94 @@ class GameEngine:
                 owner = self.state["city_owners"].get(city["id"], city["faction"])
                 if owner != player or city.get("province") not in provinces:
                     continue
+                bonus = self.state.setdefault("city_development", {}).setdefault(city["id"], {"cash": 0, "factory": 0})
+                bonus["cash"] += cash
+                bonus["factory"] += factory
+                city_developments.append({"city_id": city["id"], "cash": cash, "factory": factory})
+            self._refresh_city_income()
+            city_development = city_developments[0] if city_developments else None
+        elif mechanic == "soong_patronage":
+            # 上海灘宋貴人：持久狀態，結算回合加給，並擋下杜月笙的豪賭。
+            patronage = player_state.get("soong_patronage")
+            if patronage:
+                raise ValueError("宋家支持已經生效，不能重複使用")
+            player_state["soong_patronage"] = {
+                "city_id": str(card.get("city_id", "shanghai")),
+                "cash": int(card.get("cash", 0)),
+                "factory": int(card.get("factory", 0)),
+                "immune_cards": list(card.get("immune_cards") or []),
+                "since_turn": int(self.state["turn"]),
+            }
+            unlock_effect = {"owner": player, "name": card.get("name", card_id), "kind": "soong_patronage"}
+        elif mechanic == "central_bank":
+            # 孔祥熙從政：只影響之後新借的每一筆。
+            if player_state.get("loan_interest_override") is not None:
+                raise ValueError("中央銀行已經成立，不能重複使用")
+            player_state["loan_interest_override"] = float(card.get("loan_interest_override", 0.02))
+            player_state["loan_term_bonus"] = int(player_state.get("loan_term_bonus", 0)) + int(card.get("loan_term_bonus", 0))
+            unlock_effect = {
+                "owner": player,
+                "name": card.get("name", card_id),
+                "kind": "central_bank",
+                "interest_per_turn": player_state["loan_interest_override"],
+                "loan_term_bonus": player_state["loan_term_bonus"],
+            }
+        elif mechanic == "ideology_shield":
+            # 自由中國教育家：10 回合免疫，並取消本回合已經落在自己頭上的那兩張牌。
+            timed_effect = {
+                "id": card_id,
+                "name": card.get("name", card_id),
+                "kind": "ideology_shield",
+                "remaining_turns": int(card.get("duration_turns", 10)),
+                "owners": [player],
+                "shields_cards": list(card.get("shields_cards") or []),
+            }
+            player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
+            cancelled = self._cancel_same_turn_disruptions(player, timed_effect["shields_cards"])
+            timed_effect["cancelled_effects"] = cancelled
+        elif mechanic == "ideology_counter":
+            # 北京大學共運：把場上生效中的自由中國教育家全部打掉。
+            kind = str(card.get("cancels_effect_kind", "ideology_shield"))
+            cleared = []
+            for code, other in self.state["players"].items():
+                keep = []
+                for effect in other.get("timed_effects", []):
+                    if effect.get("kind") == kind and int(effect.get("remaining_turns", 0)) > 0:
+                        cleared.append(code)
+                        continue
+                    keep.append(effect)
+                other["timed_effects"] = keep
+            if not cleared:
+                raise ValueError("場上沒有生效中的「自由中國教育家」可以壓制")
+            for code in set(cleared):
+                self._notify(code, f"{card.get('name', card_id)}：你的自由中國教育家效果被壓制失效。")
+            unlock_effect = {"owner": player, "name": card.get("name", card_id), "kind": "ideology_counter", "cleared": cleared}
+        elif mechanic in ("project_loan", "warlord_bond"):
+            # 專案貸款：卡片自帶利率與到期日，不佔用該行授信額度。
+            cash_delta = int(card.get("cash", 0))
+            debt_delta = int(card.get("debt", 0))
+            loan = self._record_card_loan(player, card, debt_delta)
+            player_state["treasury"] += cash_delta
+            if mechanic == "warlord_bond":
+                # 發行公債後信用受損，之後向列強銀行借款只有一定成功率。
+                rate = float(card.get("bank_success_rate", 0.75))
+                current = player_state.get("bank_success_rate")
+                player_state["bank_success_rate"] = rate if current is None else min(float(current), rate)
+            loan_effect = {
+                "owner": player,
+                "loan_id": loan["id"] if loan else None,
+                "cash": cash_delta,
+                "debt": debt_delta,
+                "interest_per_turn": loan["interest_per_turn"] if loan else None,
+                "due_turn": loan["due_turn"] if loan else None,
+                "bank_success_rate": player_state.get("bank_success_rate"),
+            }
+        elif mechanic == "concession_city_development":
+            # 怡和洋行／美商投資：加成落在「你控制的、掛該國租界」的城市上。
+            power = str(card.get("concession_power", ""))
+            cash = int(card.get("cash", 0))
+            factory = int(card.get("factory", 0))
+            for city in self._concession_cities(player, power):
                 bonus = self.state.setdefault("city_development", {}).setdefault(city["id"], {"cash": 0, "factory": 0})
                 bonus["cash"] += cash
                 bonus["factory"] += factory
@@ -805,12 +979,26 @@ class GameEngine:
             power = str(card.get("foreign_power_key", ""))
             if power not in player_state.get("foreign_relations", {}):
                 raise ValueError("unknown foreign power relation")
-            amount = int(card.get("relation_delta", 0))
+            # 交涉不一定談得成；失敗就是白費一張牌，關係不動。
+            success_rate = float(card.get("success_rate", 1.0))
+            roll = self.random.random()
+            negotiation_succeeded = roll < success_rate
             before = int(player_state["foreign_relations"].get(power, 0))
-            after = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX, before + amount))
-            player_state["foreign_relations"][power] = after
-            foreign_relation_delta = {"power": power, "before": before, "after": after, "amount": after - before}
-            self._sync_foreign_deck_cards(player)
+            after = before
+            if negotiation_succeeded:
+                amount = int(card.get("relation_delta", 0))
+                after = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX, before + amount))
+                player_state["foreign_relations"][power] = after
+                self._sync_foreign_deck_cards(player)
+            foreign_relation_delta = {
+                "power": power,
+                "before": before,
+                "after": after,
+                "amount": after - before,
+                "success": negotiation_succeeded,
+                "chance": success_rate,
+                "roll": roll,
+            }
         elif mechanic == "rail_movement":
             timed_effect = {
                 "id": card_id,
@@ -858,12 +1046,15 @@ class GameEngine:
         elif mechanic == "communist_riot":
             if not target_owner or target_owner == player or target_owner not in self.state["players"]:
                 raise ValueError("communist riot must target another playable faction")
+            self._require_no_ideology_shield(target_owner, card_id)
             target_cities = list(self._player(target_owner).get("city_economy", []))
             if not target_cities:
                 raise ValueError("target faction has no cities to disrupt")
             selected = self.random.sample(target_cities, k=min(2, len(target_cities)))
             city_disruption = {
                 "id": card_id,
+                "card_id": card_id,
+                "created_turn": int(self.state["turn"]),
                 "name": card.get("name", card_id),
                 "target_owner": target_owner,
                 "remaining_turns": int(card.get("duration_turns", 3)),
@@ -880,6 +1071,12 @@ class GameEngine:
             province = str(target_province or "").strip()
             if not province:
                 raise ValueError("qing gang riot requires a target province")
+            allowed_provinces = card.get("provinces")
+            if allowed_provinces and province not in allowed_provinces:
+                raise ValueError(f"{card.get('name', card_id)}只能指定 {'、'.join(allowed_provinces)}")
+            patronage = self._player(target_owner).get("soong_patronage")
+            if patronage and card_id in (patronage.get("immune_cards") or []):
+                raise ValueError(f"{target_owner} 有上海宋家撐腰，{card.get('name', card_id)}對其無效")
             target_cities = [
                 city
                 for city in self.data["strategic_map"]["cities"]
@@ -907,10 +1104,146 @@ class GameEngine:
             }
             self.state.setdefault("city_output_effects", []).append(deepcopy(city_disruption))
             self._refresh_city_income()
+        elif mechanic == "red_army_uprising":
+            # 紅軍起義：兩座隨機城市產出歸零，無期限，直到目標自己派一個旅（5 營）進駐。
+            if not target_owner or target_owner == player or target_owner not in self.state["players"]:
+                raise ValueError("red army uprising must target another playable faction")
+            self._require_no_ideology_shield(target_owner, card_id)
+            target_cities = list(self._player(target_owner).get("city_economy", []))
+            if not target_cities:
+                raise ValueError("target faction has no cities to disrupt")
+            count = int(card.get("target_city_count", 2))
+            selected = self.random.sample(target_cities, k=min(count, len(target_cities)))
+            required = int(card.get("required_battalions", 5))
+            city_disruption = {
+                "id": f"{card_id}:{self.state['turn']}:{player}:{target_owner}",
+                "card_id": card_id,
+                "created_turn": int(self.state["turn"]),
+                "kind": "red_army_uprising",
+                "name": card.get("name", card_id),
+                "initiator": player,
+                "target_owner": target_owner,
+                "city_ids": [city["id"] for city in selected],
+                "cities": [{"id": city["id"], "name": city["name"]} for city in selected],
+                "cash_multiplier": 0,
+                "factory_multiplier": 0,
+                "required_battalions": required,
+            }
+            self.state.setdefault("city_output_effects", []).append(deepcopy(city_disruption))
+            self._refresh_city_income()
+            self._notify(
+                target_owner,
+                f"{card.get('name', card_id)}：{'、'.join(city['name'] for city in selected)} 產出歸零，"
+                f"每城需駐紮至少 {required} 營才能恢復。",
+            )
+        elif mechanic == "railway_sabotage":
+            # 崩鐵玩家：一條鐵路停運，沿線部隊每回合只能走 1 格。
+            railway = str(target_railway or "").strip()
+            allowed = card.get("railways") or []
+            if not railway:
+                raise ValueError("崩鐵玩家需要指定一條鐵路")
+            if allowed and railway not in allowed:
+                raise ValueError(f"{card.get('name', card_id)}只能指定 {'、'.join(allowed)}")
+            known = {line["name"] for line in self.data["strategic_map"].get("railroads", [])}
+            if railway not in known:
+                raise ValueError(f"地圖上沒有 {railway}")
+            if any(effect.get("railway") == railway for effect in self.state.get("railway_effects", [])):
+                raise ValueError(f"{railway}已經在搶修中")
+            railway_effect = {
+                "id": f"{card_id}:{self.state['turn']}:{player}:{railway}",
+                "card_id": card_id,
+                "name": card.get("name", card_id),
+                "railway": railway,
+                "initiator": player,
+                "remaining_turns": int(card.get("duration_turns", 3)),
+                "move_limit_tiles": int(card.get("move_limit_tiles", 1)),
+            }
+            self.state.setdefault("railway_effects", []).append(deepcopy(railway_effect))
+            for code in self.state["players"]:
+                if code == player:
+                    continue
+                self._notify(code, f"{railway}遭破壞停運，搶修 {railway_effect['remaining_turns']} 回合。")
+        elif mechanic == "faction_unlock":
+            # 汪精衛復出：持久狀態，解鎖卡片並改變生產。
+            unlock_key = str(card.get("unlock_key") or card_id)
+            unlocks = player_state.setdefault("unlocks", [])
+            if unlock_key in unlocks:
+                raise ValueError(f"「{card.get('name', card_id)}」已經生效，不能重複使用")
+            unlocks.append(unlock_key)
+            per_province = int(card.get("cash_per_province", 0))
+            if per_province:
+                owned = self._controlled_provinces(player, card.get("provinces", []))
+                cash_delta = per_province * len(owned)
+                player_state["treasury"] += cash_delta
+            cash = int(card.get("cash", 0))
+            factory = int(card.get("factory", 0))
+            if cash or factory:
+                bonus = player_state.setdefault("permanent_output_bonus", {"cash": 0, "factory": 0})
+                bonus["cash"] = int(bonus.get("cash", 0)) + cash
+                bonus["factory"] = int(bonus.get("factory", 0)) + factory
+                self._refresh_city_income()
+                permanent_output_delta = {"owner": player, "cash": cash, "factory": factory}
+            adjustments = player_state.setdefault("recruit_cost_adjustment", {})
+            for unit_type, delta in (card.get("recruit_cost_adjustment") or {}).items():
+                entry = adjustments.setdefault(str(unit_type), {"cash": 0, "factory": 0})
+                entry["cash"] = int(entry.get("cash", 0)) + int(delta.get("cash", 0))
+                entry["factory"] = int(entry.get("factory", 0)) + int(delta.get("factory", 0))
+            unlocked_cards = []
+            for entry in card.get("unlocks_cards", []):
+                unlocked_id = str(entry["id"])
+                copies = int(entry.get("copies", 1))
+                if not self._card_allowed_for_player(unlocked_id, player):
+                    continue
+                already = self._card_count_in_player_zones(player_state, unlocked_id)
+                missing = max(0, copies - already)
+                if missing:
+                    player_state["function_deck"].extend([unlocked_id] * missing)
+                    self.random.shuffle(player_state["function_deck"])
+                unlocked_cards.append({"id": unlocked_id, "copies": missing})
+            unlock_effect = {
+                "owner": player,
+                "unlock": unlock_key,
+                "name": card.get("name", card_id),
+                "cash": cash,
+                "factory": factory,
+                "recruit_cost_adjustment": deepcopy(card.get("recruit_cost_adjustment") or {}),
+                "unlocked_cards": unlocked_cards,
+            }
+        elif mechanic == "assassination":
+            # 王亞樵來投：一次性擲骰。引擎不持有將領資料（將領樹是唯讀檔案），
+            # 目標由前端指定，這裡的職責是算成功率、擲骰、記錄結果。
+            if not target_general_id:
+                raise ValueError("暗殺需要指定目標人物")
+            if not target_owner:
+                raise ValueError("暗殺需要指定目標所屬勢力")
+            if target_owner == player:
+                raise ValueError("不能暗殺自己陣營的人物")
+            assassination = self._resolve_assassination(player, card, target_general_id, target_owner)
+        elif mechanic == "body_guard":
+            # 組建親衛隊：下一回合起生效，之後永久有效，每人限一支。
+            if not target_general_id:
+                raise ValueError("組建親衛隊需要指定人物")
+            if target_owner and target_owner != player:
+                raise ValueError("親衛隊只能指派給自己陣營的人物")
+            guards = self.state.setdefault("body_guards", {})
+            if target_general_id in guards:
+                raise ValueError("該人物全場只能編成一支親衛隊，不能重複指派")
+            body_guard = {
+                "general_id": target_general_id,
+                "owner": player,
+                "reduction": float(card.get("assassination_reduction", 0.05)),
+                "assigned_turn": int(self.state["turn"]),
+                # 同一回合內已經發生的暗殺不受保護，所以從下一回合才算數。
+                "active_from_turn": int(self.state["turn"]) + 1,
+            }
+            guards[target_general_id] = deepcopy(body_guard)
         elif mechanic == "no_effect":
             pass
         else:
             raise ValueError("this function card is not implemented in the playtest rules")
+        # 卡片的外交副作用：反共類卡對蘇 -2 對英日 +1、紅軍起義得罪四國，諸如此類。
+        # 這一段跑在機制之後，所以機制自己丟出的錯誤會擋掉副作用。
+        relation_side_effects = self._apply_relation_effects(player, card)
         if card.get("loyalty_delta_all") is not None and loyalty_delta_all is None:
             loyalty_delta_all = {
                 "owner": player,
@@ -940,6 +1273,12 @@ class GameEngine:
             "timed_effect": timed_effect,
             "recurring_effect": recurring_effect,
             "city_disruption": city_disruption,
+            "railway_effect": railway_effect,
+            "unlock_effect": unlock_effect,
+            "assassination": assassination,
+            "body_guard": body_guard,
+            "loan_effect": loan_effect,
+            "relation_side_effects": relation_side_effects,
         }
         injected = []
         for generated in card.get("generated_event_cards", []):
@@ -970,6 +1309,12 @@ class GameEngine:
             "timed_effect": timed_effect,
             "recurring_effect": recurring_effect,
             "city_disruption": city_disruption,
+            "railway_effect": railway_effect,
+            "unlock_effect": unlock_effect,
+            "assassination": assassination,
+            "body_guard": body_guard,
+            "loan_effect": loan_effect,
+            "relation_side_effects": relation_side_effects,
             "state": self.snapshot(),
         }
 
@@ -1098,6 +1443,20 @@ class GameEngine:
         }
         return {"deal": proposal, "state": self.snapshot()}
 
+    def _unit_cost_for(self, player: str, unit_type: str) -> tuple[int, int]:
+        """One unit's cost for this player: faction rate first, then card adjustments.
+
+        A card adjustment (汪精衛復出 gives infantry -1 cash) is a flat figure applied
+        after the faction's percentage, and can never drive a cost below 1.
+        """
+        player_state = self._player(player)
+        base = RECRUIT_COSTS[unit_type]
+        adjustment = player_state.get("recruit_cost_adjustment", {}).get(unit_type, {})
+        cash = math.ceil(base["cash"] * player_state.get("recruitment_cost_modifier", 1))
+        cash = max(1, cash + int(adjustment.get("cash", 0)))
+        factory = max(0, int(base["factory"]) + int(adjustment.get("factory", 0)))
+        return cash, factory
+
     def train_unit(self, player: str, unit_type: str, count: int = 1) -> Dict[str, Any]:
         player_state = self._player(player)
         if unit_type not in RECRUIT_COSTS:
@@ -1105,9 +1464,9 @@ class GameEngine:
         count = int(count)
         if count < 1:
             raise ValueError("recruit count must be positive")
-        cost = RECRUIT_COSTS[unit_type]
-        cash_cost = math.ceil(cost["cash"] * player_state.get("recruitment_cost_modifier", 1)) * count
-        factory_cost = cost["factory"] * count
+        unit_cash, unit_factory = self._unit_cost_for(player, unit_type)
+        cash_cost = unit_cash * count
+        factory_cost = unit_factory * count
         if player_state["treasury"] < cash_cost:
             raise ValueError("insufficient treasury")
         if player_state["factory_points"] < factory_cost:
@@ -1178,20 +1537,32 @@ class GameEngine:
         relations = payload.get("foreign_relations", {})
         terms = LOANS.terms_for_bank(bank_id, relations) or LOANS.terms_for_bank("deutsch_asiatische", {})
         turn = int(self.state["turn"])
+        # 專案貸款自帶利率與期限，蓋過該行的常規條件。
+        interest = float(card.get("interest_per_turn", terms["interest_per_turn"]))
+        term_turns = int(card.get("term_turns", terms["term_turns"])) + int(payload.get("loan_term_bonus", 0))
         loan = {
             "id": f"L{self._next_loan_id(player)}",
             "bank": bank_id,
             "bank_name": LOANS.banks[bank_id]["name"],
             "principal": amount,
             "outstanding": amount,
-            "interest_per_turn": terms["interest_per_turn"],
-            "term_turns": terms["term_turns"],
+            "interest_per_turn": interest,
+            "term_turns": term_turns,
             "tier": terms["tier"],
             "taken_turn": turn,
-            "due_turn": turn + terms["term_turns"],
+            "due_turn": turn + term_turns,
             "overdue": False,
             "source": f"card:{card.get('id')}",
         }
+        if card.get("off_quota"):
+            loan["off_quota"] = True
+        if card.get("default_penalty"):
+            penalty = deepcopy(card["default_penalty"])
+            penalty["card_name"] = card.get("name", card.get("id"))
+            loan["default_penalty"] = penalty
+        override = payload.get("loan_interest_override")
+        if override is not None:
+            loan["interest_per_turn"] = float(override)
         loans.append(loan)
         payload["debt"] = LOANS.total_outstanding(loans)
         return loan
@@ -1218,6 +1589,7 @@ class GameEngine:
         for loan in payload.get("loans", []):
             rows.append({
                 **deepcopy(loan),
+                "bank_power": LOANS.banks.get(loan["bank"], {}).get("power"),
                 "turns_remaining": int(loan["due_turn"]) - turn,
             })
         return rows
@@ -1228,6 +1600,12 @@ class GameEngine:
         relations = payload.get("foreign_relations", {})
         # Validate before consuming an id so a rejected request leaves no gap.
         LOANS.borrow(list(loans), str(bank_id), int(amount), relations, int(self.state["turn"]), 0)
+        # 軍閥公債的後遺症：申貸有機率被拒。擲骰在驗證之後，才不會白白拒絕一筆
+        # 本來就不合格的申請。
+        success_rate = payload.get("bank_success_rate")
+        if success_rate is not None and self.random.random() >= float(success_rate):
+            bank_name = LOANS.banks[str(bank_id)]["name"]
+            raise ValueError(f"{bank_name}以信用不良為由拒絕本次貸款（成功率 {int(float(success_rate) * 100)}%）")
         loan = LOANS.borrow(
             loans,
             str(bank_id),
@@ -1236,6 +1614,7 @@ class GameEngine:
             int(self.state["turn"]),
             self._next_loan_id(player),
         )
+        self._apply_loan_policy(player, loan)
         payload["treasury"] = int(payload.get("treasury", 0)) + int(loan["principal"])
         payload["debt"] = LOANS.total_outstanding(loans)
         self.state["last_action"] = {
@@ -1317,11 +1696,254 @@ class GameEngine:
         self.state["city_output_effects"] = active_effects
         self._refresh_city_income()
 
+    def _apply_relation_effects(self, player: str, card: Dict[str, Any]) -> list:
+        """卡片在自身機制之外造成的外交後果。
+
+        反共類卡對蘇 −2、對英日各 +1；紅軍起義得罪英日美法。這一段跑在機制之後，
+        所以機制自己丟出的錯誤會連帶擋掉外交後果。
+        """
+        effects = card.get("relation_effects") or {}
+        if not effects:
+            return []
+        relations = self._player(player).setdefault("foreign_relations", {})
+        changes = []
+        for power, amount in effects.items():
+            power = str(power)
+            if power not in relations:
+                continue
+            before = int(relations[power])
+            after = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX, before + int(amount)))
+            relations[power] = after
+            changes.append({"power": power, "before": before, "after": after, "amount": after - before})
+        if changes:
+            # 關係一動，友好卡與譴責卡的進出也要跟著重算。
+            self._sync_foreign_deck_cards(player)
+        return changes
+
+    # ---- 自由中國教育家的免疫 --------------------------------------------
+
+    def _ideology_shield(self, player: str, card_id: str) -> Optional[Dict[str, Any]]:
+        for effect in self._player(player).get("timed_effects", []):
+            if effect.get("kind") != "ideology_shield" or int(effect.get("remaining_turns", 0)) <= 0:
+                continue
+            if card_id in (effect.get("shields_cards") or []):
+                return effect
+        return None
+
+    def _require_no_ideology_shield(self, target_owner: str, card_id: str) -> None:
+        shield = self._ideology_shield(target_owner, card_id)
+        if shield:
+            raise ValueError(
+                f"{target_owner} 有「{shield.get('name', '自由中國教育家')}」護持"
+                f"（剩餘 {shield['remaining_turns']} 回合），本牌對其無效"
+            )
+
+    def _cancel_same_turn_disruptions(self, player: str, card_ids: Iterable[str]) -> list:
+        """同回合已經打在自己頭上的紅軍起義／共黨暴動立即失效。"""
+        wanted = set(card_ids)
+        turn = int(self.state["turn"])
+        cancelled = []
+        keep = []
+        for effect in self.state.get("city_output_effects", []):
+            same_target = effect.get("target_owner") == player
+            same_turn = int(effect.get("created_turn", -1)) == turn
+            if same_target and same_turn and str(effect.get("card_id") or effect.get("id")) in wanted:
+                cancelled.append(effect.get("name", effect.get("id")))
+                continue
+            keep.append(effect)
+        if cancelled:
+            self.state["city_output_effects"] = keep
+            self._refresh_city_income()
+        return cancelled
+
+    def _apply_loan_policy(self, player: str, loan: Dict[str, Any]) -> Dict[str, Any]:
+        """孔祥熙從政的中央銀行政策，只套用在之後新借的每一筆上。"""
+        payload = self._player(player)
+        override = payload.get("loan_interest_override")
+        if override is not None:
+            loan["interest_per_turn"] = float(override)
+        bonus = int(payload.get("loan_term_bonus", 0))
+        if bonus:
+            loan["term_turns"] = int(loan["term_turns"]) + bonus
+            loan["due_turn"] = int(loan["due_turn"]) + bonus
+        return loan
+
+    # ---- 專案貸款違約條款 ------------------------------------------------
+
+    def _trigger_loan_penalties(self, player: str, newly_overdue: list) -> list:
+        """A project loan that just went overdue hands its clause to the power."""
+        payload = self._player(player)
+        active = payload.setdefault("loan_penalties", [])
+        started = []
+        for loan in newly_overdue:
+            clause = loan.get("default_penalty")
+            if not clause or any(entry["loan_id"] == loan["id"] for entry in active):
+                continue
+            entry = deepcopy(clause)
+            entry["loan_id"] = loan["id"]
+            entry["started_turn"] = int(self.state["turn"])
+            entry["remaining_turns"] = clause.get("duration_turns")
+            active.append(entry)
+            started.append(entry["loan_id"])
+            self._notify(player, f"{clause.get('label', '貸款違約條款')} 生效。")
+        return started
+
+    def _penalty_targets(self, player: str, clause: Dict[str, Any]) -> list:
+        """The cities a clause bites into, chosen by current output."""
+        economy = self._city_economy_for(player)
+        if clause.get("scope") == "provinces":
+            by_province: Dict[str, list] = {}
+            for city in economy:
+                by_province.setdefault(city["province"], []).append(city)
+            ranked = sorted(
+                by_province.items(),
+                key=lambda item: (-sum(c["cash"] + c["factory"] for c in item[1]), item[0]),
+            )
+            return [city for _, cities in ranked[: int(clause.get("count", 1))] for city in cities]
+        ranked = sorted(economy, key=lambda city: (-(city["cash"] + city["factory"]), city["id"]))
+        return ranked[: int(clause.get("count", 1))]
+
+    def _apply_loan_penalties(self, player: str) -> tuple:
+        """This turn's seizure. Returns (cash, factory, log entries)."""
+        payload = self._player(player)
+        active = payload.setdefault("loan_penalties", [])
+        share_default = 1.0
+        total_cash = 0
+        total_factory = 0
+        entries = []
+        remaining = []
+        for clause in active:
+            turns_left = clause.get("remaining_turns")
+            if turns_left is not None and int(turns_left) <= 0:
+                continue
+            share = float(clause.get("share", share_default))
+            take = set(clause.get("take") or ["cash", "factory"])
+            targets = self._penalty_targets(player, clause)
+            cash = int(round(sum(city["cash"] for city in targets) * share)) if "cash" in take else 0
+            factory = int(round(sum(city["factory"] for city in targets) * share)) if "factory" in take else 0
+            total_cash += cash
+            total_factory += factory
+            entries.append({
+                "loan_id": clause.get("loan_id"),
+                "name": clause.get("label", clause.get("card_name", "違約條款")),
+                "power": clause.get("power"),
+                "cities": [city["name"] for city in targets],
+                "cash": cash,
+                "factory": factory,
+                "remaining_turns": turns_left,
+            })
+            if turns_left is not None:
+                clause["remaining_turns"] = int(turns_left) - 1
+                if clause["remaining_turns"] <= 0:
+                    continue
+            remaining.append(clause)
+        payload["loan_penalties"] = remaining
+        return total_cash, total_factory, entries
+
+    def active_body_guard(self, general_id: str) -> Optional[Dict[str, Any]]:
+        """A guard only shields from the turn after it was raised."""
+        guard = self.state.get("body_guards", {}).get(general_id)
+        if not guard:
+            return None
+        if int(self.state["turn"]) < int(guard.get("active_from_turn", 0)):
+            return None
+        return guard
+
+    def _resolve_assassination(
+        self,
+        player: str,
+        card: Dict[str, Any],
+        target_general_id: str,
+        target_owner: str,
+    ) -> Dict[str, Any]:
+        """Roll once. The engine owns no general data, so the caller names the target.
+
+        Success is reported back; applying the death to the general tree is the
+        frontend's job, the same way loyalty deltas already work.
+        """
+        base = float(card.get("success_rate", 0.2))
+        guard = self.active_body_guard(target_general_id)
+        reduction = float(guard["reduction"]) if guard else 0.0
+        chance = max(0.0, base - reduction)
+        roll = self.random.random()
+        success = roll < chance
+        outcome = {
+            "card_id": card.get("id"),
+            "name": card.get("name", card.get("id")),
+            "turn": int(self.state["turn"]),
+            "initiator": player,
+            "target_general_id": target_general_id,
+            "target_owner": target_owner,
+            "base_chance": base,
+            "guard_reduction": reduction,
+            "chance": chance,
+            "roll": roll,
+            "success": success,
+        }
+        self.state.setdefault("assassination_log", []).append(deepcopy(outcome))
+        if target_owner in self.state["players"]:
+            self._notify(target_owner, "遭遇暗殺：得手，該人物身亡。" if success else "遭遇暗殺：未得手。")
+        return outcome
+
+    def _notify(self, player: str, text: str) -> None:
+        """A short message the affected faction sees on its own screen."""
+        payload = self.state["players"].get(player)
+        if payload is None:
+            return
+        payload.setdefault("notifications", []).append({
+            "turn": int(self.state["turn"]),
+            "text": text,
+        })
+
+    def _update_red_army_uprisings(self, city_garrisons: Dict[str, int]) -> None:
+        """紅軍起義沒有回合上限：目標每在一座城駐滿一個旅，該城就恢復產出。"""
+        active_effects = []
+        for effect in self.state.get("city_output_effects", []):
+            if effect.get("kind") != "red_army_uprising":
+                active_effects.append(effect)
+                continue
+            required = int(effect.get("required_battalions", 5))
+            freed = [
+                city
+                for city in effect.get("cities", [])
+                if int(city_garrisons.get(city["id"], 0)) >= required
+            ]
+            if freed:
+                freed_ids = {city["id"] for city in freed}
+                effect["cities"] = [city for city in effect.get("cities", []) if city["id"] not in freed_ids]
+                effect["city_ids"] = [item for item in effect.get("city_ids", []) if item not in freed_ids]
+                self._notify(
+                    str(effect.get("target_owner")),
+                    f"{effect.get('name', '紅軍起義')}："
+                    f"{'、'.join(city['name'] for city in freed)} 駐軍已達 {required} 營，產出恢復。",
+                )
+            if effect.get("city_ids"):
+                active_effects.append(effect)
+        self.state["city_output_effects"] = active_effects
+        self._refresh_city_income()
+
+    def _tick_railway_effects(self) -> None:
+        active = []
+        for effect in self.state.get("railway_effects", []):
+            remaining = int(effect.get("remaining_turns", 0)) - 1
+            if remaining > 0:
+                effect["remaining_turns"] = remaining
+                active.append(effect)
+        self.state["railway_effects"] = active
+
+    def disabled_railways(self) -> list:
+        """搶修中的鐵路名稱，前端據此關閉該線的鐵路運輸。"""
+        return [
+            str(effect.get("railway"))
+            for effect in self.state.get("railway_effects", [])
+            if int(effect.get("remaining_turns", 0)) > 0
+        ]
+
     def _adjusted_city_output(self, city_id: str, cash: int, factory: int) -> tuple[int, int]:
         adjusted_cash = int(cash)
         adjusted_factory = int(factory)
         for effect in self.state.get("city_output_effects", []):
-            if effect.get("kind") == "qing_gang_riot":
+            if effect.get("kind") in ("qing_gang_riot", "red_army_uprising"):
                 if city_id in effect.get("city_ids", []):
                     adjusted_cash = 0
                     adjusted_factory = 0
@@ -1353,15 +1975,20 @@ class GameEngine:
         if remaining > 0:
             self._remove_card_from_zone(payload.get("discard", []), card_id, remaining)
 
+    @staticmethod
+    def _perk_copies(card_id: str) -> int:
+        return FOREIGN_PERK_CARD_COPIES_BY_ID.get(card_id, FOREIGN_PERK_CARD_COPIES)
+
     def _sync_foreign_deck_cards(self, player: str) -> None:
         payload = self._player(player)
         card_ids = {card["id"] for card in self.data["function_cards"]["cards"]}
         relations = payload.get("foreign_relations", {})
         for power, cards in FOREIGN_PERK_CARDS.items():
-            desired = FOREIGN_PERK_CARD_COPIES if int(relations.get(power, 0)) > FOREIGN_FRIENDLY_THRESHOLD else 0
+            friendly = int(relations.get(power, 0)) >= FOREIGN_FRIENDLY_THRESHOLD
             for card_id in cards:
                 if card_id not in card_ids:
                     continue
+                desired = self._perk_copies(card_id) if friendly else 0
                 current = self._card_count_in_player_zones(payload, card_id)
                 if current < desired:
                     payload["function_deck"].extend([card_id] * (desired - current))
@@ -1371,7 +1998,7 @@ class GameEngine:
         for power, card_id in FOREIGN_CONDEMNATION_CARDS.items():
             if card_id not in card_ids:
                 continue
-            desired = FOREIGN_CONDEMNATION_COPIES if int(relations.get(power, 0)) < FOREIGN_HOSTILE_THRESHOLD else 0
+            desired = FOREIGN_CONDEMNATION_COPIES if int(relations.get(power, 0)) <= FOREIGN_HOSTILE_THRESHOLD else 0
             current = self._card_count_in_player_zones(payload, card_id)
             if current < desired:
                 payload["function_deck"].extend([card_id] * (desired - current))
@@ -1384,7 +2011,72 @@ class GameEngine:
         allowed = card.get("allowed_players")
         return not allowed or player in allowed
 
+    def _controlled_provinces(self, player: str, provinces: Iterable[str]) -> list:
+        """Provinces the player controls outright — every city in them is his.
+
+        This is the same bar the board uses for 宣告接管全省; holding one city in
+        a province is not control.
+        """
+        wanted = set(provinces)
+        cities_by_province: Dict[str, list] = {}
+        for city in self.data["strategic_map"]["cities"]:
+            province = city.get("province")
+            if province in wanted:
+                cities_by_province.setdefault(province, []).append(city)
+        owned = [
+            province
+            for province, cities in cities_by_province.items()
+            if all(self.state["city_owners"].get(city["id"], city["faction"]) == player for city in cities)
+        ]
+        return sorted(owned)
+
+    def _city_name(self, city_id: str) -> str:
+        city = next((item for item in self.data["strategic_map"]["cities"] if item["id"] == city_id), None)
+        return city["name"] if city else city_id
+
+    def _concession_cities(self, player: str, power: str) -> list:
+        """Cities the player holds that carry this power's concession."""
+        return [
+            city
+            for city in self.data["strategic_map"]["cities"]
+            if power in (city.get("concession") or [])
+            and self.state["city_owners"].get(city["id"], city["faction"]) == player
+        ]
+
+    def _pro_soviet_players(self) -> list:
+        """對蘇關係達友好門檻的勢力。"""
+        return [
+            code for code, payload in self.state["players"].items()
+            if int(payload.get("foreign_relations", {}).get("su", 0)) >= FOREIGN_FRIENDLY_THRESHOLD
+        ]
+
     def _validate_card_use(self, player: str, card: Dict[str, Any]) -> None:
+        unlock = card.get("requires_unlock")
+        if unlock and unlock not in self._player(player).get("unlocks", []):
+            raise ValueError(f"此牌需先觸發「{card.get('requires_unlock_name', unlock)}」才能使用")
+        required_provinces = card.get("requires_provinces")
+        if required_provinces:
+            owned = set(self._controlled_provinces(player, required_provinces))
+            missing = [name for name in required_provinces if name not in owned]
+            if missing:
+                raise ValueError(f"需完全控制 {'、'.join(required_provinces)} 才可使用（尚缺 {'、'.join(missing)}）")
+        required_cities = card.get("requires_cities")
+        if required_cities:
+            missing = [
+                self._city_name(city_id) for city_id in required_cities
+                if self.state["city_owners"].get(city_id) != player
+            ]
+            if missing:
+                raise ValueError(f"需控制 {'、'.join(missing)} 才可使用")
+        relation_max = card.get("requires_relation_max")
+        if relation_max:
+            power = str(relation_max["power"])
+            relation = int(self._player(player).get("foreign_relations", {}).get(power, 0))
+            if relation > int(relation_max["value"]):
+                raise ValueError(f"對{POWER_NAMES.get(power, power)}關係需在 {relation_max['value']} 以下才可使用")
+        concession_power = card.get("concession_power")
+        if concession_power and not self._concession_cities(player, concession_power):
+            raise ValueError(f"需控制至少一座{POWER_NAMES.get(concession_power, concession_power)}租界城市才可使用")
         allowed = card.get("allowed_players")
         if allowed and player not in allowed:
             raise ValueError("this card is not available to this faction")
@@ -1392,7 +2084,10 @@ class GameEngine:
         if power and card.get("requires_relation_min") is not None:
             relation = int(self._player(player).get("foreign_relations", {}).get(power, 0))
             if relation < int(card.get("requires_relation_min")):
-                raise ValueError("foreign relation is too low for this card")
+                raise ValueError(
+                    f"對{POWER_NAMES.get(power, power)}關係需達 {card.get('requires_relation_min')} 才可使用"
+                    f"（目前 {relation}）"
+                )
         for target in card.get("requires_peace_with", []):
             relation = self._player(player).get("warlord_relations", {}).get(target, {})
             if relation.get("status") == "war":

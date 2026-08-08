@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from economy import LoanBook, treaty_port_bonus, scaled_city_value, is_settlement_turn
+from economy import LoanBook, treaty_port_bonus, scaled_city_value, is_settlement_turn, is_river_port, city_level
 from economy.loans import TIER_BLOCKED, TIER_PREFERRED, TIER_STANDARD
 
 
@@ -164,26 +164,50 @@ class RepaymentTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
-    def test_concession_and_port_stack(self) -> None:
-        shanghai = {"concession": True, "port": "river_sea"}
-        self.assertEqual(treaty_port_bonus(shanghai), {"cash": 4, "factory": 1})
-
-    def test_plain_river_port(self) -> None:
-        self.assertEqual(treaty_port_bonus({"port": "river"}), {"cash": 1, "factory": 0})
-
-    def test_sea_port(self) -> None:
-        self.assertEqual(treaty_port_bonus({"port": "sea"}), {"cash": 2, "factory": 0})
-
-    def test_inland_city_gets_nothing(self) -> None:
+    def test_ports_pay_nothing(self) -> None:
+        """港口已無任何經濟加成。"""
+        self.assertEqual(treaty_port_bonus({"port": "river"}), {"cash": 0, "factory": 0})
         self.assertEqual(treaty_port_bonus({}), {"cash": 0, "factory": 0})
+
+    def test_concession_pays_regardless_of_port(self) -> None:
+        with_port = treaty_port_bonus({"concession": ["uk"], "port": "river"})
+        without_port = treaty_port_bonus({"concession": ["uk"]})
+        self.assertEqual(with_port, {"cash": 2, "factory": 2})
+        self.assertEqual(with_port, without_port)
+
+    def test_concession_powers_do_not_change_the_bonus(self) -> None:
+        one = treaty_port_bonus({"concession": ["uk"]})
+        four = treaty_port_bonus({"concession": ["uk", "us", "fr", "jp"]})
+        self.assertEqual(one, four)
+
+    def test_river_port_is_only_a_label(self) -> None:
+        self.assertTrue(is_river_port({"port": "river"}))
+        self.assertFalse(is_river_port({}))
+        self.assertFalse(is_river_port({"port": "sea"}))  # 海港分類已移除
 
     def test_settlement_turns(self) -> None:
         self.assertEqual([t for t in range(1, 10) if is_settlement_turn(t)], [3, 6, 9])
 
-    def test_scaling(self) -> None:
-        self.assertEqual(scaled_city_value({"cash": 12}, "cash"), 3)
-        self.assertEqual(scaled_city_value({"cash": 0}, "cash"), 0)
-        self.assertEqual(scaled_city_value({"factory": 1}, "factory"), 1)
+    def test_output_comes_from_level(self) -> None:
+        """1 級 cash 2 / factory 1，每升一級各 +1。"""
+        expected = {1: (2, 1), 2: (3, 2), 3: (4, 3), 4: (5, 4), 5: (6, 5)}
+        for level, (cash, factory) in expected.items():
+            city = {"level": level}
+            self.assertEqual(scaled_city_value(city, "cash"), cash, level)
+            self.assertEqual(scaled_city_value(city, "factory"), factory, level)
+
+    def test_level_is_clamped(self) -> None:
+        self.assertEqual(city_level({"level": 0}), 1)
+        self.assertEqual(city_level({"level": 9}), 5)
+        self.assertEqual(city_level({}), 1)
+        self.assertEqual(scaled_city_value({"level": 9}, "cash"), 6)
+
+    def test_raw_cash_field_is_ignored(self) -> None:
+        """產出只看等級，資料檔裡的 cash/factory 欄位不再參與計算。"""
+        self.assertEqual(
+            scaled_city_value({"level": 2, "cash": 14, "factory": 5}, "cash"),
+            scaled_city_value({"level": 2}, "cash"),
+        )
 
 
 if __name__ == "__main__":
