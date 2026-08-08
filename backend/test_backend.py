@@ -1,6 +1,6 @@
 import unittest
 
-from backend.card_engine import FOREIGN_FRIENDLY_THRESHOLD, GameEngine
+from backend.card_engine import FOREIGN_FRIENDLY_THRESHOLD, GameEngine, RECRUIT_COSTS
 from backend.combat_adapter import simulate
 from backend.data_store import load_game_data
 from economy import LoanBook
@@ -126,9 +126,17 @@ class BackendTests(unittest.TestCase):
         result = engine.train_unit("N", "artillery")
         updated = result["state"]["players"]["N"]
 
-        self.assertEqual(updated["treasury"], before[0] - 13)
-        self.assertEqual(updated["factory_points"], before[1] - 4)
+        self.assertEqual(updated["treasury"], before[0] - 15)
+        self.assertEqual(updated["factory_points"], before[1] - 5)
         self.assertEqual(updated["unit_reserves"]["artillery"], before[2] + 1)
+
+    def test_recruit_costs_are_raised_for_all_units(self):
+        self.assertEqual(RECRUIT_COSTS, {
+            "infantry": {"cash": 4, "factory": 2},
+            "cavalry": {"cash": 7, "factory": 2},
+            "machine_gun": {"cash": 10, "factory": 4},
+            "artillery": {"cash": 16, "factory": 5},
+        })
 
     def test_city_output_follows_level(self):
         """1 級 cash 1 / factory 1，每升一級各 +1，最高 5 級。

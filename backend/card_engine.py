@@ -30,10 +30,10 @@ FOREIGN_RELATION_MIN, FOREIGN_RELATION_MAX = relation_bounds()
 WARLORD_CODES = ("F", "W", "S", "N", "Y", "G", "M", "H", "C", "D", "Q")
 UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
 RECRUIT_COSTS = {
-    "infantry": {"cash": 3, "factory": 1},
-    "cavalry": {"cash": 6, "factory": 1},
-    "machine_gun": {"cash": 9, "factory": 3},
-    "artillery": {"cash": 14, "factory": 4},
+    "infantry": {"cash": 4, "factory": 2},
+    "cavalry": {"cash": 7, "factory": 2},
+    "machine_gun": {"cash": 10, "factory": 4},
+    "artillery": {"cash": 16, "factory": 5},
 }
 LOYALTY_FUNCTION_CARD_IDS = ("unit_promotion", "local_autonomy_agitation")
 ABSOLUTE_LOYAL_GENERAL_IDS = {
