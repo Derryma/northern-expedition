@@ -1,6 +1,6 @@
 import unittest
 
-from backend.card_engine import FOREIGN_FRIENDLY_THRESHOLD, GameEngine
+from backend.card_engine import FOREIGN_FRIENDLY_THRESHOLD, GameEngine, RECRUIT_COSTS
 from backend.combat_adapter import simulate
 from backend.data_store import load_game_data
 from economy import LoanBook
@@ -126,15 +126,23 @@ class BackendTests(unittest.TestCase):
         result = engine.train_unit("N", "artillery")
         updated = result["state"]["players"]["N"]
 
-        self.assertEqual(updated["treasury"], before[0] - 13)
-        self.assertEqual(updated["factory_points"], before[1] - 4)
+        self.assertEqual(updated["treasury"], before[0] - 15)
+        self.assertEqual(updated["factory_points"], before[1] - 5)
         self.assertEqual(updated["unit_reserves"]["artillery"], before[2] + 1)
 
+    def test_recruit_costs_are_raised_for_all_units(self):
+        self.assertEqual(RECRUIT_COSTS, {
+            "infantry": {"cash": 4, "factory": 2},
+            "cavalry": {"cash": 7, "factory": 2},
+            "machine_gun": {"cash": 10, "factory": 4},
+            "artillery": {"cash": 16, "factory": 5},
+        })
+
     def test_city_output_follows_level(self):
-        """1 級 cash 2 / factory 1，每升一級各 +1，最高 5 級。
+        """1 級 cash 1 / factory 1，每升一級各 +1，最高 5 級。
 
         取代舊的「步兵成本約等於小城 3-4 回合產出」不變式：改採等級公式後，
-        2 級城市每回合產出 3 元，已等於步兵 3 元的成本，該不變式不再成立。
+        2 級城市每回合產出 2 元，已等於步兵 3 元的成本，該不變式不再成立。
         招募成本是否要跟著調整，屬於平衡設計決定，不在此測試範圍。
         """
         engine = GameEngine(seed=5)
@@ -143,7 +151,7 @@ class BackendTests(unittest.TestCase):
         for city in bootstrap["strategic_map"]["cities"]:
             by_level.setdefault(city["level"], set()).add((city["cash"], city["factory"]))
         for level, outputs in by_level.items():
-            self.assertEqual(outputs, {(2 + level - 1, 1 + level - 1)}, level)
+            self.assertEqual(outputs, {(1 + level - 1, 1 + level - 1)}, level)
 
     def test_major_city_can_transfer_reserve_to_army(self):
         engine = GameEngine(seed=5)
@@ -154,6 +162,28 @@ class BackendTests(unittest.TestCase):
 
         self.assertEqual(updated["unit_reserves"]["infantry"], before - 1)
         self.assertEqual(updated["army_reinforcements"]["N-1"]["infantry"], 1)
+
+    def test_captured_major_city_can_reinforce_army(self):
+        engine = GameEngine(seed=5)
+        engine.capture_city("hankou", "N")
+        before = engine.state["players"]["N"]["unit_reserves"]["machine_gun"]
+
+        result = engine.reinforce_army("N", "N-1", "hankou", "machine_gun")
+        updated = result["state"]["players"]["N"]
+
+        self.assertEqual(updated["unit_reserves"]["machine_gun"], before - 1)
+        self.assertEqual(updated["army_reinforcements"]["N-1"]["machine_gun"], 1)
+
+    def test_restore_snapshot_rehydrates_engine_state(self):
+        engine = GameEngine(seed=5)
+        snapshot = engine.capture_city("hankou", "N")["state"]
+        fresh = GameEngine(seed=8)
+
+        restored = fresh.restore_snapshot(snapshot)
+
+        self.assertEqual(restored["turn"], snapshot["turn"])
+        self.assertEqual(restored["city_owners"]["hankou"], "N")
+        self.assertEqual(restored["players"]["N"]["income"], snapshot["players"]["N"]["income"])
 
     def test_diplomacy_and_deals_require_recipient_acceptance(self):
         engine = GameEngine(seed=5)
@@ -368,6 +398,14 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result["timed_effect"]["kind"], "rural_movement")
         self.assertEqual(result["timed_effect"]["tiles"], 2)
         self.assertEqual(result["timed_effect"]["remaining_turns"], 3)
+
+    def test_affiliation_slot_upgrade_returns_slot_delta(self):
+        engine = GameEngine(seed=4)
+        engine.state["players"]["N"]["hand"] = ["affiliation_slot_upgrade"]
+
+        result = engine.use_function("N", "affiliation_slot_upgrade", target_general_id="he_yingqin", target_owner="N")
+
+        self.assertEqual(result["affiliation_slot_delta"], {"owner": "N", "general_id": "he_yingqin", "amount": 1})
 
     def test_first_united_front_requires_the_wang_jingwei_unlock(self):
         """國共合作需「汪精衛復出」生效後才可使用（該卡於下一批實作）。"""

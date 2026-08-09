@@ -45,7 +45,7 @@
         "machine_gun": 2
       },
       "parent_id": "zhang_zuolin",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     },
@@ -68,7 +68,7 @@
         "machine_gun": 3
       },
       "parent_id": "zhang_zuolin",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     },
@@ -91,7 +91,7 @@
         "machine_gun": 2
       },
       "parent_id": "zhang_zuolin",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     }

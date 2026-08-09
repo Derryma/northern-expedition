@@ -21,7 +21,9 @@ Default hierarchy:
 | `lieutenant_general` | 2 major generals |
 | `major_general` | 0 |
 
-Events can increase slots with:
+The common function card 「擴編直屬」 can increase a lieutenant general from 2 to 3 major-general slots. Three is the cap.
+
+Scripts can apply the same effect with:
 
 ```python
 from general_tree import increase_affiliation_slots

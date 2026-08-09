@@ -30,10 +30,10 @@ FOREIGN_RELATION_MIN, FOREIGN_RELATION_MAX = relation_bounds()
 WARLORD_CODES = ("F", "W", "S", "N", "Y", "G", "M", "H", "C", "D", "Q")
 UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
 RECRUIT_COSTS = {
-    "infantry": {"cash": 3, "factory": 1},
-    "cavalry": {"cash": 6, "factory": 1},
-    "machine_gun": {"cash": 9, "factory": 3},
-    "artillery": {"cash": 14, "factory": 4},
+    "infantry": {"cash": 4, "factory": 2},
+    "cavalry": {"cash": 7, "factory": 2},
+    "machine_gun": {"cash": 10, "factory": 4},
+    "artillery": {"cash": 16, "factory": 5},
 }
 LOYALTY_FUNCTION_CARD_IDS = ("unit_promotion", "local_autonomy_agitation")
 ABSOLUTE_LOYAL_GENERAL_IDS = {
@@ -78,6 +78,7 @@ FUNCTION_CARD_COPIES = {
     "free_china_educators": 2,
     "peking_university_movement": 2,
     "forced_march": 4,
+    "affiliation_slot_upgrade": 4,
     "foreign_relation_jp": 4,
     "foreign_relation_su": 4,
     "foreign_relation_uk": 4,
@@ -303,6 +304,17 @@ class GameEngine:
             },
         }
         return state
+
+    def restore_snapshot(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Restore engine state from an `/api/shared-state` engine snapshot."""
+
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("players"), dict):
+            raise ValueError("invalid engine snapshot")
+        restored = deepcopy(snapshot)
+        restored.pop("counts", None)
+        self.state = restored
+        self._refresh_city_income()
+        return self.snapshot()
 
     def bootstrap(self) -> Dict[str, Any]:
         return {
@@ -749,6 +761,7 @@ class GameEngine:
         assassination: Optional[Dict[str, Any]] = None
         body_guard: Optional[Dict[str, Any]] = None
         loan_effect: Optional[Dict[str, Any]] = None
+        affiliation_slot_delta: Optional[Dict[str, Any]] = None
         if mechanic == "loyalty":
             if not target_general_id or not target_owner:
                 raise ValueError("a target general is required")
@@ -966,6 +979,16 @@ class GameEngine:
                 "general_id": str(card.get("target_general_id", "")),
                 "unit_reserves": deepcopy(card.get("unit_reserves", {})),
                 "requires_active": bool(card.get("requires_active", True)),
+            }
+        elif mechanic == "affiliation_slot":
+            if not target_general_id:
+                raise ValueError("affiliation slot upgrade requires a target general")
+            if target_owner and target_owner != player:
+                raise ValueError("affiliation slot upgrade can only target your own general")
+            affiliation_slot_delta = {
+                "owner": player,
+                "general_id": target_general_id,
+                "amount": 1,
             }
         elif mechanic == "permanent_player_output":
             bonus = player_state.setdefault("permanent_output_bonus", {"cash": 0, "factory": 0})
@@ -1264,6 +1287,7 @@ class GameEngine:
             "reserve_delta": reserve_delta,
             "reserve_deltas": reserve_deltas,
             "army_unit_delta": army_unit_delta,
+            "affiliation_slot_delta": affiliation_slot_delta,
             "city_development": city_development,
             "city_developments": city_developments,
             "permanent_output_delta": permanent_output_delta,
@@ -1300,6 +1324,7 @@ class GameEngine:
             "reserve_delta": reserve_delta,
             "reserve_deltas": reserve_deltas,
             "army_unit_delta": army_unit_delta,
+            "affiliation_slot_delta": affiliation_slot_delta,
             "city_development": city_development,
             "city_developments": city_developments,
             "permanent_output_delta": permanent_output_delta,
@@ -1495,7 +1520,8 @@ class GameEngine:
             (item for item in self.data["strategic_map"]["cities"] if item["id"] == city_id),
             None,
         )
-        if not city or city["faction"] != player or city["level"] < 3:
+        owner = self.state.get("city_owners", {}).get(city_id, city["faction"] if city else None)
+        if not city or owner != player or city["level"] < 3:
             raise ValueError("reinforcement requires a controlled major city")
         if player_state["unit_reserves"][unit_type] < count:
             raise ValueError("insufficient unit reserve")

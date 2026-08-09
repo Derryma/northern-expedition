@@ -24,7 +24,7 @@
         "machine_gun": 2
       },
       "parent_id": null,
-      "subordinate_slots": 1,
+      "subordinate_slots": 3,
       "subordinates": [
         "song_zheyuan"
       ],
@@ -51,7 +51,7 @@
         "machine_gun": 1
       },
       "parent_id": "feng_yuxiang",
-      "subordinate_slots": 0,
+      "subordinate_slots": 2,
       "subordinates": [],
       "status": "active"
     }

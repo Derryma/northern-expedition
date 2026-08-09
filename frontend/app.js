@@ -113,6 +113,13 @@ const UNIT_DISPLAY_SCALE = {
   artillery: { multiplier: 10, suffix: "門" },
 };
 
+const GENERAL_SLOT_DEFAULTS = {
+  great_general: 3,
+  lieutenant_general: 2,
+  major_general: 0,
+};
+const LIEUTENANT_SLOT_CAP = 3;
+
 
 const TRAIT_LABELS = {
   warlord_supremacy: "軍閥統御",
@@ -425,6 +432,7 @@ function setupUiTooltip() {
 async function loadGeneralTreeForFaction(factionCode) {
   try {
     generalTrees[factionCode] ||= await api(`/api/general-tree?faction=${factionCode}`);
+    normalizeGeneralTree(generalTrees[factionCode]);
     generalTreeData = generalTrees[factionCode];
   } catch (error) {
     console.error(`Failed to load general tree for ${factionCode}:`, error);
@@ -435,6 +443,7 @@ async function loadGeneralTreeForFaction(factionCode) {
 async function loadAllGeneralTrees() {
   await Promise.all(Object.keys(ARMY_POSITIONS).map(async (faction) => {
     generalTrees[faction] = await api(`/api/general-tree?faction=${faction}`);
+    normalizeGeneralTree(generalTrees[faction]);
     initialGeneralTrees[faction] = JSON.parse(JSON.stringify(generalTrees[faction]));
   }));
 }
@@ -443,8 +452,26 @@ function initializeGeneralRuntime() {
   for (const key of Object.keys(generalOwners)) delete generalOwners[key];
   for (const key of Object.keys(loyaltyOverrides)) delete loyaltyOverrides[key];
   for (const [faction, tree] of Object.entries(generalTrees)) {
+    normalizeGeneralTree(tree);
     for (const generalId of Object.keys(tree.generals || {})) generalOwners[generalId] = faction;
   }
+}
+
+function normalizedSlotCount(general) {
+  const role = general?.role || "major_general";
+  if (role === "great_general") return GENERAL_SLOT_DEFAULTS.great_general;
+  if (role === "major_general") return GENERAL_SLOT_DEFAULTS.major_general;
+  const current = Number(general?.subordinate_slots ?? GENERAL_SLOT_DEFAULTS.lieutenant_general);
+  return Math.max(GENERAL_SLOT_DEFAULTS.lieutenant_general, Math.min(LIEUTENANT_SLOT_CAP, current || 0));
+}
+
+function normalizeGeneralTree(tree) {
+  for (const general of Object.values(tree?.generals || {})) {
+    const slots = normalizedSlotCount(general);
+    general.subordinate_slots = slots;
+    if (general.role === "major_general") general.subordinates = [];
+  }
+  return tree;
 }
 
 function synchronizeFieldArmies() {
@@ -492,6 +519,16 @@ function applyFunctionSideEffects(result) {
   if (result.assassination) applyAssassination(result.assassination);
   if (result.target_general_id && result.loyalty_delta) {
     adjustGeneralLoyalty(result.target_general_id, result.loyalty_delta);
+  }
+  if (result.affiliation_slot_delta) {
+    const { general_id: generalId, amount } = result.affiliation_slot_delta;
+    const general = generalById(generalId);
+    if (general && general.role === "lieutenant_general") {
+      general.subordinate_slots = Math.min(
+        LIEUTENANT_SLOT_CAP,
+        Math.max(GENERAL_SLOT_DEFAULTS.lieutenant_general, Number(general.subordinate_slots || GENERAL_SLOT_DEFAULTS.lieutenant_general) + Number(amount || 0)),
+      );
+    }
   }
   if (result.loyalty_delta_all) {
     mutableGeneralIdsForOwner(result.loyalty_delta_all.owner)
@@ -603,6 +640,7 @@ function applyTacticalSnapshot(snapshot) {
   replaceArray(activeBattles, snapshot.activeBattles);
   replaceArray(battleReports, snapshot.battleReports);
   replaceObject(generalTrees, JSON.parse(JSON.stringify(snapshot.generalTrees || generalTrees)));
+  for (const tree of Object.values(generalTrees)) normalizeGeneralTree(tree);
   replaceObject(generalOwners, snapshot.generalOwners);
   replaceObject(loyaltyOverrides, snapshot.loyaltyOverrides);
   for (const faction of new Set([...Object.keys(jailedGenerals), ...Object.keys(snapshot.jailedGenerals || {})])) {
@@ -1313,6 +1351,10 @@ function functionActionMessage(action, viewer = currentPlayer) {
       .join("、");
     parts.push(`${army?.general || generalLabel(delta.general_id, delta.owner)}所在軍隊 ${units}`);
   }
+  if (action.affiliation_slot_delta) {
+    const delta = action.affiliation_slot_delta;
+    parts.push(`${generalLabel(delta.general_id, delta.owner)}直屬名額 +${delta.amount}`);
+  }
   if (action.foreign_relation_delta) {
     const labels = { jp: "日本", su: "蘇聯", uk: "英國", fr: "法國", us: "美國" };
     const delta = action.foreign_relation_delta;
@@ -1359,6 +1401,7 @@ function functionActionVisibleTo(action, viewer = currentPlayer) {
   if ((action.loyalty_swings || []).some((swing) => swing.owner === viewer)) return true;
   if (action.permanent_output_delta?.owner === viewer) return true;
   if (action.army_unit_delta?.owner === viewer) return true;
+  if (action.affiliation_slot_delta?.owner === viewer) return true;
   if ((action.timed_effect?.owners || []).includes(viewer)) return true;
   return false;
 }
@@ -1524,17 +1567,22 @@ function renderGeneralsPanel() {
   html += '</div>';
   const prisoners = jailedGenerals[currentPlayer] || [];
   const lieutenants = availableLieutenantGenerals(currentPlayer);
+  const freeMajorSlots = availableMajorGeneralSlots(currentPlayer);
   html += `
     <section class="jail-roster">
       <h3>被俘將領</h3>
-      ${prisoners.length ? prisoners.map((record) => `
+      ${prisoners.length ? prisoners.map((record) => {
+        const neededSlots = transferBranchSize(generalTrees[record.originFaction], record.general.id);
+        const canRecruit = lieutenants.length && freeMajorSlots >= neededSlots && (state.players[currentPlayer]?.unit_reserves?.infantry || 0) >= 5;
+        return `
         <div class="jail-general">
           ${renderGeneralTreeCard(record.general, { includeCaptured: true })}
           <div><small>原屬 ${FACTIONS[record.originFaction]?.name || record.originFaction}</small>
             <select data-recruit-superior="${record.armyId}" ${lieutenants.length ? "" : "disabled"}>${lieutenants.map((general) => `<option value="${general.id}">隸屬 ${general.name}</option>`).join("")}</select>
-            <button data-recruit-prisoner="${record.armyId}" ${lieutenants.length && (state.players[currentPlayer]?.unit_reserves?.infantry || 0) >= 5 ? "" : "disabled"}>招降 · 步兵5營</button>
+            <button data-recruit-prisoner="${record.armyId}" ${canRecruit ? "" : "disabled"}>招降 · 步兵5營${neededSlots > 1 ? ` · 空位${neededSlots}` : ""}</button>
           </div>
-        </div>`).join("") : '<div class="empty-state compact">目前無俘虜</div>'}
+        </div>`;
+      }).join("") : '<div class="empty-state compact">目前無俘虜</div>'}
     </section>`;
   return html;
 }
@@ -1564,10 +1612,16 @@ function attachGeneralHandlers(root) {
       const prisoners = jailedGenerals[currentPlayer];
       const index = prisoners.findIndex((record) => record.armyId === button.dataset.recruitPrisoner);
       if (index < 0) return;
+      const record = prisoners[index];
       const superiorId = root.querySelector(`[data-recruit-superior="${button.dataset.recruitPrisoner}"]`)?.value;
       const deploymentCell = recruitmentDeploymentCell(currentPlayer);
       if (!superiorId || !deploymentCell) {
         showNotice(!superiorId ? "沒有可隸屬的現役中將。" : "沒有可部署新編軍的己方主要城市。");
+        return;
+      }
+      const branchSize = transferBranchSize(generalTrees[record.originFaction], record.general.id);
+      if (availableMajorGeneralSlots(currentPlayer) < branchSize) {
+        showNotice(`中將空位不足：此批將領需要 ${branchSize} 個少將空位。`);
         return;
       }
       button.disabled = true;
@@ -1575,7 +1629,7 @@ function attachGeneralHandlers(root) {
         const result = await api("/api/recruit-captive-general", { player: currentPlayer });
         state = result.state;
         syncStrategicCitiesFromState();
-        const [record] = prisoners.splice(index, 1);
+        prisoners.splice(index, 1);
         recruitCapturedGeneral(record, currentPlayer, superiorId, deploymentCell);
         recruitedGenerals[currentPlayer].push(record);
         updateTopBar();
@@ -1594,8 +1648,24 @@ function availableLieutenantGenerals(faction) {
   return Object.values(generalTrees[faction]?.generals || {}).filter((general) => {
     if (general.role !== "lieutenant_general" || generalOwners[general.id] !== faction) return false;
     const army = allArmies(true).find((item) => item.generalId === general.id);
-    return army?.status !== "jailed";
+    if (army?.status === "jailed") return false;
+    return lieutenantGeneralOpenSlots(general) > 0;
   });
+}
+
+function lieutenantGeneralOpenSlots(general) {
+  const capacity = normalizedSlotCount(general);
+  const occupied = (general?.subordinates || []).filter((id) => {
+    const subordinate = generalById(id);
+    return subordinate && subordinate.role === "major_general" && subordinate.status !== "killed";
+  }).length;
+  return Math.max(0, capacity - occupied);
+}
+
+function availableMajorGeneralSlots(faction) {
+  return Object.values(generalTrees[faction]?.generals || {})
+    .filter((general) => general.role === "lieutenant_general" && generalOwners[general.id] === faction)
+    .reduce((sum, general) => sum + lieutenantGeneralOpenSlots(general), 0);
 }
 
 function recruitmentDeploymentCell(faction) {
@@ -1627,26 +1697,43 @@ function appendGeneralToTree(general, faction, superiorId, loyalty = 2, options 
   return appended;
 }
 
-function installTransferredCommand(transferred, destinationFaction, superiorId, rootLoyalty = 2) {
+function transferBranchSize(sourceTree, generalId) {
+  return 1 + descendantGeneralIds(sourceTree, generalId).length;
+}
+
+function installTransferredCommand(transferred, destinationFaction, preferredSuperiorId, rootLoyalty = 2) {
   const destinationTree = generalTrees[destinationFaction];
-  const superior = destinationTree?.generals?.[superiorId];
-  if (!destinationTree || !superior || superior.role !== "lieutenant_general") throw new Error("invalid lieutenant affiliation");
-  const transferredIds = new Set(transferred.map((general) => general.id));
-  const root = transferred[0];
+  if (!destinationTree) throw new Error("invalid destination faction");
+  const allLieutenants = availableLieutenantGenerals(destinationFaction);
+  const preferred = destinationTree.generals?.[preferredSuperiorId];
+  const reorderedLieutenants = [
+    ...(preferred && preferred.role === "lieutenant_general" && lieutenantGeneralOpenSlots(preferred) > 0 ? [preferred] : []),
+    ...allLieutenants.filter((general) => general.id !== preferredSuperiorId),
+  ];
+  if (reorderedLieutenants.reduce((sum, general) => sum + lieutenantGeneralOpenSlots(general), 0) < transferred.length) {
+    throw new Error("沒有足夠的中將空位接收這批將領");
+  }
+  const installed = [];
   for (const general of transferred) {
+    const superior = reorderedLieutenants.find((item) => lieutenantGeneralOpenSlots(item) > 0);
+    if (!superior) throw new Error("沒有足夠的中將空位接收這批將領");
     const copied = JSON.parse(JSON.stringify(general));
     copied.faction = FACTIONS[destinationFaction].name;
     copied.status = "active";
     copied.loyalty_exempt = false;
-    copied.loyalty = copied.id === root.id ? rootLoyalty : 1;
-    copied.role = copied.id === root.id ? "major_general" : (copied.role === "great_general" ? "major_general" : copied.role);
-    copied.subordinates = (copied.subordinates || []).filter((id) => transferredIds.has(id));
+    copied.loyalty = copied.id === transferred[0].id ? rootLoyalty : 1;
+    copied.role = "major_general";
+    copied.subordinate_slots = 0;
+    copied.subordinates = [];
+    copied.parent_id = superior.id;
     destinationTree.generals[copied.id] = copied;
     generalOwners[copied.id] = destinationFaction;
     loyaltyOverrides[copied.id] = copied.loyalty;
+    superior.subordinates ||= [];
+    superior.subordinates.push(copied.id);
+    installed.push({ general: copied, superiorId: superior.id });
   }
-  superior.subordinates ||= [];
-  if (!superior.subordinates.includes(root.id)) superior.subordinates.push(root.id);
+  return installed;
 }
 
 function recruitCapturedGeneral(record, faction, superiorId, deploymentCell) {
@@ -1671,9 +1758,14 @@ function recruitCapturedGeneral(record, faction, superiorId, deploymentCell) {
   moveArmyToCell(army, deploymentCell);
   state.players[faction].army_reinforcements[army.id] = {};
   for (const fieldArmy of allArmies(true).filter((item) => transferredIds.includes(item.generalId))) {
+    const transferredGeneral = transferred.find((item) => item.id === fieldArmy.generalId);
+    const assignedNumber = nextAvailableArmyNumber(faction, fieldArmy.id);
     fieldArmy.faction = faction;
     fieldArmy.status = "active";
+    fieldArmy.general = transferredGeneral?.name || fieldArmy.general;
+    fieldArmy.designator = formatArmyDesignator(assignedNumber);
     markArmyResolved(fieldArmy);
+    if (fieldArmy.cellKey && cells[fieldArmy.cellKey]) occupyTile(cells[fieldArmy.cellKey], faction);
     const oldLedger = state.players[record.originFaction]?.army_reinforcements?.[fieldArmy.id];
     if (oldLedger) {
       state.players[faction].army_reinforcements[fieldArmy.id] = { ...oldLedger };
@@ -1703,10 +1795,13 @@ function transferDefectingCommand(army, destinationFaction, superiorId) {
   for (const general of transferred) detachGeneralFromTree(sourceTree, general.id);
   installTransferredCommand(transferred, destinationFaction, superiorId, 2);
   for (const fieldArmy of allArmies(true).filter((item) => transferredIds.includes(item.generalId))) {
+    const transferredGeneral = transferred.find((item) => item.id === fieldArmy.generalId);
     fieldArmy.designator = formatArmyDesignator(nextAvailableArmyNumber(destinationFaction, fieldArmy.id));
     fieldArmy.faction = destinationFaction;
     fieldArmy.status = "active";
+    fieldArmy.general = transferredGeneral?.name || fieldArmy.general;
     markArmyResolved(fieldArmy);
+    if (fieldArmy.cellKey && cells[fieldArmy.cellKey]) occupyTile(cells[fieldArmy.cellKey], destinationFaction);
     const oldLedger = state.players[sourceFaction]?.army_reinforcements?.[fieldArmy.id];
     if (oldLedger) {
       state.players[destinationFaction].army_reinforcements[fieldArmy.id] = { ...oldLedger };
@@ -1727,6 +1822,11 @@ async function attemptArmyDefection(army, superiorId) {
   const loyalty = calculateGeneralLoyalty(general, army).value;
   if (loyalty === null || general?.loyalty_exempt || general?.absolute_loyalty) {
     showNotice("此將領屬於派系核心，不能以金錢策反。");
+    return;
+  }
+  const branchSize = transferBranchSize(generalTrees[factionForArmy(army)], army.generalId);
+  if (availableMajorGeneralSlots(currentPlayer) < branchSize) {
+    showNotice(`我方中將空位不足，這支部隊連同麾下 ${Math.max(0, branchSize - 1)} 名附屬將領無法一併接收。`);
     return;
   }
   const result = await api("/api/attempt-defection", {
@@ -2294,6 +2394,15 @@ function attachCardHandlers(root = document) {
           }
         }
         const targetGeneralId = root.querySelector(`[data-card-target="${button.dataset.use}"]`)?.value;
+        if (card?.mechanic === "affiliation_slot") {
+          const general = generalById(targetGeneralId);
+          if (!general || generalOwners[targetGeneralId] !== currentPlayer || general.role !== "lieutenant_general") {
+            throw new Error("擴編直屬只能指定己方中將。");
+          }
+          if (normalizedSlotCount(general) >= LIEUTENANT_SLOT_CAP) {
+            throw new Error("該中將直屬名額已達上限。");
+          }
+        }
         const result = await api("/api/use-function", {
           player: button.dataset.player,
           card_id: button.dataset.use,
@@ -2408,6 +2517,14 @@ function loyaltyCardTargetMarkup(card) {
   return `<label class="card-target">指定將領<select data-card-target="${card.id}" ${targets.length ? "" : "disabled"}>${targets.map(({ general, owner, loyalty }) => `<option value="${general.id}">${FACTIONS[owner]?.shortName || owner} · ${general.name}（忠誠 ${loyalty}）</option>`).join("")}</select></label>`;
 }
 
+function subordinateSlotTargets() {
+  return Object.entries(generalOwners)
+    .filter(([, owner]) => owner === currentPlayer)
+    .map(([generalId]) => generalById(generalId))
+    .filter((general) => general?.role === "lieutenant_general" && normalizedSlotCount(general) < LIEUTENANT_SLOT_CAP)
+    .map((general) => ({ general, slots: normalizedSlotCount(general) }));
+}
+
 function functionCardTargetMarkup(card) {
   if (card.mechanic === "qing_gang_riot") {
     const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
@@ -2447,6 +2564,13 @@ function functionCardTargetMarkup(card) {
   if (card.mechanic === "city_development") {
     const cities = state.players[currentPlayer]?.city_economy || [];
     return `<label class="card-target">指定城市<select data-card-target-city="${card.id}" ${cities.length ? "" : "disabled"}>${cities.map((city) => `<option value="${city.id}">${city.name} · $${city.cash} 工${city.factory}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "affiliation_slot") {
+    const targets = subordinateSlotTargets();
+    if (!targets.length) return `<div class="card-target-note">目前沒有可再擴編的中將</div>`;
+    return `<label class="card-target">指定中將<select data-card-target="${card.id}">${targets
+      .map(({ general, slots }) => `<option value="${general.id}">${general.name}（${slots}/${LIEUTENANT_SLOT_CAP}）</option>`)
+      .join("")}</select></label>`;
   }
   return loyaltyCardTargetMarkup(card);
 }
@@ -3584,6 +3708,11 @@ function cityForArmy(army) {
   return (bootstrap.strategic_map?.cities || []).find((city) => city.cellKey === army.cellKey) || null;
 }
 
+function cityControlledBy(city, faction) {
+  if (!city || !faction) return false;
+  return (state?.city_owners?.[city.id] || city.faction) === faction;
+}
+
 function selectTile(cell) {
   selectedTileKey = cell?.key || null;
   renderTileInfo();
@@ -3658,7 +3787,7 @@ function renderArmyDetail() {
   const fightingBattle = activeBattleForArmy(army);
   const resolvedThisTurn = armyIsResolvedThisTurn(army);
   const canOrder = isOwnArmy && armyCanReceiveOrder(army);
-  const canReinforce = canOrder && city?.faction === currentPlayer && city.level >= 3 && cells[army.cellKey]?.fac === currentPlayer;
+  const canReinforce = canOrder && cityControlledBy(city, currentPlayer) && city.level >= 3 && cells[army.cellKey]?.fac === currentPlayer;
   const profile = state.players[currentPlayer];
   const engineering = isOwnArmy ? engineeringOperationsFor(army) : [];
   const joinableBattle = isOwnArmy ? joinableBattleForArmy(army) : null;
@@ -3669,7 +3798,9 @@ function renderArmyDetail() {
   const defectionBaseChance = 0.45 - loyaltyForDefection * 0.04 - defectionForce * 0.003;
   const defectionChance = Math.round(Math.max(0.03, Math.min(0.60, defectionBaseChance * 1.25)) * 100);
   const lieutenants = availableLieutenantGenerals(currentPlayer);
+  const branchSize = transferBranchSize(generalTrees[armyFaction], army.generalId);
   const canDefect = loyalty !== null && !general?.loyalty_exempt && !general?.absolute_loyalty && lieutenants.length
+    && availableMajorGeneralSlots(currentPlayer) >= branchSize
     && (showComposition ? profile.treasury >= defectionCost : profile.treasury >= 10);
 
   root.hidden = false;
@@ -3692,7 +3823,7 @@ function renderArmyDetail() {
       </div>
     ` : `<div class="enemy-hidden-composition"><b>兵力不明</b><span>敵軍編制需交戰或情報網揭露。</span></div>`}
     ${isOwnArmy ? absoluteTransferMarkup(army) : ""}
-    ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? `策反費用 $${defectionCost} · 成功率 ${defectionChance}%` : "兵力未明，策反費用與成功率不公開"}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
+    ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? `策反費用 $${defectionCost} · 成功率 ${defectionChance}%` : "兵力未明，策反費用與成功率不公開"}${availableMajorGeneralSlots(currentPlayer) < branchSize ? ` · 我方少將空位不足` : ""}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
     ${fightingBattle ? `<div class="active-operation">交戰中：不可移動、休整或補充。請在戰鬥情報中定策。</div>` : ""}
     ${!fightingBattle && resolvedThisTurn ? `<div class="active-operation">本回合軍令已執行。</div>` : ""}
     ${army.specialOperation ? `<div class="active-operation">進行中：${army.specialOperation.label} · 尚需 ${army.specialOperation.turnsRemaining} 回合</div>` : ""}

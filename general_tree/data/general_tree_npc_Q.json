@@ -23,7 +23,7 @@
         "machine_gun": 0
       },
       "parent_id": null,
-      "subordinate_slots": 0,
+      "subordinate_slots": 3,
       "subordinates": [],
       "status": "active"
     }

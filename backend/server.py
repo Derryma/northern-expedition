@@ -72,7 +72,17 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         }
 
         filename = tree_files.get(faction, tree_files['N'])
-        return load_json(filename)
+        tree = load_json(filename)
+        for general in tree.get("generals", {}).values():
+            role = general.get("role")
+            if role == "great_general":
+                general["subordinate_slots"] = 3
+            elif role == "lieutenant_general":
+                general["subordinate_slots"] = min(3, max(2, int(general.get("subordinate_slots", 2))))
+            else:
+                general["subordinate_slots"] = 0
+                general["subordinates"] = []
+        return tree
 
     def do_HEAD(self) -> None:
         try:
@@ -107,6 +117,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/recruit-captive-general": self._recruit_captive_general,
             "/api/attempt-defection": self._attempt_defection,
             "/api/shared-state": self._shared_state,
+            "/api/restore-shared-state": self._restore_shared_state,
             "/api/combat": lambda payload: simulate_combat(payload),
         }
         parsed = urlparse(self.path)
@@ -158,6 +169,24 @@ class PlaytestHandler(BaseHTTPRequestHandler):
                 "revision": SHARED_REVISION,
                 "tactical": SHARED_TACTICAL_STATE,
                 "engine_state": ENGINE.snapshot(),
+            }
+
+    def _restore_shared_state(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        global SHARED_TACTICAL_STATE, SHARED_REVISION
+        engine_state = payload.get("engine_state")
+        if not isinstance(engine_state, dict):
+            raise ValueError("restore requires engine_state")
+        tactical = payload.get("tactical")
+        if tactical is not None and not isinstance(tactical, dict):
+            raise ValueError("tactical state must be an object")
+        restored_engine = ENGINE.restore_snapshot(engine_state)
+        with SHARED_LOCK:
+            SHARED_TACTICAL_STATE = tactical
+            SHARED_REVISION = int(payload.get("revision", SHARED_REVISION)) + 1
+            return {
+                "revision": SHARED_REVISION,
+                "tactical": SHARED_TACTICAL_STATE,
+                "engine_state": restored_engine,
             }
 
     def _draw_function(self, payload: Dict[str, Any]) -> Dict[str, Any]:
