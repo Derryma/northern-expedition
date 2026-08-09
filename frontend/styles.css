@@ -52,11 +52,13 @@ button, select, input, textarea {
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(231, 225, 215, 0.15);
   display: grid;
-  grid-template-columns: 240px 1fr minmax(390px, auto);
+  /* 三欄都可壓縮，中間那排按鈕才不會把右側擠出畫面。 */
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
   align-items: center;
-  padding: 0 20px;
-  gap: 20px;
+  padding: 0 16px;
+  gap: 12px;
   z-index: 1000;
+  overflow: hidden;
 }
 
 .topbar-left {
@@ -84,24 +86,28 @@ button, select, input, textarea {
 .topbar-center {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .topbar-right {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .faction-stats {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .faction-stats span {
-  padding: 5px 8px;
+  padding: 5px 7px;
   border-left: 1px solid rgba(231, 225, 215, 0.2);
   color: #e7e1d7;
   font-size: 11px;
@@ -115,8 +121,10 @@ button, select, input, textarea {
 }
 
 .topbar-btn {
-  padding: 8px 18px;
+  padding: 8px 14px;
   min-height: 36px;
+  white-space: nowrap;
+  flex: 0 1 auto;
   border: 1px solid rgba(231, 225, 215, 0.2);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -135,13 +143,54 @@ button, select, input, textarea {
 }
 
 .faction-select {
-  padding: 8px 14px;
+  padding: 8px 12px;
   min-height: 36px;
   border: 1px solid rgba(231, 225, 215, 0.2);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: #E7E1D7;
-  min-width: 140px;
+  min-width: 118px;
+  flex: 0 0 auto;
+}
+
+/* 窄畫面時先縮按鈕與數字，再縮標題，避免整排溢出。 */
+@media (max-width: 1500px) {
+  .topbar-btn { padding: 8px 11px; font-size: 13px; }
+  .faction-stats span { padding: 5px 5px; font-size: 10.5px; }
+}
+
+@media (max-width: 1280px) {
+  .game-title { font-size: 17px; }
+  .topbar-btn { padding: 7px 9px; font-size: 12px; }
+  .faction-stats span { padding: 4px 4px; font-size: 10px; }
+  .faction-select { min-width: 104px; font-size: 12px; }
+}
+
+/* 部隊操作板頂端的陣營旗與名稱（原本在最上一排）。 */
+.dock-faction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(231, 225, 215, 0.18);
+}
+
+.dock-faction .faction-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dock-faction .faction-flag {
+  width: 30px;
+  height: 20px;
+}
+
+.warlord-flag {
+  width: 26px;
+  height: 17px;
+  flex: 0 0 auto;
 }
 
 /* Main Map */
@@ -1966,9 +2015,15 @@ button, select, input, textarea {
 .tile-info-dock {
   left: 18px;
   bottom: 18px;
+  /* 上緣停在縮放器下方（頂欄 56 + 縮放器 44 + 間距），內容過長就自己捲。 */
+  max-height: calc(100vh - 132px);
+  overflow: auto;
 }
 
-.cards-enabled .tile-info-dock { bottom: 275px; }
+.cards-enabled .tile-info-dock {
+  bottom: 275px;
+  max-height: calc(100vh - 389px);
+}
 
 .cards-enabled .hand-dock { z-index: 900; }
 .cards-enabled .tile-info-dock { z-index: 830; }

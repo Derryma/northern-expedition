@@ -939,7 +939,8 @@
       "interest_per_turn": 0.05,
       "term_turns": 3,
       "off_quota": true,
-      "bank_success_rate": 0.75
+      "bank_success_rate": 0.75,
+      "domestic_bond": true
     },
     {
       "id": "function_葉開鑫倒戈",
