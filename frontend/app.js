@@ -1006,14 +1006,20 @@ function updateTopBar() {
   $("turnBadge").textContent = `回合 ${state.turn}`;
   const profile = state.players[currentPlayer];
   if (!profile) return;
+  // 旗幟與陣營名移到右側部隊操作板頂端，最上一排只留數字。
   $("factionStats").innerHTML = `
-    ${factionFlagMarkup(currentPlayer, "flag-chip faction-flag")}
-    <span class="faction-name">${FACTIONS[currentPlayer]?.name || currentPlayer}</span>
     <span title="${debtServiceTitle(profile)}">$${profile.treasury ?? 0} (+${profile.income ?? 0}/回合)</span>
     <span title="可用工廠點與每回合城市產出">工廠 ${profile.factory_points ?? 0} (+${profile.factory_income ?? 0}/回合)</span>
     <span title="預備兵力">預備 ${profile.unit_reserve ?? 0}</span>
     <span title="債務">債 ${profile.debt ?? 0}</span>
   `;
+  const dockFaction = $("dockFaction");
+  if (dockFaction) {
+    dockFaction.innerHTML = `
+      ${factionFlagMarkup(currentPlayer, "flag-chip faction-flag")}
+      <span class="faction-name">${FACTIONS[currentPlayer]?.name || currentPlayer}</span>
+    `;
+  }
   refreshLoansIfOpen();
 }
 
@@ -2010,11 +2016,13 @@ function renderLoanRow(loan, turn) {
     : `${remaining} 回合`;
   return `
     <tr class="${overdue ? "loan-overdue-row" : ""}">
-      <td class="loan-bank-cell">${powerFlagMarkup(loan.bank_power, "flag-chip bank-flag")}<span>${loan.bank_name}</span></td>
+      <td class="loan-bank-cell">${loan.domestic
+        ? factionFlagMarkup(loan.issuer || currentPlayer, "flag-chip bank-flag")
+        : powerFlagMarkup(loan.bank_power, "flag-chip bank-flag")}<span>${loan.bank_name}</span></td>
       <td class="num">$${loan.outstanding}</td>
       <td class="num">${Math.round(loan.interest_per_turn * 100)}%</td>
       <td class="num">${remainingText}</td>
-      <td><small>${loan.source && loan.source.startsWith("card:") ? "功能卡" : "銀行"}</small></td>
+      <td><small>${loan.domestic ? "公債" : loan.source && loan.source.startsWith("card:") ? "功能卡" : "銀行"}</small></td>
     </tr>
   `;
 }
@@ -2154,6 +2162,7 @@ function renderForeignPanel() {
     return `
       <div class="warlord-relation ${atWar ? "at-war" : ""}">
         <div class="warlord-row">
+          ${factionFlagMarkup(code, "flag-chip warlord-flag")}
           <span class="faction-swatch" style="background:${FACTIONS[code].color}"></span>
           <div class="warlord-name"><b>${FACTIONS[code].name}</b><small>${lockedWar ? "NPC · 永久交戰" : atWar ? `交戰第 ${warTurns} / 10 回合` : "和平 · 不可越境"}</small></div>
           <button data-diplomacy-status="${atWar ? "peace" : "war"}" data-target="${code}" ${lockedWar || (atWar && warTurns < 10) ? `disabled title="${lockedWar ? "NPC 勢力不可外交" : "交戰滿十回合後方可議和"}"` : ""}>${lockedWar ? "永久戰爭" : atWar ? "議和" : "宣戰"}</button>
@@ -2519,7 +2528,8 @@ async function boot() {
   initializeGeneralRuntime();
   synchronizeFieldArmies();
 
-  $("playerSelect").innerHTML = bootstrap.players.map((p) => `<option value="${p.code}">${p.name} · ${p.leader}</option>`).join("");
+  // 只列陣營名，不再附上領袖姓名。
+  $("playerSelect").innerHTML = bootstrap.players.map((p) => `<option value="${p.code}">${p.name}</option>`).join("");
   $("debugForceTurnBtn").hidden = !DEBUG_MODE;
 
   // Set current player from select

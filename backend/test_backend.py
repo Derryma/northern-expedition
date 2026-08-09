@@ -743,8 +743,8 @@ class BackendTests(unittest.TestCase):
         engine = GameEngine(seed=1)
         for code in engine.state["players"]:
             deck = engine.state["players"][code]["function_deck"]
-            self.assertEqual(deck.count("wang_yaqiao_assassination"), 4, code)
-            self.assertEqual(deck.count("body_guard_squad"), 8, code)
+            self.assertEqual(deck.count("wang_yaqiao_assassination"), 2, code)
+            self.assertEqual(deck.count("body_guard_squad"), 3, code)
 
     def test_old_special_service_guard_cards_are_gone(self):
         """組建親衛隊取代了特勤衛隊：普通／菁英。"""

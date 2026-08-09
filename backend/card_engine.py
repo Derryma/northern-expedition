@@ -71,8 +71,8 @@ FUNCTION_CARD_COPIES = {
     "zhili_anti_communist_declaration": 1,
     "wang_jingwei_return": 1,
     "railway_saboteur": 4,
-    "wang_yaqiao_assassination": 4,
-    "body_guard_squad": 8,
+    "wang_yaqiao_assassination": 2,
+    "body_guard_squad": 3,
     "function_軍閥公債": 4,
     "jiangzhe_financiers": 1,
     "free_china_educators": 2,
@@ -1556,6 +1556,12 @@ class GameEngine:
         }
         if card.get("off_quota"):
             loan["off_quota"] = True
+        if card.get("domestic_bond"):
+            # 公債是自己發的，不欠任何列強銀行。內部仍掛在中立的德華以取得條件欄位，
+            # 但對外一律以公債身分顯示，掛自己陣營的旗。
+            loan["domestic"] = True
+            loan["issuer"] = player
+            loan["bank_name"] = card.get("name", "公債")
         if card.get("default_penalty"):
             penalty = deepcopy(card["default_penalty"])
             penalty["card_name"] = card.get("name", card.get("id"))
@@ -1589,7 +1595,8 @@ class GameEngine:
         for loan in payload.get("loans", []):
             rows.append({
                 **deepcopy(loan),
-                "bank_power": LOANS.banks.get(loan["bank"], {}).get("power"),
+                # 公債不掛列強，改由前端用發行陣營的旗幟顯示。
+                "bank_power": None if loan.get("domestic") else LOANS.banks.get(loan["bank"], {}).get("power"),
                 "turns_remaining": int(loan["due_turn"]) - turn,
             })
         return rows
