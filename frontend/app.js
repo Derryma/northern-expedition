@@ -3698,6 +3698,11 @@ function cityForArmy(army) {
   return (bootstrap.strategic_map?.cities || []).find((city) => city.cellKey === army.cellKey) || null;
 }
 
+function cityControlledBy(city, faction) {
+  if (!city || !faction) return false;
+  return (state?.city_owners?.[city.id] || city.faction) === faction;
+}
+
 function selectTile(cell) {
   selectedTileKey = cell?.key || null;
   renderTileInfo();
@@ -3772,7 +3777,7 @@ function renderArmyDetail() {
   const fightingBattle = activeBattleForArmy(army);
   const resolvedThisTurn = armyIsResolvedThisTurn(army);
   const canOrder = isOwnArmy && armyCanReceiveOrder(army);
-  const canReinforce = canOrder && city?.faction === currentPlayer && city.level >= 3 && cells[army.cellKey]?.fac === currentPlayer;
+  const canReinforce = canOrder && cityControlledBy(city, currentPlayer) && city.level >= 3 && cells[army.cellKey]?.fac === currentPlayer;
   const profile = state.players[currentPlayer];
   const engineering = isOwnArmy ? engineeringOperationsFor(army) : [];
   const joinableBattle = isOwnArmy ? joinableBattleForArmy(army) : null;

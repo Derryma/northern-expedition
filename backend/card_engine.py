@@ -305,6 +305,17 @@ class GameEngine:
         }
         return state
 
+    def restore_snapshot(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Restore engine state from an `/api/shared-state` engine snapshot."""
+
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("players"), dict):
+            raise ValueError("invalid engine snapshot")
+        restored = deepcopy(snapshot)
+        restored.pop("counts", None)
+        self.state = restored
+        self._refresh_city_income()
+        return self.snapshot()
+
     def bootstrap(self) -> Dict[str, Any]:
         return {
             "metadata": self.data["metadata"],
@@ -1509,7 +1520,8 @@ class GameEngine:
             (item for item in self.data["strategic_map"]["cities"] if item["id"] == city_id),
             None,
         )
-        if not city or city["faction"] != player or city["level"] < 3:
+        owner = self.state.get("city_owners", {}).get(city_id, city["faction"] if city else None)
+        if not city or owner != player or city["level"] < 3:
             raise ValueError("reinforcement requires a controlled major city")
         if player_state["unit_reserves"][unit_type] < count:
             raise ValueError("insufficient unit reserve")

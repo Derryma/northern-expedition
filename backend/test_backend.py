@@ -163,6 +163,28 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(updated["unit_reserves"]["infantry"], before - 1)
         self.assertEqual(updated["army_reinforcements"]["N-1"]["infantry"], 1)
 
+    def test_captured_major_city_can_reinforce_army(self):
+        engine = GameEngine(seed=5)
+        engine.capture_city("hankou", "N")
+        before = engine.state["players"]["N"]["unit_reserves"]["machine_gun"]
+
+        result = engine.reinforce_army("N", "N-1", "hankou", "machine_gun")
+        updated = result["state"]["players"]["N"]
+
+        self.assertEqual(updated["unit_reserves"]["machine_gun"], before - 1)
+        self.assertEqual(updated["army_reinforcements"]["N-1"]["machine_gun"], 1)
+
+    def test_restore_snapshot_rehydrates_engine_state(self):
+        engine = GameEngine(seed=5)
+        snapshot = engine.capture_city("hankou", "N")["state"]
+        fresh = GameEngine(seed=8)
+
+        restored = fresh.restore_snapshot(snapshot)
+
+        self.assertEqual(restored["turn"], snapshot["turn"])
+        self.assertEqual(restored["city_owners"]["hankou"], "N")
+        self.assertEqual(restored["players"]["N"]["income"], snapshot["players"]["N"]["income"])
+
     def test_diplomacy_and_deals_require_recipient_acceptance(self):
         engine = GameEngine(seed=5)
         self.assertEqual(engine.state["players"]["N"]["warlord_relations"]["W"]["status"], "peace")
