@@ -108,8 +108,33 @@ const skippedFunctionPurchasePrompts = new Set();
 // 後端寫給某一勢力的通知（紅軍起義、鐵路搶修等），已讀的記在這裡。
 const readNotifications = new Set();
 const DEBUG_MODE = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+// 底圖：《中華民國全圖》掃描件，已依本作的等距圓柱投影（東經 95–135、北緯 18–54）
+// 重新取樣，所以圖上的海岸線、省界會和可遊玩區域大致吻合。
 const outsideMapArt = new Image();
-outsideMapArt.src = "/assets/shiju-border.png";
+outsideMapArt.src = "/assets/republic-map-1926.jpg";
+// 最底層：舊的列強瓜分中國圖。全圖掃描件是張長方形的紙，套到等距圓柱投影後
+// 右下角會缺一塊楔形，那塊就讓瓜分圖透出來填滿。
+const underlayMapArt = new Image();
+underlayMapArt.src = "/assets/shiju-border.png";
+underlayMapArt.addEventListener("load", () => {
+  if (state) initMap();
+});
+// 掃描件圖框在畫布上的範圍：上下是水平線，右緣是一條微彎的線（經線收斂造成）。
+// 這組點是用配準參數把原圖右框取樣回畫布座標算出來的，用來裁切上層底圖，
+// 邊緣保持銳利、不做羽化。
+const SCAN_TOP_Y = 29.5;
+// 地圖上緣（北緯 52.5 度以北）掃描件沒有畫到。那條窄帶不讓瓜分圖露出來，
+// 改填掃描件自己刻度帶的黃色，接上去才不突兀。
+const SCAN_MARGIN_COLOR = '#efd4a8';
+const SCAN_BOTTOM_Y = 1296.1;
+const SCAN_RIGHT_EDGE = [
+  [1632.9, 29.5], [1598.3, 108.7], [1565.5, 187.9], [1534.5, 267.0], [1505.0, 346.2],
+  [1477.0, 425.4], [1450.3, 504.5], [1424.8, 583.7], [1400.5, 662.8], [1377.4, 742.0],
+  [1355.2, 821.2], [1334.0, 900.3], [1313.6, 979.5], [1294.1, 1058.6], [1275.4, 1137.8],
+  [1257.5, 1217.0], [1240.2, 1296.1],
+];
+// 可遊玩區域的陸地與六角格透明度：留一點讓底圖透出來，好看出兩者的對位。
+const PLAYABLE_LAYER_ALPHA = 0.86;
 outsideMapArt.addEventListener("load", () => {
   if (state) initMap();
 });
@@ -3066,28 +3091,30 @@ function drawCompletedEngineering(ctx) {
 
 function drawOutsideMapAtmosphere(ctx) {
   ctx.save();
-  ctx.fillStyle = '#c8b894';
+  ctx.fillStyle = SCAN_MARGIN_COLOR;         // 地圖上緣那條窄帶就靠這層
   ctx.fillRect(0, 0, MAPW, MAPH);
-  if (outsideMapArt.complete && outsideMapArt.naturalWidth) {
-    ctx.globalAlpha = 0.72;
-    ctx.drawImage(outsideMapArt, 0, 0, MAPW, MAPH);
-    ctx.globalAlpha = 1;
-  }
-  ctx.strokeStyle = 'rgba(64, 55, 42, 0.24)';
-  ctx.lineWidth = 1;
-  for (let x = -MAPH; x < MAPW + MAPH; x += 42) {
+  // 最底層：列強瓜分中國圖，負責填掃描件蓋不到的右下楔形；
+  // 上緣以上不畫，免得從地圖頂端露出來。
+  if (underlayMapArt.complete && underlayMapArt.naturalWidth) {
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(x, MAPH);
-    ctx.lineTo(x + MAPH, 0);
-    ctx.stroke();
+    ctx.rect(0, SCAN_TOP_Y, MAPW, MAPH - SCAN_TOP_Y);
+    ctx.clip();
+    ctx.drawImage(underlayMapArt, 0, 0, MAPW, MAPH);
+    ctx.restore();
   }
-  ctx.fillStyle = 'rgba(52, 48, 41, 0.42)';
-  ctx.font = '700 16px Fraunces, Georgia, serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('外蒙 / 西域方向', 250, 120);
-  ctx.fillText('日本海方向', MAPW - 190, 470);
-  ctx.fillText('南洋航路', MAPW - 190, MAPH - 110);
-  ctx.fillText('印緬邊境', 170, MAPH - 160);
+  // 上層：對位過的《中華民國全圖》，裁切在掃描件實際涵蓋的範圍內，邊緣不羽化。
+  if (outsideMapArt.complete && outsideMapArt.naturalWidth) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(-MAPW, SCAN_TOP_Y);
+    for (const [x, y] of SCAN_RIGHT_EDGE) ctx.lineTo(x, y);
+    ctx.lineTo(-MAPW, SCAN_BOTTOM_Y);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(outsideMapArt, 0, 0, MAPW, MAPH);
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -3113,6 +3140,8 @@ function initMap() {
   drawOutsideMapAtmosphere(ctx);
 
   // Draw China proper (mainland)
+  ctx.save();
+  ctx.globalAlpha = PLAYABLE_LAYER_ALPHA;
   ctx.fillStyle = '#e7dcbe'; // Land color
   ctx.strokeStyle = '#7c6a44';
   ctx.lineWidth = 1.4;
@@ -3187,6 +3216,7 @@ function initMap() {
       ctx.stroke();
     }
   }
+  ctx.restore();
 
   drawInfrastructure(ctx);
 
