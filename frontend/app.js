@@ -21,12 +21,12 @@ const PORTRAIT_BY_ID = {
   wu_peifu: "/assets/portraits/吳佩孚.jpg",
   jin_yun_e: "/assets/portraits/靳雲鶚.jpg",
   feng_yuxiang: "/assets/portraits/馮玉祥.jpg",
-  wang_chengbin: "/assets/portraits/王承斌.jpg",
-  han_fuqu: "/assets/portraits/韓復榘.jpg",
+  chen_jiamo: "/assets/portraits/陳嘉謨.jpg",
+  kou_yingjie: "/assets/portraits/寇英傑.jpg",
   sun_chuanfang: "/assets/portraits/孫傳芳.jpg",
   zhou_yinren: "/assets/portraits/周蔭人.jpg",
-  li_houji: "/assets/portraits/李厚基.jpg",
-  lu_yongxiang: "/assets/portraits/盧永祥.jpg",
+  lu_xiangting: "/assets/portraits/盧香亭.jpg",
+  meng_zhaoyue: "/assets/portraits/孟昭月.jpg",
   li_zongren: "/assets/portraits/李宗仁.jpg",
   yan_xishan: "/assets/portraits/閻錫山.jpg",
   fu_zuoyi: "/assets/portraits/傅作義.jpg",
@@ -38,6 +38,20 @@ const PORTRAIT_BY_ID = {
   liu_wenhui: "/assets/portraits/劉文輝.jpg",
   tang_jiyao: "/assets/portraits/唐繼堯.jpg",
   long_yun: "/assets/portraits/龍雲.jpg",
+  han_fuqu: "/assets/portraits/韓復榘.jpg",
+  lu_zhonglin: "/assets/portraits/鹿鍾麟.jpg",
+  xu_yongchang: "/assets/portraits/徐永昌.jpg",
+  yang_sen: "/assets/portraits/楊森.jpg",
+  zhao_hengti: "/assets/portraits/趙恒惕.jpg",
+  ma_hongbin: "/assets/portraits/馬鴻賓.jpg",
+  // 在野將領
+  duan_qirui: "/assets/portraits/段祺瑞.jpg",
+  chen_jiongming: "/assets/portraits/陳炯明.jpg",
+  lu_hongtao: "/assets/portraits/陸洪濤.jpg",
+  tian_zhongyu: "/assets/portraits/田中玉.jpg",
+  wang_chengbin: "/assets/portraits/王承斌.jpg",
+  li_houji: "/assets/portraits/李厚基.jpg",
+  lu_yongxiang: "/assets/portraits/盧永祥.jpg",
 };
 
 let bootstrap = null;
@@ -56,6 +70,7 @@ let selectedArmyId = null;
 const resolvedArmyIds = new Set();
 const MAX_HAND_SIZE = 6;
 const DEFAULT_FUNCTION_CARD_DRAW_COST = 5;
+const DEFAULT_FUNCTION_CARD_DRAW_FACTORY_COST = 5;
 let foreignTab = "warlords";
 let dealTarget = null;
 let moveMode = false;
@@ -139,6 +154,9 @@ const TRAIT_LABELS = {
   steady_drillmaster: "練兵能手",
   fire_support_savant: "火力協同",
   local_supply_boss: "地方補給",
+  entrenched_warlord: "固守軍閥",
+  cavalry_screen_commander: "騎兵屏護",
+  foreign_gunnery_advisor: "外籍砲術顧問",
 };
 
 const TRAIT_DESCRIPTIONS = {
@@ -159,6 +177,9 @@ const TRAIT_DESCRIPTIONS = {
   steady_drillmaster: "步兵攻擊 +10%。",
   fire_support_savant: "砲兵攻擊機槍 +25%，攻擊步兵 +15%。",
   local_supply_boss: "步兵與機槍的崩潰門檻提高 5%。",
+  entrenched_warlord: "以既設塹壕與地方防務固守防區，步兵與機槍承傷 -10%。",
+  cavalry_screen_commander: "以騎兵幕掩護主力調動，騎兵生命 +20%。",
+  foreign_gunnery_advisor: "外籍砲術教官帶來的反砲兵射法，砲兵對砲兵攻擊 +20%。",
 };
 
 function traitDescription(trait) {
@@ -228,6 +249,9 @@ const TRAIT_GAME_MODIFIERS = {
   steady_drillmaster: [{ stat: "attack", unit: "infantry", multiplier: 1.10 }],
   fire_support_savant: [{ stat: "attack", unit: "artillery", target: "machine_gun", multiplier: 1.25 }, { stat: "attack", unit: "artillery", target: "infantry", multiplier: 1.15 }],
   local_supply_boss: [{ stat: "threshold", unit: "infantry", add: 0.05 }, { stat: "threshold", unit: "machine_gun", add: 0.05 }],
+  entrenched_warlord: [{ stat: "harm_taken", unit: "infantry", multiplier: 0.90 }, { stat: "harm_taken", unit: "machine_gun", multiplier: 0.90 }],
+  cavalry_screen_commander: [{ stat: "hp", unit: "cavalry", multiplier: 1.20 }],
+  foreign_gunnery_advisor: [{ stat: "attack", unit: "artillery", target: "artillery", multiplier: 1.20 }],
 };
 
 const TACTIC_LABELS = {
@@ -517,6 +541,7 @@ function adjustGeneralLoyalty(generalId, amount) {
 
 function applyFunctionSideEffects(result) {
   if (result.assassination) applyAssassination(result.assassination);
+  if (result.exile_recruit) applyExileRecruit(result.exile_recruit);
   if (result.target_general_id && result.loyalty_delta) {
     adjustGeneralLoyalty(result.target_general_id, result.loyalty_delta);
   }
@@ -1065,6 +1090,10 @@ function functionCardDrawCost() {
   return bootstrap?.features?.function_card_draw_cost || DEFAULT_FUNCTION_CARD_DRAW_COST;
 }
 
+function functionCardDrawFactoryCost() {
+  return bootstrap?.features?.function_card_draw_factory_cost ?? DEFAULT_FUNCTION_CARD_DRAW_FACTORY_COST;
+}
+
 function functionPurchasePromptKey(player = currentPlayer) {
   return `${state?.turn || 0}:${player}`;
 }
@@ -1073,6 +1102,7 @@ function canPurchaseFunctionCard(payload = state?.players?.[currentPlayer], play
   if (!bootstrap?.features?.function_cards || !payload || payload.pending_draw) return false;
   if (Number(payload.function_purchase_count || 0) >= functionCardDrawLimit()) return false;
   if ((payload.treasury || 0) < functionCardDrawCost()) return false;
+  if ((payload.factory_points || 0) < functionCardDrawFactoryCost()) return false;
   if (((payload.function_deck || []).length + (payload.discard || []).length) <= 0) return false;
   return !skippedFunctionPurchasePrompts.has(functionPurchasePromptKey(player));
 }
@@ -1086,10 +1116,11 @@ function functionPurchaseMarkup(payload = state?.players?.[currentPlayer], conte
   const deckCount = (payload?.function_deck || []).length + (payload?.discard || []).length;
   const used = Number(payload?.function_purchase_count || 0);
   const limit = functionCardDrawLimit();
-  let note = `可支付 $${cost} 抽 1 張功能卡；每位玩家每回合最多 ${limit} 張（已抽 ${used}/${limit}）。`;
+  let note = `可支付 $${cost}＋工業點 ${functionCardDrawFactoryCost()} 抽 1 張功能卡；每位玩家每回合最多 ${limit} 張（已抽 ${used}/${limit}）。`;
   if (payload?.pending_draw) note = "先棄置一張手牌，接收已購買的新功能卡。";
   else if (used >= limit) note = `本回合已抽滿 ${limit} 張功能卡。`;
   else if ((payload?.treasury || 0) < cost) note = `現金不足，購買功能卡需要 $${cost}。`;
+  else if ((payload?.factory_points || 0) < functionCardDrawFactoryCost()) note = `工業點不足，購買功能卡需要 ${functionCardDrawFactoryCost()} 點。`;
   else if (deckCount <= 0) note = "功能卡牌庫已空。";
   return `
     <div class="function-purchase ${context}">
@@ -1097,7 +1128,7 @@ function functionPurchaseMarkup(payload = state?.players?.[currentPlayer], conte
         <b>功能卡購買</b>
         <span>${note}</span>
       </div>
-      <button data-buy-function-card="${currentPlayer}" ${canPurchaseFunctionCard(payload) ? "" : "disabled"}>支付 $${cost}</button>
+      <button data-buy-function-card="${currentPlayer}" ${canPurchaseFunctionCard(payload) ? "" : "disabled"}>支付 $${cost}＋工${functionCardDrawFactoryCost()}</button>
     </div>
   `;
 }
@@ -1204,7 +1235,7 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     ${cityEffects.map((effect) => {
       const role = effect.initiator === currentPlayer ? "發動" : "受害";
       const progress = `${effect.garrison_progress || 0}/${effect.required_turns || 3}`;
-      return `<span>青幫暴動(${role})：${effect.province}，鎮壓 ${progress}</span>`;
+      return `<span>${effect.label || "黑幫暴動"}(${role})：${effect.province}，鎮壓 ${progress}</span>`;
     }).join("")}
     ${uprisings.map((effect) => {
       const role = effect.initiator === currentPlayer ? "發動" : "受害";
@@ -1279,6 +1310,16 @@ function functionActionMessage(action, viewer = currentPlayer) {
     parts.push([...byOwner.entries()]
       .map(([owner, list]) => `${factionLabel(owner, owner === viewer)}預備隊 ${list.join("、")}`)
       .join("；"));
+  }
+  if (action.artifact_sale) {
+    const sale = action.artifact_sale;
+    parts.push(`向${POWER_NAME[sale.power] || sale.power}盜賣文物，進帳 $${sale.payout}`
+      + (sale.shame_cards_added ? `；牌庫多了 ${sale.shame_cards_added} 張〈中國人之恥〉（${sale.shame_cards_total}/${sale.shame_cap}）` : "；恥辱牌已達上限"));
+  }
+  if (action.riot_shield) {
+    const shield = action.riot_shield;
+    parts.push(`${shield.province}設立警政單位，${shield.remaining_turns} 回合內免疫黑幫暴動`
+      + (shield.quelled_count ? `，並立即平息現行暴動 ${shield.quelled_count} 起` : ""));
   }
   if (action.loyalty_delta && action.target_general_id) {
     const target = generalLabel(action.target_general_id, action.target_owner);
@@ -1381,7 +1422,7 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const target = factionLabel(action.city_disruption.target_owner, action.city_disruption.target_owner === viewer);
     const cities = (action.city_disruption.cities || []).map((city) => city.name).join("、");
     if (action.city_disruption.kind === "qing_gang_riot") {
-      parts.push(`${target}${action.city_disruption.province}青幫暴動，城市 ${cities} 產出停擺；需 15 戰力軍隊連續駐留 3 回合鎮壓`);
+      parts.push(`${target}${action.city_disruption.province}${action.city_disruption.label || "黑幫暴動"}，城市 ${cities} 產出停擺；需 ${action.city_disruption.required_force || 15} 戰力軍隊連續駐留 ${action.city_disruption.required_turns || 2} 回合鎮壓`);
     } else {
       parts.push(`${target}${cities}產出停擺 ${action.city_disruption.remaining_turns} 回合`);
     }
@@ -1583,6 +1624,21 @@ function renderGeneralsPanel() {
           </div>
         </div>`;
       }).join("") : '<div class="empty-state compact">目前無俘虜</div>'}
+    </section>`;
+  const exiles = exilePoolEntries();
+  html += `
+    <section class="exile-roster">
+      <h3>在野將領</h3>
+      <p class="exile-note">下野賦閒、不屬於任何陣營，開局不在場上。打出〈在野名將投效〉並付其身價全額，即可請人出山，帶著自帶部隊在大帥所在地現身。</p>
+      ${exiles.length ? exiles.map(({ general, recruitedBy, price }) => `
+        <div class="exile-general${recruitedBy ? " recruited" : ""}">
+          ${renderGeneralTreeCard(general, { includeCaptured: true })}
+          <div class="exile-meta">
+            <small>${general.background || ""}</small>
+            <small>${general.ability || ""}</small>
+            <small>${recruitedBy ? `已由 ${FACTIONS[recruitedBy]?.name || recruitedBy} 延攬出山` : `身價 ${general.recruit_value} · 延攬費 $${price}（全額）`}</small>
+          </div>
+        </div>`).join("") : '<div class="empty-state compact">在野將領池已空</div>'}
     </section>`;
   return html;
 }
@@ -1856,7 +1912,9 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
   if (!includeCaptured && generalOwners[general.id] !== currentPlayer) return "";
   if (!includeCaptured && fieldArmy?.status === "jailed") return "";
   const hasArmy = Boolean(fieldArmy) && fieldArmy.status !== "jailed" && general.status !== "recruited";
-  const unitsText = hasArmy ? unitSummary(armyUnits(fieldArmy)) : "無部隊";
+  const unitsText = general.status === "in_exile"
+    ? `自帶 ${unitSummary(Object.fromEntries(Object.entries(general.units || {}).filter(([, count]) => Number(count) > 0)))}`
+    : (hasArmy ? unitSummary(armyUnits(fieldArmy)) : "無部隊");
   const loyalty = calculateGeneralLoyalty(general, fieldArmy);
   const lowLoyalty = loyalty.value !== null && loyalty.value < 6;
   const loyaltyText = loyalty.value !== null ? loyalty.value : '—';
@@ -1873,7 +1931,7 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
         : `<div class="tree-portrait portrait-placeholder">${general.name.charAt(0)}</div>`}
       <div class="tree-info">
         <div class="tree-name">${general.name}${killedTag}${guardTag}</div>
-        <div class="tree-faction">${general.faction}</div>
+        <div class="tree-faction">${general.faction || "在野"}</div>
         <div class="tree-units">${unitsText}</div>
         <div class="tree-traits">${(general.traits || []).map(traitChip).join("")}</div>
       </div>
@@ -1896,6 +1954,9 @@ function calculateGeneralLoyalty(general, fieldArmy) {
     return { value: loyaltyOverrides[general.id], tooltip: `當前忠誠: ${loyaltyOverrides[general.id]}\n受俘虜、招降、策反或功能卡影響` };
   }
   const baseLoyalty = Number(general.loyalty);
+  if (general.status === "in_exile") {
+    return { value: baseLoyalty, tooltip: `出山時的基礎忠誠: ${baseLoyalty}\n在野期間不套用部隊相關的增減` };
+  }
   if (!fieldArmy || fieldArmy.status === "jailed" || general.status === "recruited") {
     const value = Math.min(baseLoyalty, 2);
     return { value, tooltip: `基礎忠誠: ${baseLoyalty}\n無直屬部隊: -${Math.max(0, baseLoyalty - value)}` };
@@ -2412,6 +2473,7 @@ function attachCardHandlers(root = document) {
           target_city_id: root.querySelector(`[data-card-target-city="${button.dataset.use}"]`)?.value,
           target_province: root.querySelector(`[data-card-target-province="${button.dataset.use}"]`)?.value,
           target_railway: root.querySelector(`[data-card-target-railway="${button.dataset.use}"]`)?.value,
+          target_power: root.querySelector(`[data-card-target-power="${button.dataset.use}"]`)?.value,
         });
         state = result.state;
         applyFunctionSideEffects(result);
@@ -2511,10 +2573,81 @@ function applyAssassination(outcome) {
   }
 }
 
+// ── 在野將領 ────────────────────────────────────────────────────────────
+// 開局不在場上、不屬於任何陣營；只有〈在野名將投效〉能把人請出山。
+function exilePool() {
+  return bootstrap?.generals_in_exile?.generals || {};
+}
+
+function exilePoolEntries() {
+  const taken = state?.recruited_exiles || {};
+  return Object.values(exilePool()).map((general) => ({
+    general,
+    recruitedBy: taken[general.id] || null,
+    price: Number(general.recruit_value || 0),
+  }));
+}
+
+function availableExiles() {
+  return exilePoolEntries().filter((entry) => !entry.recruitedBy);
+}
+
+const ARMY_ORDINALS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+// 後端只負責扣款與鎖定人選，把人放進將領樹與地圖是前端的事。
+function applyExileRecruit(outcome) {
+  if (!outcome?.general_id) return;
+  const owner = outcome.owner;
+  const source = exilePool()[outcome.general_id];
+  const tree = generalTrees[owner];
+  if (!source || !tree) return;
+  if (tree.generals[outcome.general_id]) return;
+
+  const greatId = tree.great_general_id;
+  const great = tree.generals[greatId];
+  if (!great) return;
+
+  const general = JSON.parse(JSON.stringify(source));
+  general.faction = FACTIONS[owner]?.shortName || owner;
+  general.core_faction = false;
+  general.status = "active";
+  general.parent_id = greatId;
+  general.came_from_exile = true;
+  tree.generals[general.id] = general;
+  great.subordinates = [...(great.subordinates || []), general.id];
+  great.subordinate_slots = Math.max(Number(great.subordinate_slots || 0), great.subordinates.length);
+  generalOwners[general.id] = owner;
+
+  // 出山地點：該陣營大帥所在地，就近找一格自己控制的空格。
+  const list = ARMY_POSITIONS[owner] || (ARMY_POSITIONS[owner] = []);
+  const anchorArmy = list.find((army) => army.generalId === greatId) || list[0];
+  const occupied = new Set(allArmies(true).map((army) => army.cellKey).filter(Boolean));
+  const cell = anchorArmy ? cellAt(anchorArmy.lon, anchorArmy.lat, owner, occupied) : null;
+  if (!cell) return;
+  const index = list.length + 1;
+  list.push({
+    id: `${owner}-${index}`,
+    generalId: general.id,
+    general: general.name,
+    designator: `第${ARMY_ORDINALS[index] || index}軍`,
+    startCityId: anchorArmy?.startCityId || null,
+    lon: cell.lon,
+    lat: cell.lat,
+    cellKey: cell.key,
+    units: { infantry: 0, cavalry: 0, artillery: 0, machine_gun: 0, ...(outcome.units || {}) },
+  });
+}
+
 function loyaltyCardTargetMarkup(card) {
   if (!["unit_promotion", "local_autonomy_agitation"].includes(card.id)) return "";
   const targets = loyaltyCardTargets(card);
   return `<label class="card-target">指定將領<select data-card-target="${card.id}" ${targets.length ? "" : "disabled"}>${targets.map(({ general, owner, loyalty }) => `<option value="${general.id}">${FACTIONS[owner]?.shortName || owner} · ${general.name}（忠誠 ${loyalty}）</option>`).join("")}</select></label>`;
+}
+
+// 警政單位只能佈在自己有城市的省份。
+function ownedProvinceOptions() {
+  const owned = new Set((state?.players?.[currentPlayer]?.city_economy || []).map((city) => city.province));
+  return [...owned].filter(Boolean).sort();
 }
 
 function subordinateSlotTargets() {
@@ -2556,6 +2689,24 @@ function functionCardTargetMarkup(card) {
     if (!targets.length) return `<div class="card-target-note">己方人物都已編成親衛隊</div>`;
     return `<label class="card-target">指定人物<select data-card-target="${card.id}">${targets
       .map((general) => `<option value="${general.id}">${general.name}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "artifact_smuggling") {
+    const powers = card.powers || Object.keys(POWER_NAME);
+    return `<label class="card-target">指定列強<select data-card-target-power="${card.id}">${powers
+      .map((key) => `<option value="${key}">${POWER_NAME[key] || key}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "gang_riot_shield") {
+    const provinces = ownedProvinceOptions();
+    if (!provinces.length) return `<div class="card-target-note">你目前沒有控制任何城市</div>`;
+    return `<label class="card-target">指定省份<select data-card-target-province="${card.id}">${provinces
+      .map((province) => `<option value="${province}">${province}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "exile_recruit") {
+    const targets = availableExiles();
+    if (!targets.length) return `<div class="card-target-note">在野將領池已空，本卡改為半價補充步兵 ×2、機槍 ×1（不收工業點）</div>`;
+    return `<label class="card-target">延攬人物<select data-card-target="${card.id}">${targets
+      .map(({ general, price }) => `<option value="${general.id}">${general.name}（$${price}）</option>`)
+      .join("")}</select></label>`;
   }
   if (card.mechanic === "intel_network") {
     const provinces = provinceOptions();
@@ -4036,10 +4187,19 @@ function railLinkUsable(from, to, downed = disabledRailways()) {
   return false;
 }
 
-// 位於搶修中鐵路沿線的部隊每回合只能走 1 格，連急行軍都不行。
-function cellUnderRailwaySabotage(cell, downed = disabledRailways()) {
-  if (!cell || !downed.size) return false;
-  return [...(cell.railroads || [])].some((name) => downed.has(name));
+// 鐵路癱瘓期間，該線沿線地格退化成普通地格：不能再做鐵路運輸，
+// 但照常可以用一般移動（含急行軍）通行。
+function cellIsPlainWhileDowned(cell, downed = disabledRailways()) {
+  const lines = [...(cell?.railroads || [])];
+  if (!lines.length) return false;
+  return lines.every((name) => downed.has(name));
+}
+
+// 一格能不能當成鄉村地格走：本來就沒鐵路，或鐵路正在搶修中。
+function cellUsableAsRural(cell, downed = disabledRailways()) {
+  if (!cell || cell.city) return false;
+  if (!cell.railroads?.size) return true;
+  return cellIsPlainWhileDowned(cell, downed);
 }
 
 function riverStepAllowed(from, to, railwayMovement = false) {
@@ -4084,9 +4244,8 @@ function ruralMoveLimit(player = currentPlayer) {
 function ruralMovementPath(source, destination, player = currentPlayer) {
   const limit = ruralMoveLimit(player);
   if (limit <= 1) return null;
-  // 崩鐵玩家：沿線地格出發的部隊本回合只剩 1 格，急行軍失效。
-  if (cellUnderRailwaySabotage(source)) return null;
-  if (destination.city || destination.railroads?.size) return null;
+  const downed = disabledRailways();
+  if (!cellUsableAsRural(destination, downed)) return null;
   const queue = [{ cell: source, path: [source] }];
   const visited = new Set([source.key]);
   while (queue.length) {
@@ -4095,7 +4254,7 @@ function ruralMovementPath(source, destination, player = currentPlayer) {
     if (path.length > limit) continue;
     for (const next of cellNeighbors(cell)) {
       if (visited.has(next.key)) continue;
-      if (next.city || next.railroads?.size) continue;
+      if (!cellUsableAsRural(next, downed)) continue;
       if (!riverStepAllowed(cell, next, false)) continue;
       visited.add(next.key);
       queue.push({ cell: next, path: [...path, next] });
@@ -4923,9 +5082,9 @@ function renderPendingActions() {
     notification.hidden = false;
     notification.innerHTML = `
       <b>回合開始：購買功能卡？</b>
-      <span>可支付 $${cost} 抽 1 張功能卡；本回合最多 ${limit} 張，目前 ${used}/${limit}，也可以略過。</span>
+      <span>可支付 $${cost}＋工業點 ${functionCardDrawFactoryCost()} 抽 1 張功能卡；本回合最多 ${limit} 張，目前 ${used}/${limit}，也可以略過。</span>
       <div class="notification-actions">
-        <button data-buy-function-card="${currentPlayer}">支付 $${cost}</button>
+        <button data-buy-function-card="${currentPlayer}">支付 $${cost}＋工${functionCardDrawFactoryCost()}</button>
         <button data-skip-function-purchase="${currentPlayer}">略過</button>
       </div>`;
   } else if (bootstrap.features?.function_cards && state.last_action?.type === "function_card" && functionActionVisibleTo(state.last_action, currentPlayer)) {

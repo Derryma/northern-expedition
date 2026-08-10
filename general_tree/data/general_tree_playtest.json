@@ -19,7 +19,7 @@
         "fortress_builder"
       ],
       "units": {
-        "infantry": 18,
+        "infantry": 15,
         "cavalry": 2,
         "artillery": 3,
         "machine_gun": 4
@@ -49,13 +49,13 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 14,
+        "infantry": 12,
         "cavalry": 2,
         "artillery": 2,
         "machine_gun": 4
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     },
@@ -74,13 +74,13 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 12,
+        "infantry": 11,
         "cavalry": 2,
         "artillery": 2,
         "machine_gun": 3
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     },
@@ -99,13 +99,13 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 10,
+        "infantry": 9,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 2
       },
       "parent_id": "chiang_kai_shek",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

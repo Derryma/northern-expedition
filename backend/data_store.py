@@ -18,6 +18,7 @@ DATA_PATHS = {
     "npc_factions": "NPC/data/npc_factions.json",
     "general_tree_template": "general_tree/data/general_tree_template.json",
     "general_skills": "general_tree/data/skill_catalog.json",
+    "generals_in_exile": "general_tree/data/generals_in_exile.json",
     "unit_stats": "comabt_system/data/unit_stats.json",
     "tactics": "comabt_system/data/tactics.json",
     "general_traits": "comabt_system/data/general_traits.json",

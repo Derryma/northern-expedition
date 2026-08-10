@@ -26,8 +26,8 @@
       "subordinate_slots": 3,
       "subordinates": [
         "jin_yun_e",
-        "wang_chengbin",
-        "han_fuqu"
+        "chen_jiamo",
+        "kou_yingjie"
       ],
       "status": "active"
     },
@@ -55,13 +55,13 @@
         "machine_gun": 3
       },
       "parent_id": "wu_peifu",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     },
-    "wang_chengbin": {
-      "id": "wang_chengbin",
-      "name": "王承斌",
+    "chen_jiamo": {
+      "id": "chen_jiamo",
+      "name": "陳嘉謨",
       "role": "lieutenant_general",
       "faction": "直系",
       "core_faction": true,
@@ -80,15 +80,15 @@
         "machine_gun": 2
       },
       "parent_id": "wu_peifu",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     },
-    "han_fuqu": {
-      "id": "han_fuqu",
-      "name": "韓復榘",
+    "kou_yingjie": {
+      "id": "kou_yingjie",
+      "name": "寇英傑",
       "role": "lieutenant_general",
-      "faction": "雜牌軍",
+      "faction": "直系",
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
@@ -105,7 +105,7 @@
         "machine_gun": 3
       },
       "parent_id": "wu_peifu",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

@@ -23,9 +23,10 @@
         "machine_gun": 2
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 2,
       "subordinates": [
-        "he_jian"
+        "he_jian",
+        "zhao_hengti"
       ],
       "status": "active"
     },
@@ -50,7 +51,32 @@
         "machine_gun": 1
       },
       "parent_id": "tang_shengzhi",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "zhao_hengti": {
+      "id": "zhao_hengti",
+      "name": "趙恒惕",
+      "role": "lieutenant_general",
+      "faction": "湘軍",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 26,
+      "traits": [
+        "entrenched_warlord"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 7,
+        "cavalry": 2,
+        "artillery": 1,
+        "machine_gun": 1
+      },
+      "parent_id": "tang_shengzhi",
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

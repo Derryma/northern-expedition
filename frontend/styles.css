@@ -2789,3 +2789,41 @@ button, select, input, textarea {
 .tile-tag-port { border: 1px solid #5b86a6; color: #8fc0dc; }
 .tile-concession-power { display: inline-flex; align-items: center; }
 .concession-flag { width: 20px; height: 13px; margin-right: 4px; }
+
+/* 在野將領池：下野賦閒、不屬於任何陣營的將領。 */
+.exile-roster {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.exile-roster h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+.exile-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.72;
+}
+.exile-general {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+.exile-general + .exile-general {
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+.exile-general.recruited {
+  opacity: 0.45;
+}
+.exile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.85;
+}

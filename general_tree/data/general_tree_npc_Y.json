@@ -17,15 +17,16 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 8,
+        "infantry": 11,
         "cavalry": 3,
-        "artillery": 1,
-        "machine_gun": 1
+        "artillery": 2,
+        "machine_gun": 2
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 2,
       "subordinates": [
-        "fu_zuoyi"
+        "fu_zuoyi",
+        "xu_yongchang"
       ],
       "status": "active"
     },
@@ -44,13 +45,38 @@
       ],
       "skills": [],
       "units": {
+        "infantry": 7,
+        "cavalry": 4,
+        "artillery": 0,
+        "machine_gun": 2
+      },
+      "parent_id": "yan_xishan",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "xu_yongchang": {
+      "id": "xu_yongchang",
+      "name": "徐永昌",
+      "role": "lieutenant_general",
+      "faction": "晉系",
+      "core_faction": false,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 26,
+      "traits": [
+        "local_supply_boss"
+      ],
+      "skills": [],
+      "units": {
         "infantry": 6,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 1
       },
       "parent_id": "yan_xishan",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

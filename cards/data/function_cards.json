@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 107,
+  "count": 119,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -24,12 +24,12 @@
       "holdable": true,
       "entry_requirement": "已收買黑金",
       "cost": 0,
-      "effect": "指定敵方一個省份（限江蘇、浙江、安徽、河南、湖北）發動幫會暴動；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 3 回合才可平息。",
+      "effect": "指定敵方一個省份（限江蘇、浙江、安徽、河南、湖北）發動黑幫暴動；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 2 回合才可平息。",
       "generated_event_cards": [],
       "mechanic": "qing_gang_riot",
       "reward_rate": 0.5,
       "suppression_force": 15,
-      "suppression_turns": 3,
+      "suppression_turns": 2,
       "provinces": [
         "江蘇",
         "浙江",
@@ -37,7 +37,8 @@
         "河南",
         "湖北"
       ],
-      "story": "杜月笙率領青幫支持你方勢力為中國正統。"
+      "story": "杜月笙率領青幫支持你方勢力為中國正統。",
+      "disruption_label": "黑幫暴動"
     },
     {
       "id": "hongmen_uprising",
@@ -47,12 +48,12 @@
       "holdable": true,
       "entry_requirement": "已收買黑金",
       "cost": 0,
-      "effect": "指定敵方一個省份（限廣東、廣西、福建、湖南、江西）發動洪門起義；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 3 回合才可平息。",
+      "effect": "指定敵方一個省份（限廣東、廣西、福建、湖南、江西）發動洪門起義；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 2 回合才可平息。",
       "generated_event_cards": [],
       "mechanic": "qing_gang_riot",
       "reward_rate": 0.5,
       "suppression_force": 15,
-      "suppression_turns": 3,
+      "suppression_turns": 2,
       "provinces": [
         "廣東",
         "廣西",
@@ -60,7 +61,8 @@
         "湖南",
         "江西"
       ],
-      "story": "洪門弟兄認為你方勢力為孫先生遺志繼承者，決定以行動支持正統。"
+      "story": "洪門弟兄認為你方勢力為孫先生遺志繼承者，決定以行動支持正統。",
+      "disruption_label": "黑幫暴動"
     },
     {
       "id": "qing_gang_blockade",
@@ -94,11 +96,10 @@
       "category": "sabotage",
       "holdable": true,
       "cost": 0,
-      "effect": "指定癱瘓一條中國鐵路（京奉、京漢、津浦、膠濟、正太、隴海、滬寧、粵漢）；該線停運 3 回合搶修，期間任何勢力不得沿此線進行鐵路運輸，位於該線沿線地格的部隊每回合僅能移動 1 格。",
+      "effect": "指定癱瘓一條中國鐵路（京奉、京漢、津浦、膠濟、正太、隴海、滬寧、粵漢）；該線停運 3 回合搶修，期間任何勢力不得沿此線進行鐵路運輸，該線沿線地格視為普通地格，仍可依一般移動規則通行。\n為共同搶修，除使用者外每位勢力工業點各 −10。",
       "generated_event_cards": [],
       "mechanic": "railway_sabotage",
       "duration_turns": 3,
-      "move_limit_tiles": 1,
       "railways": [
         "京奉鐵路",
         "京漢鐵路",
@@ -108,7 +109,8 @@
         "隴海鐵路",
         "滬寧鐵路",
         "粵漢鐵路"
-      ]
+      ],
+      "repair_factory_cost": 10
     },
     {
       "id": "port_bombing",
@@ -128,16 +130,6 @@
       "holdable": true,
       "cost": 0,
       "effect": "去除指定省份戰爭迷霧五回合。",
-      "generated_event_cards": []
-    },
-    {
-      "id": "intelligence_bureau",
-      "name": "情報局成立",
-      "deck_type": "function",
-      "category": "intelligence",
-      "holdable": true,
-      "cost": 0,
-      "effect": "成立情報局；此後每過五回合可花 10 元與敵方對骰 d30，勝利即可指定去除敵境一省戰爭迷霧五回合。",
       "generated_event_cards": []
     },
     {
@@ -309,15 +301,16 @@
     },
     {
       "id": "police_system",
-      "name": "警政系統",
+      "name": "設立情報局",
       "deck_type": "function",
-      "category": "counter_intelligence",
+      "category": "intelligence",
       "holdable": true,
       "mechanic": "police_system",
       "duration_turns": 3,
       "cost": 0,
-      "effect": "三回合內，我方所有不在敵軍正常視野內的軍隊免疫敵方情報網窺探；已在敵軍視野內或交戰中的軍隊不受此保護。",
-      "generated_event_cards": []
+      "effect": "3 回合內，我方所有不在敵軍正常視野內的軍隊免疫敵方情報網窺探；已在敵軍視野內或交戰中的軍隊不受此保護。",
+      "generated_event_cards": [],
+      "story": "情報局掛牌那天沒有典禮。幾間偏房、一批舊檔案櫃、一份誰都不許外傳的名冊，從此各路耳目送進來的紙條都往這裡匯。"
     },
     {
       "id": "communist_riot",
@@ -341,7 +334,7 @@
       "holdable": true,
       "mechanic": "red_army_uprising",
       "cost": 0,
-      "effect": "指定一個敵方勢力，其隨機兩座城市現金與工廠產出歸零，無期限；該城須由目標勢力駐紮至少一個旅（5 營）才會恢復。使用後對英、日、美、法關係各 −1。目標勢力會收到明確通知。",
+      "effect": "指定一個敵方勢力，其隨機兩座城市現金與工廠產出歸零，無期限；該城須由目標勢力以至少一個旅（5 營）連續駐紮 2 回合才會恢復。使用後對英、日、美、法關係各 −1。目標勢力會收到明確通知。",
       "generated_event_cards": [],
       "target_city_count": 2,
       "required_battalions": 5,
@@ -350,7 +343,8 @@
         "jp": -1,
         "us": -1,
         "fr": -1
-      }
+      },
+      "required_turns": 2
     },
     {
       "id": "zhili_infantry_drill",
@@ -1448,7 +1442,7 @@
       "holdable": true,
       "source_event_card_id": "在野名將投效",
       "entry_requirement": null,
-      "effect": "自在野將領池（§10.7）中，由你指定一名尚未出山者延攬（須支付其身價的一半）：獲得該將領與其自帶部隊。\n（比《舊部來投》可自選人物但需付費；池空則此卡改為獲步兵 ×2、機槍 ×1。）",
+      "effect": "自「在野將領池」中指定一名尚未出山的在野將領延攬，支付其身價的全額：該將領帶著自帶部隊在你的大帥所在地現身，並編入你的將領樹。\n全場每位在野將領只能被延攬一次；若在野將領池已空，本卡改為補充步兵 ×2、機槍 ×1，只需支付募兵現金的一半（無條件進位），且不消耗工業點。",
       "base_weight": 3.0,
       "conditions": [
         {
@@ -1465,7 +1459,9 @@
           "reason": "延攬在野宿將後，其舊部可能要求地盤與職位。"
         }
       ],
-      "cost": 0
+      "cost": 0,
+      "mechanic": "exile_recruit",
+      "story": "下野的督軍們照舊每日打牌會客。牌桌上輸掉的是銀元，桌下談的卻是舊部、槍械與一紙復出的通電，只待在這亂世中東山再起.....。"
     },
     {
       "id": "foreign_relation_jp",
@@ -2214,6 +2210,140 @@
       "foreign_power_key": "su",
       "cancels_effect_kind": "ideology_shield",
       "story": "李大釗、陳獨秀、魯迅發動社會主義學潮，壓制蔡元培陣營的自由中國思潮。"
+    },
+    {
+      "id": "artifact_smuggling",
+      "name": "盜賣文物",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "cost": 0,
+      "effect": "指定一個列強向其盜賣中國文物：隨機獲得 $20～40，且對該列強關係 +1。\n每次使用後，你的功能卡牌庫會被塞進三張〈中國人之恥〉（全場上限 9 張）。",
+      "generated_event_cards": [],
+      "mechanic": "artifact_smuggling",
+      "story": "中華上下五千年, 今任西夷欺之, 嗚呼哀哉! 吾以為此乃舊文化腐朽之故, 今當破之以利新學!",
+      "payout_min": 20,
+      "payout_max": 40,
+      "relation_gain": 1,
+      "shame_card_id": "national_shame",
+      "shame_copies_per_use": 3,
+      "powers": [
+        "jp",
+        "su",
+        "uk",
+        "fr",
+        "us",
+        "de"
+      ]
+    },
+    {
+      "id": "national_shame",
+      "name": "中國人之恥",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "cost": 0,
+      "effect": "每次盜賣文物後，你的牌庫就會多出三張這個。打出後沒有任何效果，只是讓你知道你超爛的。",
+      "generated_event_cards": [],
+      "mechanic": "no_effect",
+      "story": "呸! 盜賣老祖宗的東西算哪門子中國人",
+      "max_copies": 9
+    },
+    {
+      "id": "police_precinct",
+      "name": "警政單位",
+      "deck_type": "function",
+      "category": "counter_intelligence",
+      "holdable": true,
+      "cost": 0,
+      "effect": "指定我方一個省份，3 回合內該省免疫黑幫暴動（杜月笙的豪賭、洪門起義）：敵方不得在該省發動黑幫事件，該省若有生效中的黑幫暴動也立即平息。",
+      "generated_event_cards": [],
+      "mechanic": "gang_riot_shield",
+      "story": "巡捕房的牌子換了新漆，巷口多了固定崗哨。青紅幫的香堂照開，只是不敢再在這條街上動手。",
+      "duration_turns": 3,
+      "blocked_mechanics": [
+        "qing_gang_riot"
+      ]
+    },
+    {
+      "id": "trade_export_jp",
+      "name": "對日本貿易出口",
+      "deck_type": "function",
+      "category": "diplomacy",
+      "holdable": true,
+      "cost": 0,
+      "effect": "消耗 50 工業點對日本輸出物資：獲得 $20，且對日本關係 +1。",
+      "generated_event_cards": [],
+      "mechanic": "trade_export",
+      "story": "碼頭上的棉紗與煤一箱箱堆進日本商船，帳房算盤打得飛快。生意做成了，話也就好說了。",
+      "foreign_power_key": "jp",
+      "factory_cost": 50,
+      "cash_gain": 20,
+      "relation_gain": 1
+    },
+    {
+      "id": "trade_export_su",
+      "name": "對蘇聯貿易出口",
+      "deck_type": "function",
+      "category": "diplomacy",
+      "holdable": true,
+      "cost": 0,
+      "effect": "消耗 50 工業點對蘇聯輸出物資：獲得 $20，且對蘇聯關係 +1。",
+      "generated_event_cards": [],
+      "mechanic": "trade_export",
+      "story": "北方的皮貨與豆油裝上西行的列車。莫斯科來的採購員不談價錢，只談之後還能談什麼。",
+      "foreign_power_key": "su",
+      "factory_cost": 50,
+      "cash_gain": 20,
+      "relation_gain": 1
+    },
+    {
+      "id": "trade_export_uk",
+      "name": "對英國貿易出口",
+      "deck_type": "function",
+      "category": "diplomacy",
+      "holdable": true,
+      "cost": 0,
+      "effect": "消耗 50 工業點對英國輸出物資：獲得 $20，且對英國關係 +1。",
+      "generated_event_cards": [],
+      "mechanic": "trade_export",
+      "story": "怡和的躉船靠上碼頭，茶葉與桐油過磅入艙。洋行大班在合約末尾簽下名字，順手遞來一支雪茄。",
+      "foreign_power_key": "uk",
+      "factory_cost": 50,
+      "cash_gain": 20,
+      "relation_gain": 1
+    },
+    {
+      "id": "trade_export_fr",
+      "name": "對法國貿易出口",
+      "deck_type": "function",
+      "category": "diplomacy",
+      "holdable": true,
+      "cost": 0,
+      "effect": "消耗 50 工業點對法國輸出物資：獲得 $20，且對法國關係 +1。",
+      "generated_event_cards": [],
+      "mechanic": "trade_export",
+      "story": "生絲一擔擔運往上海法租界的倉庫，再轉船去里昂。領事館的人說，這批貨走得很順。",
+      "foreign_power_key": "fr",
+      "factory_cost": 50,
+      "cash_gain": 20,
+      "relation_gain": 1
+    },
+    {
+      "id": "trade_export_us",
+      "name": "對美國貿易出口",
+      "deck_type": "function",
+      "category": "diplomacy",
+      "holdable": true,
+      "cost": 0,
+      "effect": "消耗 50 工業點對美國輸出物資：獲得 $20，且對美國關係 +1。",
+      "generated_event_cards": [],
+      "mechanic": "trade_export",
+      "story": "美孚的油輪換裝回程貨，桐油與豬鬃填滿船艙。花旗銀行的匯票當場開出，不必等。",
+      "foreign_power_key": "us",
+      "factory_cost": 50,
+      "cash_gain": 20,
+      "relation_gain": 1
     }
   ]
 }

@@ -18,6 +18,9 @@ from .data_store import REPO_ROOT
 FRONTEND_ROOT = REPO_ROOT / "frontend"
 PJ_ROOT = REPO_ROOT / "PJ Boardgame"
 PORTRAIT_ROOT = REPO_ROOT / "PJ Boardgame" / "portraits"
+# 本作自有的肖像目錄。PJ Boardgame 資料夾只供參考、不得改動，所以新畫或新增的
+# 肖像一律放這裡，並且優先於 PJ 目錄被採用。
+LOCAL_PORTRAIT_ROOT = FRONTEND_ROOT / "assets" / "portraits"
 ENGINE = GameEngine()
 SHARED_LOCK = RLock()
 SHARED_TACTICAL_STATE: Optional[Dict[str, Any]] = None
@@ -201,6 +204,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_city_id=payload.get("target_city_id"),
             target_province=payload.get("target_province"),
             target_railway=payload.get("target_railway"),
+            target_power=payload.get("target_power"),
         )
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -299,7 +303,9 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         elif path.startswith("/pj/"):
             file_path = PJ_ROOT / unquote(path.removeprefix("/pj/"))
         elif path.startswith("/assets/portraits/"):
-            file_path = PORTRAIT_ROOT / unquote(path.removeprefix("/assets/portraits/"))
+            name = unquote(path.removeprefix("/assets/portraits/"))
+            local = LOCAL_PORTRAIT_ROOT / name
+            file_path = local if local.is_file() else PORTRAIT_ROOT / name
         else:
             file_path = FRONTEND_ROOT / unquote(path.lstrip("/"))
         resolved = file_path.resolve()

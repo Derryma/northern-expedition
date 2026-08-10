@@ -26,7 +26,9 @@
       "parent_id": null,
       "subordinate_slots": 3,
       "subordinates": [
-        "song_zheyuan"
+        "song_zheyuan",
+        "han_fuqu",
+        "lu_zhonglin"
       ],
       "status": "active"
     },
@@ -51,7 +53,57 @@
         "machine_gun": 1
       },
       "parent_id": "feng_yuxiang",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "han_fuqu": {
+      "id": "han_fuqu",
+      "name": "韓復榘",
+      "role": "lieutenant_general",
+      "faction": "西北軍",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 34,
+      "traits": [
+        "central_plains_veteran"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 8,
+        "cavalry": 4,
+        "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "feng_yuxiang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "lu_zhonglin": {
+      "id": "lu_zhonglin",
+      "name": "鹿鍾麟",
+      "role": "lieutenant_general",
+      "faction": "西北軍",
+      "core_faction": false,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 28,
+      "traits": [
+        "steady_drillmaster"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 7,
+        "cavalry": 3,
+        "artillery": 1,
+        "machine_gun": 1
+      },
+      "parent_id": "feng_yuxiang",
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

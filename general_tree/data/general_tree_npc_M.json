@@ -23,9 +23,10 @@
         "machine_gun": 1
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 2,
       "subordinates": [
-        "ma_fuxiang"
+        "ma_fuxiang",
+        "ma_hongbin"
       ],
       "status": "active"
     },
@@ -50,7 +51,32 @@
         "machine_gun": 1
       },
       "parent_id": "ma_qi",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "ma_hongbin": {
+      "id": "ma_hongbin",
+      "name": "馬鴻賓",
+      "role": "lieutenant_general",
+      "faction": "西北馬家軍",
+      "core_faction": false,
+      "loyalty": 7,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 26,
+      "traits": [
+        "cavalry_screen_commander"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 5,
+        "cavalry": 4,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": "ma_qi",
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

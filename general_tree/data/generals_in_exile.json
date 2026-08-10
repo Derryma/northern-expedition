@@ -1,0 +1,204 @@
+{
+  "version": "in-exile-0.1",
+  "category": "in_exile",
+  "label": "在野將領",
+  "note": "在野將領開局不在場上、不屬於任何陣營。只有透過功能卡〈在野名將投效〉延攬，才會帶著自帶部隊在延攬方的首都現身。人物設定引用自 PJ Boardgame 在野將領池（§10.7）。",
+  "generals": {
+    "duan_qirui": {
+      "id": "duan_qirui",
+      "name": "段祺瑞",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 40,
+      "traits": [
+        "fire_support_savant"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 6,
+        "cavalry": 1,
+        "artillery": 2,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 22,
+      "background": "前皖系領袖，1920 年兵敗下野，寓居天津。",
+      "ability": "前代軍閥：所部砲兵命中 +1。"
+    },
+    "chen_jiongming": {
+      "id": "chen_jiongming",
+      "name": "陳炯明",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 36,
+      "traits": [
+        "entrenched_warlord"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 6,
+        "cavalry": 0,
+        "artillery": 0,
+        "machine_gun": 2
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 22,
+      "background": "前粵軍領袖，1925 年被逐，蟄居香港。",
+      "ability": "老革命家：所部生命 +1；對付共黨、黑幫、親蘇陣營時近戰命中 +1。"
+    },
+    "lu_hongtao": {
+      "id": "lu_hongtao",
+      "name": "陸洪濤",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 32,
+      "traits": [
+        "cavalry_screen_commander"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 4,
+        "cavalry": 3,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 20,
+      "background": "前甘肅督軍，1924 年為國民軍所逐。",
+      "ability": "隴上舊部：於甘肅、青海、陝西境內作戰時，所部移動 +1。"
+    },
+    "tian_zhongyu": {
+      "id": "tian_zhongyu",
+      "name": "田中玉",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 32,
+      "traits": [
+        "defensive_specialist"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 5,
+        "cavalry": 0,
+        "artillery": 0,
+        "machine_gun": 3
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 20,
+      "background": "前山東督軍，1923 年去職。",
+      "ability": "齊魯宿將：於山東境內守城時，所部命中 +1。"
+    },
+    "wang_chengbin": {
+      "id": "wang_chengbin",
+      "name": "王承斌",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 35,
+      "traits": [
+        "central_plains_veteran"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 6,
+        "cavalry": 2,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 22,
+      "background": "直系宿將，1925 年失勢賦閒。",
+      "ability": "直系老臣：加入直系陣營時忠誠 +2；所部步兵攻擊 +1。"
+    },
+    "li_houji": {
+      "id": "li_houji",
+      "name": "李厚基",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 36,
+      "traits": [
+        "fujian_garrison"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 6,
+        "cavalry": 0,
+        "artillery": 1,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 18,
+      "background": "前福建督軍，1922 年被逐，寓居天津。",
+      "ability": "閩海舊人：於福建、浙江境內守城時，所部生命 +1。"
+    },
+    "lu_yongxiang": {
+      "id": "lu_yongxiang",
+      "name": "盧永祥",
+      "role": "lieutenant_general",
+      "faction": null,
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 32,
+      "traits": [
+        "jiangxi_commander"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 6,
+        "cavalry": 1,
+        "artillery": 0,
+        "machine_gun": 1
+      },
+      "parent_id": null,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "in_exile",
+      "recruit_value": 18,
+      "background": "前浙江督軍，1925 年下野，蟄居天津。",
+      "ability": "江浙舊部：於浙江境內作戰時，所部命中 +1。"
+    }
+  }
+}
