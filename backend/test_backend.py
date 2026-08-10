@@ -1263,12 +1263,12 @@ class BackendTests(unittest.TestCase):
         for power in ("jp", "su", "uk", "fr", "us"):
             self.assertAlmostEqual(index["foreign_relation_" + power]["success_rate"], 0.70, msg=power)
 
-    def test_twentyseven_cards_carry_a_story(self):
-        # 17 → 18（在野名將投效）→ 27：設立情報局、盜賣文物、中國人之恥、
-        # 警政單位、五張貿易出口卡各補了故事。
+    def test_twentyeight_cards_carry_a_story(self):
+        # 17 → 18（在野名將投效）→ 27（設立情報局、盜賣文物、中國人之恥、
+        # 警政單位、五張貿易出口卡）→ 28（僑胞匯款）。
         cards = load_game_data()["function_cards"]["cards"]
         with_story = [card for card in cards if card.get("story")]
-        self.assertEqual(len(with_story), 27)
+        self.assertEqual(len(with_story), 28)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -1635,3 +1635,72 @@ class CityLevelFloorTests(unittest.TestCase):
         """新增省份時別忘了補上省會，否則上面兩個測試會漏掉它。"""
         provinces = {city["province"] for city in self._cities()}
         self.assertEqual(provinces, set(self.PROVINCIAL_CAPITALS))
+
+
+class ConditionalDeckTests(unittest.TestCase):
+    """條件卡的進出牌庫：僑胞匯款與吳孫合作卡。"""
+
+    def test_remittance_stays_out_until_you_hold_guangdong_or_fujian(self):
+        engine = GameEngine(seed=3)
+        # 開局：奉系與直系一省都沒全控，所以牌庫裡不該有這張。
+        for code in ("F", "W"):
+            self.assertEqual(
+                engine.state["players"][code]["function_deck"].count("overseas_chinese_remittance"), 0, code)
+        # 五省聯軍全控福建，條件成立。
+        self.assertEqual(
+            engine.state["players"]["S"]["function_deck"].count("overseas_chinese_remittance"), 2)
+        # 國民革命軍全控廣東，但對蘇 9 > 5，關係條件擋住。
+        self.assertEqual(
+            engine.state["players"]["N"]["function_deck"].count("overseas_chinese_remittance"), 0)
+
+    def test_remittance_enters_the_deck_once_a_province_is_taken(self):
+        engine = GameEngine(seed=3)
+        for city in engine.data["strategic_map"]["cities"]:
+            if city["province"] == "廣東":
+                engine.state["city_owners"][city["id"]] = "W"
+        engine.next_turn(active_player="W")
+        self.assertEqual(
+            engine.state["players"]["W"]["function_deck"].count("overseas_chinese_remittance"), 2)
+
+    def test_remittance_leaves_the_deck_when_the_province_is_lost(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["S"]
+        self.assertEqual(payload["function_deck"].count("overseas_chinese_remittance"), 2)
+        engine.state["city_owners"]["xiamen"] = "N"
+        engine.next_turn(active_player="S")
+        self.assertEqual(payload["function_deck"].count("overseas_chinese_remittance"), 0)
+
+    JOINT_CARDS = (
+        "zhili_infantry_drill", "anti_fengtian_alignment",
+        "marshal_gratitude", "zhili_anti_communist_declaration",
+    )
+
+    def test_joint_cards_are_dealt_while_wu_and_sun_are_at_peace(self):
+        engine = GameEngine(seed=3)
+        for code in ("W", "S"):
+            for card_id in self.JOINT_CARDS:
+                self.assertGreater(
+                    engine.state["players"][code]["function_deck"].count(card_id), 0, f"{code}/{card_id}")
+        # 別家本來就拿不到這幾張。
+        for code in ("F", "N"):
+            for card_id in self.JOINT_CARDS:
+                self.assertEqual(
+                    engine.state["players"][code]["function_deck"].count(card_id), 0, f"{code}/{card_id}")
+
+    def test_joint_cards_leave_the_deck_once_wu_and_sun_go_to_war(self):
+        engine = GameEngine(seed=3)
+        engine.set_diplomacy("W", "S", "war")
+        engine.next_turn(active_player="W")
+        for code in ("W", "S"):
+            for card_id in self.JOINT_CARDS:
+                self.assertEqual(
+                    engine.state["players"][code]["function_deck"].count(card_id), 0, f"{code}/{card_id}")
+
+    def test_a_joint_card_in_hand_survives_the_war_but_cannot_be_played(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["W"]["hand"].append("zhili_infantry_drill")
+        engine.set_diplomacy("W", "S", "war")
+        engine.next_turn(active_player="W")
+        self.assertIn("zhili_infantry_drill", engine.state["players"]["W"]["hand"])
+        with self.assertRaises(ValueError):
+            engine.use_function("W", "zhili_infantry_drill")

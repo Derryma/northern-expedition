@@ -476,7 +476,7 @@
       "holdable": true,
       "mechanic": "cash_per_province",
       "cost": 0,
-      "effect": "完全控制廣東或福建者皆可使用，每控制一省現金 +15。需對蘇關係 5 以下。",
+      "effect": "完全控制廣東或福建其中至少一省者可使用，每控制一省現金 +15。需對蘇關係 5 以下。\n條件未達成時本卡不會出現在牌庫中。",
       "generated_event_cards": [],
       "provinces": [
         "廣東",
@@ -486,7 +486,12 @@
       "requires_relation_max": {
         "power": "su",
         "value": 5
-      }
+      },
+      "requires_any_province": [
+        "廣東",
+        "福建"
+      ],
+      "story": "南洋的匯莊每月照舊把銀信送回鄉。僑批上寫的是家用與學費，匯到督軍衙門的那幾筆，寫的是「助餉」。"
     },
     {
       "id": "wang_jingwei_return",

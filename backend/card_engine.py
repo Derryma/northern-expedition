@@ -2266,9 +2266,9 @@ class GameEngine:
     # 抽到的那幾張抽走。已經在手上的不動——那是抽牌當下條件成立才拿到的，之後
     # 條件沒了仍然留在手上，只是 _validate_card_use 會擋住不讓打。
     CONDITION_KEYS = (
-        "requires_unlock", "requires_provinces", "requires_cities",
-        "requires_relation_max", "requires_relation_min", "concession_power",
-        "requires_peace_with",
+        "requires_unlock", "requires_provinces", "requires_any_province",
+        "requires_cities", "requires_relation_max", "requires_relation_min",
+        "concession_power", "requires_peace_with",
     )
 
     def _conditional_card_ids(self) -> list:
@@ -2362,6 +2362,11 @@ class GameEngine:
             missing = [name for name in required_provinces if name not in owned]
             if missing:
                 raise ValueError(f"需完全控制 {'、'.join(required_provinces)} 才可使用（尚缺 {'、'.join(missing)}）")
+        # 「任一省」與 requires_provinces 的「每一省」不同：僑胞匯款只要廣東、福建
+        # 其中一省全控就成立。
+        any_provinces = card.get("requires_any_province")
+        if any_provinces and not self._controlled_provinces(player, any_provinces):
+            raise ValueError(f"需完全控制 {'、'.join(any_provinces)} 其中至少一省才可使用")
         required_cities = card.get("requires_cities")
         if required_cities:
             missing = [
