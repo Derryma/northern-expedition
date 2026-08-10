@@ -23,9 +23,10 @@
         "machine_gun": 1
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 2,
       "subordinates": [
-        "liu_wenhui"
+        "liu_wenhui",
+        "yang_sen"
       ],
       "status": "active"
     },
@@ -50,7 +51,32 @@
         "machine_gun": 1
       },
       "parent_id": "liu_xiang",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "yang_sen": {
+      "id": "yang_sen",
+      "name": "楊森",
+      "role": "lieutenant_general",
+      "faction": "川軍",
+      "core_faction": false,
+      "loyalty": 4,
+      "loyalty_exempt": false,
+      "body_guard_level": null,
+      "command_cap": 26,
+      "traits": [
+        "shock_column_leader"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 7,
+        "cavalry": 2,
+        "artillery": 1,
+        "machine_gun": 1
+      },
+      "parent_id": "liu_xiang",
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

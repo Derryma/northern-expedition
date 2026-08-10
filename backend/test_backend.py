@@ -319,7 +319,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("foreign_relation_jp"), 4)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("young_marshal_rises"), 1)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("wang_yongjiang_financial_reform"), 1)
-        self.assertEqual(engine.state["players"]["N"]["function_deck"].count("forced_march"), 4)
+        self.assertEqual(engine.state["players"]["N"]["function_deck"].count("forced_march"), 8)
         self.assertIn("zhili_infantry_drill", engine.state["players"]["W"]["function_deck"])
         self.assertIn("zhili_infantry_drill", engine.state["players"]["S"]["function_deck"])
 
@@ -481,9 +481,10 @@ class BackendTests(unittest.TestCase):
         self.assertGreater(turn["state"]["players"]["N"]["treasury"], before_n_cash - 10)
         self.assertTrue(any(item["id"] == effect["id"] for item in engine.state["city_output_effects"]))
 
-        for _ in range(2):
-            engine.next_turn(active_player="N", riot_garrisons={effect["id"]: True})
+        # 鎮壓門檻已改為連續駐留 2 回合：第一回合還在，第二回合結束才平息。
+        engine.next_turn(active_player="N", riot_garrisons={effect["id"]: True})
         self.assertTrue(any(item["id"] == effect["id"] for item in engine.state["city_output_effects"]))
+        self.assertEqual(effect["required_turns"], 2)
 
         engine.next_turn(active_player="N", riot_garrisons={effect["id"]: True})
         self.assertFalse(any(item.get("id") == effect["id"] for item in engine.state["city_output_effects"]))
@@ -706,10 +707,17 @@ class BackendTests(unittest.TestCase):
         self.assertTrue(engine.state["players"]["S"]["notifications"])
 
         first, second = disruption["city_ids"]
-        # 四營不夠，五營才解除；沒有回合上限。
+        self.assertEqual(disruption["required_turns"], 2)
+        # 五營要連續駐兩回合才解除，四營不算；沒有回合上限。
+        engine.next_turn("N", city_garrisons={first: 4, second: 5})
+        active = [e for e in engine.state["city_output_effects"] if e.get("kind") == "red_army_uprising"]
+        self.assertEqual(sorted(active[0]["city_ids"]), sorted([first, second]))
         engine.next_turn("N", city_garrisons={first: 4, second: 5})
         active = [e for e in engine.state["city_output_effects"] if e.get("kind") == "red_army_uprising"]
         self.assertEqual(active[0]["city_ids"], [first])
+        # first 中斷過，所以要再連兩回合。
+        engine.next_turn("N", city_garrisons={first: 5})
+        self.assertTrue([e for e in engine.state["city_output_effects"] if e.get("kind") == "red_army_uprising"])
         engine.next_turn("N", city_garrisons={first: 5})
         self.assertFalse([e for e in engine.state["city_output_effects"] if e.get("kind") == "red_army_uprising"])
         self.assertEqual(engine.state["players"]["S"]["income"], before_cash)
@@ -781,8 +789,8 @@ class BackendTests(unittest.TestCase):
         engine = GameEngine(seed=1)
         for code in engine.state["players"]:
             deck = engine.state["players"][code]["function_deck"]
-            self.assertEqual(deck.count("wang_yaqiao_assassination"), 2, code)
-            self.assertEqual(deck.count("body_guard_squad"), 3, code)
+            self.assertEqual(deck.count("wang_yaqiao_assassination"), 3, code)
+            self.assertEqual(deck.count("body_guard_squad"), 5, code)
 
     def test_old_special_service_guard_cards_are_gone(self):
         """組建親衛隊取代了特勤衛隊：普通／菁英。"""
@@ -1255,10 +1263,12 @@ class BackendTests(unittest.TestCase):
         for power in ("jp", "su", "uk", "fr", "us"):
             self.assertAlmostEqual(index["foreign_relation_" + power]["success_rate"], 0.70, msg=power)
 
-    def test_seventeen_cards_carry_a_story(self):
+    def test_twentyeight_cards_carry_a_story(self):
+        # 17 → 18（在野名將投效）→ 27（設立情報局、盜賣文物、中國人之恥、
+        # 警政單位、五張貿易出口卡）→ 28（僑胞匯款）。
         cards = load_game_data()["function_cards"]["cards"]
         with_story = [card for card in cards if card.get("story")]
-        self.assertEqual(len(with_story), 17)
+        self.assertEqual(len(with_story), 28)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -1280,3 +1290,417 @@ class BackendTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExileGeneralTests(unittest.TestCase):
+    """在野將領池與〈在野名將投效〉。"""
+
+    POOL_IDS = {
+        "duan_qirui", "chen_jiongming", "lu_hongtao", "tian_zhongyu",
+        "wang_chengbin", "li_houji", "lu_yongxiang",
+    }
+
+    def test_pool_holds_the_seven_generals_off_board_and_factionless(self):
+        pool = load_game_data()["generals_in_exile"]["generals"]
+        self.assertEqual(set(pool), self.POOL_IDS)
+        for gid, general in pool.items():
+            self.assertIsNone(general["faction"], gid)          # 不屬於任何陣營
+            self.assertFalse(general["core_faction"], gid)
+            self.assertEqual(general["status"], "in_exile", gid)  # 開局不在場上
+            self.assertGreater(int(general["recruit_value"]), 0, gid)
+            self.assertTrue(general["background"].strip(), gid)
+
+    def test_moved_generals_left_their_original_factions(self):
+        data = load_game_data()
+        # 王承斌、韓復榘 原屬直系；李厚基、盧永祥 原屬五省聯軍。
+        import json
+        from backend.data_store import REPO_ROOT
+        zhili = json.loads((REPO_ROOT / "general_tree/data/general_tree_zhili.json").read_text(encoding="utf-8"))
+        sunfang = json.loads((REPO_ROOT / "general_tree/data/general_tree_sunfang.json").read_text(encoding="utf-8"))
+        self.assertNotIn("wang_chengbin", zhili["generals"])
+        self.assertIn("chen_jiamo", zhili["generals"])
+        self.assertIn("kou_yingjie", zhili["generals"])
+        self.assertNotIn("li_houji", sunfang["generals"])
+        self.assertNotIn("lu_yongxiang", sunfang["generals"])
+        self.assertIn("lu_xiangting", sunfang["generals"])
+        self.assertIn("meng_zhaoyue", sunfang["generals"])
+        # 韓復榘改列西北軍。
+        feng = json.loads((REPO_ROOT / "general_tree/data/general_tree_npc_G.json").read_text(encoding="utf-8"))
+        self.assertEqual(feng["generals"]["han_fuqu"]["faction"], "西北軍")
+        self.assertIn("lu_zhonglin", feng["generals"])
+        del data
+
+    def test_replacements_inherit_the_outgoing_generals_numbers(self):
+        import json
+        from backend.data_store import REPO_ROOT
+        zhili = json.loads((REPO_ROOT / "general_tree/data/general_tree_zhili.json").read_text(encoding="utf-8"))
+        # 陳嘉謨完全沿用王承斌的數值。
+        chen = zhili["generals"]["chen_jiamo"]
+        self.assertEqual(chen["units"], {"infantry": 12, "cavalry": 2, "artillery": 1, "machine_gun": 2})
+        self.assertEqual(chen["command_cap"], 35)
+        self.assertEqual(chen["loyalty"], 7)
+        # 寇英傑完全沿用韓復榘在直系時的數值。
+        kou = zhili["generals"]["kou_yingjie"]
+        self.assertEqual(kou["units"], {"infantry": 12, "cavalry": 4, "artillery": 2, "machine_gun": 3})
+        self.assertEqual(kou["command_cap"], 34)
+
+    def test_recruiting_costs_the_full_value_and_locks_the_general(self):
+        engine = GameEngine(seed=3)
+        before = engine.state["players"]["W"]["treasury"]
+        engine.state["players"]["W"]["hand"].append("function_在野名將投效")
+        outcome = engine.use_function(
+            "W", "function_在野名將投效", target_general_id="duan_qirui",
+        )["exile_recruit"]
+
+        self.assertEqual(outcome["general_id"], "duan_qirui")
+        self.assertEqual(outcome["price"], 22)          # 延攬費為身價全額
+        self.assertEqual(outcome["owner"], "W")
+        self.assertEqual(outcome["units"], {"infantry": 6, "cavalry": 1, "artillery": 2, "machine_gun": 1})
+        self.assertEqual(engine.state["players"]["W"]["treasury"], before - 22)
+        self.assertEqual(engine.state["recruited_exiles"]["duan_qirui"], "W")
+
+        # 同一人不能被第二次延攬。
+        engine.state["players"]["S"]["hand"].append("function_在野名將投效")
+        with self.assertRaises(ValueError):
+            engine.use_function("S", "function_在野名將投效", target_general_id="duan_qirui")
+
+    def test_recruiting_needs_a_target_and_enough_cash(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["W"]["hand"].append("function_在野名將投效")
+        with self.assertRaises(ValueError):
+            engine.use_function("W", "function_在野名將投效")
+
+        engine.state["players"]["W"]["treasury"] = 5
+        with self.assertRaises(ValueError):
+            engine.use_function("W", "function_在野名將投效", target_general_id="duan_qirui")
+
+    def test_empty_pool_turns_the_card_into_a_half_price_unit_top_up(self):
+        engine = GameEngine(seed=3)
+        engine.state["recruited_exiles"] = {gid: "F" for gid in self.POOL_IDS}
+        before = engine.state["players"]["W"]["treasury"]
+        engine.state["players"]["W"]["hand"].append("function_在野名將投效")
+        result = engine.use_function("W", "function_在野名將投效")
+        self.assertIsNone(result["exile_recruit"])
+        delta = result["army_unit_delta"]
+        self.assertEqual(delta["unit_reserves"], {"infantry": 2, "machine_gun": 1})
+        # 步兵 4 ×2 + 機槍 10 = 18，半價 9；工業點不收。
+        infantry_cash = engine._unit_cost_for("W", "infantry")[0]
+        machine_gun_cash = engine._unit_cost_for("W", "machine_gun")[0]
+        expected = (infantry_cash * 2 + machine_gun_cash + 1) // 2
+        self.assertEqual(delta["price"], expected)
+        self.assertEqual(delta["factory_cost"], 0)
+        self.assertEqual(engine.state["players"]["W"]["treasury"], before - expected)
+
+    def test_starting_force_targets(self):
+        """開局戰力（步1、騎1、機2、砲4）——這些數字是刻意調出來的，別無意改動。"""
+        import json
+        from backend.data_store import REPO_ROOT
+        stems = {"N": "playtest", "F": "fengtian", "W": "zhili", "S": "sunfang", "Y": "npc_Y"}
+        expected = {"N": 114, "F": 120, "W": 122, "S": 111, "Y": 53}
+        for code, stem in stems.items():
+            tree = json.loads((REPO_ROOT / f"general_tree/data/general_tree_{stem}.json").read_text(encoding="utf-8"))
+            total = 0
+            for general in tree["generals"].values():
+                units = general["units"]
+                total += (int(units.get("infantry", 0)) + int(units.get("cavalry", 0))
+                          + int(units.get("machine_gun", 0)) * 2 + int(units.get("artillery", 0)) * 4)
+            self.assertEqual(total, expected[code], code)
+
+    def test_map_armies_match_the_general_trees(self):
+        """地圖上的部隊數必須和將領樹一致——runtime 以將領樹為準，不一致只會誤導。"""
+        import json
+        import re
+        from backend.data_store import REPO_ROOT
+        trees = {}
+        for path in (REPO_ROOT / "general_tree/data").glob("general_tree_*.json"):
+            if path.name.endswith("template.json"):
+                continue
+            for general in json.loads(path.read_text(encoding="utf-8"))["generals"].values():
+                trees[general["id"]] = general["units"]
+        source = (REPO_ROOT / "frontend/map.js").read_text(encoding="utf-8")
+        block = re.search(r"export const ARMY_POSITIONS = \{(.*?)\n\};", source, re.S).group(1)
+        checked = 0
+        for line in block.splitlines():
+            found = re.search(r"generalId: '([^']+)'.*?units: \{([^}]*)\}", line)
+            if not found or found.group(1) not in trees:
+                continue
+            units = {key: int(value) for key, value in re.findall(r"(\w+):\s*(\d+)", found.group(2))}
+            tree_units = {key: int(trees[found.group(1)].get(key, 0))
+                          for key in ("infantry", "cavalry", "artillery", "machine_gun")}
+            self.assertEqual(units, tree_units, found.group(1))
+            checked += 1
+        self.assertGreaterEqual(checked, 30)
+
+
+class CardBatchTests(unittest.TestCase):
+    """本批更新：盜賣文物、中國人之恥、警政單位、貿易出口、崩鐵、抽牌成本、條件卡。"""
+
+    def test_copy_counts_for_this_batch(self):
+        engine = GameEngine(seed=5)
+        for code in engine.state["players"]:
+            deck = engine.state["players"][code]["function_deck"]
+            self.assertEqual(deck.count("function_在野名將投效"), 3, code)
+            self.assertEqual(deck.count("unit_promotion"), 10, code)
+            self.assertEqual(deck.count("local_autonomy_agitation"), 5, code)
+            self.assertEqual(deck.count("body_guard_squad"), 5, code)
+            self.assertEqual(deck.count("wang_yaqiao_assassination"), 3, code)
+            self.assertEqual(deck.count("forced_march"), 8, code)
+            self.assertEqual(deck.count("artifact_smuggling"), 3, code)
+            self.assertEqual(deck.count("police_precinct"), 5, code)
+            for power in ("jp", "su", "uk", "fr", "us"):
+                self.assertEqual(deck.count(f"trade_export_{power}"), 3, f"{code}/{power}")
+            # 中國人之恥開局一張都沒有。
+            self.assertEqual(deck.count("national_shame"), 0, code)
+
+    def test_intelligence_bureau_was_merged_into_the_renamed_card(self):
+        index = load_game_data()["indexes"]["function_cards"]
+        self.assertNotIn("intelligence_bureau", index)   # 舊卡合併掉了
+        self.assertEqual(index["police_system"]["name"], "設立情報局")
+
+    def test_artifact_smuggling_pays_out_and_poisons_the_deck(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["W"]
+        before_cash = payload["treasury"]
+        before_relation = payload["foreign_relations"]["uk"]
+        payload["hand"].append("artifact_smuggling")
+        result = engine.use_function("W", "artifact_smuggling", target_power="uk")
+
+        sale = result["artifact_sale"]
+        self.assertGreaterEqual(sale["payout"], 20)
+        self.assertLessEqual(sale["payout"], 40)
+        self.assertEqual(payload["treasury"], before_cash + sale["payout"])
+        self.assertEqual(payload["foreign_relations"]["uk"], before_relation + 1)
+        self.assertEqual(sale["shame_cards_added"], 3)
+        self.assertEqual(payload["function_deck"].count("national_shame"), 3)
+
+    def test_shame_cards_stop_at_nine(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["W"]
+        for _ in range(5):
+            payload["hand"].append("artifact_smuggling")
+            engine.use_function("W", "artifact_smuggling", target_power="us")
+        self.assertEqual(engine._card_count_in_player_zones(payload, "national_shame"), 9)
+
+    def test_shame_card_does_nothing(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["W"]
+        before = payload["treasury"]
+        payload["hand"].append("national_shame")
+        engine.use_function("W", "national_shame")
+        self.assertEqual(payload["treasury"], before)
+        self.assertIn("national_shame", payload["discard"])
+
+    def test_artifact_smuggling_only_hits_the_users_own_deck(self):
+        engine = GameEngine(seed=7)
+        engine.state["players"]["W"]["hand"].append("artifact_smuggling")
+        engine.use_function("W", "artifact_smuggling", target_power="jp")
+        for code in ("F", "S", "N"):
+            self.assertEqual(
+                engine._card_count_in_player_zones(engine.state["players"][code], "national_shame"), 0, code)
+
+    def test_trade_export_burns_factory_points_for_cash_and_relation(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["S"]
+        payload["factory_points"] = 100
+        before_cash = payload["treasury"]
+        before_relation = payload["foreign_relations"]["fr"]
+        payload["hand"].append("trade_export_fr")
+        engine.use_function("S", "trade_export_fr")
+        self.assertEqual(payload["factory_points"], 50)
+        self.assertEqual(payload["treasury"], before_cash + 20)
+        self.assertEqual(payload["foreign_relations"]["fr"], before_relation + 1)
+
+    def test_trade_export_needs_the_full_fifty_points(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["S"]
+        payload["factory_points"] = 49
+        payload["hand"].append("trade_export_us")
+        with self.assertRaises(ValueError):
+            engine.use_function("S", "trade_export_us")
+        self.assertEqual(payload["factory_points"], 49)   # 失敗不扣點
+
+    def test_police_precinct_blocks_and_quells_gang_riots(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["N"]["hand"].append("du_yuesheng_gamble")
+        effect = engine.use_function(
+            "N", "du_yuesheng_gamble", target_owner="W", target_province="湖北")["city_disruption"]
+        self.assertTrue(any(item["id"] == effect["id"] for item in engine.state["city_output_effects"]))
+
+        engine.state["players"]["W"]["hand"].append("police_precinct")
+        shield = engine.use_function("W", "police_precinct", target_province="湖北")["riot_shield"]
+        self.assertEqual(shield["quelled_count"], 1)      # 現行暴動立即平息
+        self.assertFalse(any(item["id"] == effect["id"] for item in engine.state["city_output_effects"]))
+
+        # 護盾期間敵方不能再在該省發動。
+        engine.state["players"]["N"]["hand"].append("hongmen_uprising")
+        engine.state["players"]["N"]["hand"].append("du_yuesheng_gamble")
+        with self.assertRaises(ValueError):
+            engine.use_function("N", "du_yuesheng_gamble", target_owner="W", target_province="湖北")
+        # 別的省不受影響。
+        engine.use_function("N", "du_yuesheng_gamble", target_owner="W", target_province="河南")
+
+    def test_police_precinct_needs_a_province_you_hold(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["W"]["hand"].append("police_precinct")
+        with self.assertRaises(ValueError):
+            engine.use_function("W", "police_precinct", target_province="廣東")
+
+    def test_railway_sabotage_bills_everyone_else_ten_factory_points(self):
+        engine = GameEngine(seed=3)
+        before = {code: engine.state["players"][code]["factory_points"] for code in engine.state["players"]}
+        engine.state["players"]["N"]["hand"].append("railway_saboteur")
+        result = engine.use_function("N", "railway_saboteur", target_railway="京漢鐵路")
+
+        self.assertEqual(engine.state["players"]["N"]["factory_points"], before["N"])   # 使用者不付
+        for code in ("F", "W", "S"):
+            self.assertEqual(engine.state["players"][code]["factory_points"], max(0, before[code] - 10), code)
+        self.assertEqual(result["railway_effect"]["repair_factory_cost"], 10)
+        # 不再壓低沿線移動格數。
+        self.assertNotIn("move_limit_tiles", result["railway_effect"])
+        self.assertIn("京漢鐵路", engine.disabled_railways())
+
+    def test_drawing_a_card_costs_cash_and_factory_points(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["W"]
+        engine.next_turn(active_player="W")
+        cash = payload["treasury"]
+        factory = payload["factory_points"]
+        engine.draw_function("W")
+        self.assertEqual(payload["treasury"], cash - 5)
+        self.assertEqual(payload["factory_points"], factory - 5)
+
+        payload["factory_points"] = 4
+        payload["function_purchase_count"] = 0
+        with self.assertRaises(ValueError):
+            engine.draw_function("W")
+
+    def test_cards_with_unmet_conditions_stay_out_of_the_deck(self):
+        """條件沒達成的卡不該被抽到，達成後才洗進牌庫。"""
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["N"]
+        # 國共合作需要先打出汪精衛復出。
+        self.assertEqual(payload["function_deck"].count("first_united_front"), 0)
+        payload["hand"].append("wang_jingwei_return")
+        engine.use_function("N", "wang_jingwei_return")
+        engine.next_turn(active_player="N")
+        self.assertGreater(payload["function_deck"].count("first_united_front"), 0)
+
+    def test_a_card_already_in_hand_is_kept_but_blocked_when_the_condition_lapses(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["N"]
+        payload["hand"].append("wang_jingwei_return")
+        engine.use_function("N", "wang_jingwei_return")
+        engine.next_turn(active_player="N")
+        payload["hand"].append("first_united_front")
+
+        payload["unlocks"] = []                     # 條件消失
+        engine.next_turn(active_player="N")
+        self.assertIn("first_united_front", payload["hand"])          # 手牌不會被抽走
+        self.assertEqual(payload["function_deck"].count("first_united_front"), 0)
+        with self.assertRaises(ValueError):                            # 但打不出來
+            engine.use_function("N", "first_united_front")
+
+
+class CityLevelFloorTests(unittest.TestCase):
+    """省會與租界城市的等級下限。"""
+
+    # 1926 年的省會。直隸省會此時在天津，北京同為 4 級，兩者都過關。
+    PROVINCIAL_CAPITALS = {
+        "吉林": "吉林", "四川": "成都", "奉天": "奉天", "安徽": "安慶",
+        "察哈爾": "張家口", "山東": "濟南", "山西": "太原", "廣東": "廣州",
+        "廣西": "南寧", "江蘇": "南京", "江西": "南昌", "河南": "開封",
+        "浙江": "杭州", "湖北": "武昌", "湖南": "長沙", "熱河": "承德",
+        "甘肅": "蘭州", "直隸": "天津", "福建": "福州", "綏遠": "歸綏",
+        "貴州": "貴陽", "陝西": "西安", "雲南": "昆明", "黑龍江": "齊齊哈爾",
+    }
+
+    def _cities(self):
+        return load_game_data()["strategic_map"]["cities"]
+
+    def test_every_province_capital_is_at_least_level_three(self):
+        by_name = {city["name"]: city for city in self._cities()}
+        for province, name in self.PROVINCIAL_CAPITALS.items():
+            city = by_name.get(name)
+            self.assertIsNotNone(city, f"{province} 的省會 {name} 不在地圖上")
+            self.assertEqual(city["province"], province, name)
+            self.assertGreaterEqual(int(city["level"]), 3, f"{province}·{name}")
+
+    def test_every_concession_city_is_at_least_level_three(self):
+        concession_cities = [city for city in self._cities() if city.get("concession")]
+        self.assertGreaterEqual(len(concession_cities), 10)
+        for city in concession_cities:
+            self.assertGreaterEqual(int(city["level"]), 3, city["name"])
+
+    def test_every_province_on_the_map_has_a_capital_listed(self):
+        """新增省份時別忘了補上省會，否則上面兩個測試會漏掉它。"""
+        provinces = {city["province"] for city in self._cities()}
+        self.assertEqual(provinces, set(self.PROVINCIAL_CAPITALS))
+
+
+class ConditionalDeckTests(unittest.TestCase):
+    """條件卡的進出牌庫：僑胞匯款與吳孫合作卡。"""
+
+    def test_remittance_stays_out_until_you_hold_guangdong_or_fujian(self):
+        engine = GameEngine(seed=3)
+        # 開局：奉系與直系一省都沒全控，所以牌庫裡不該有這張。
+        for code in ("F", "W"):
+            self.assertEqual(
+                engine.state["players"][code]["function_deck"].count("overseas_chinese_remittance"), 0, code)
+        # 五省聯軍全控福建，條件成立。
+        self.assertEqual(
+            engine.state["players"]["S"]["function_deck"].count("overseas_chinese_remittance"), 2)
+        # 國民革命軍全控廣東，但對蘇 9 > 5，關係條件擋住。
+        self.assertEqual(
+            engine.state["players"]["N"]["function_deck"].count("overseas_chinese_remittance"), 0)
+
+    def test_remittance_enters_the_deck_once_a_province_is_taken(self):
+        engine = GameEngine(seed=3)
+        for city in engine.data["strategic_map"]["cities"]:
+            if city["province"] == "廣東":
+                engine.state["city_owners"][city["id"]] = "W"
+        engine.next_turn(active_player="W")
+        self.assertEqual(
+            engine.state["players"]["W"]["function_deck"].count("overseas_chinese_remittance"), 2)
+
+    def test_remittance_leaves_the_deck_when_the_province_is_lost(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["S"]
+        self.assertEqual(payload["function_deck"].count("overseas_chinese_remittance"), 2)
+        engine.state["city_owners"]["xiamen"] = "N"
+        engine.next_turn(active_player="S")
+        self.assertEqual(payload["function_deck"].count("overseas_chinese_remittance"), 0)
+
+    JOINT_CARDS = (
+        "zhili_infantry_drill", "anti_fengtian_alignment",
+        "marshal_gratitude", "zhili_anti_communist_declaration",
+    )
+
+    def test_joint_cards_are_dealt_while_wu_and_sun_are_at_peace(self):
+        engine = GameEngine(seed=3)
+        for code in ("W", "S"):
+            for card_id in self.JOINT_CARDS:
+                self.assertGreater(
+                    engine.state["players"][code]["function_deck"].count(card_id), 0, f"{code}/{card_id}")
+        # 別家本來就拿不到這幾張。
+        for code in ("F", "N"):
+            for card_id in self.JOINT_CARDS:
+                self.assertEqual(
+                    engine.state["players"][code]["function_deck"].count(card_id), 0, f"{code}/{card_id}")
+
+    def test_joint_cards_leave_the_deck_once_wu_and_sun_go_to_war(self):
+        engine = GameEngine(seed=3)
+        engine.set_diplomacy("W", "S", "war")
+        engine.next_turn(active_player="W")
+        for code in ("W", "S"):
+            for card_id in self.JOINT_CARDS:
+                self.assertEqual(
+                    engine.state["players"][code]["function_deck"].count(card_id), 0, f"{code}/{card_id}")
+
+    def test_a_joint_card_in_hand_survives_the_war_but_cannot_be_played(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["W"]["hand"].append("zhili_infantry_drill")
+        engine.set_diplomacy("W", "S", "war")
+        engine.next_turn(active_player="W")
+        self.assertIn("zhili_infantry_drill", engine.state["players"]["W"]["hand"])
+        with self.assertRaises(ValueError):
+            engine.use_function("W", "zhili_infantry_drill")

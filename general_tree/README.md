@@ -9,6 +9,14 @@ This folder is separate from `comabt_system` because combat resolves battles, wh
 - `general_tree.py` exports helper functions for hierarchy and loyalty state.
 - `data/general_tree_template.json` is a save-file style template for one great general, lieutenants, and majors.
 - `data/skill_catalog.json` lists special promotion-only skills.
+- `data/generals_in_exile.json` is the 在野將領 pool: commanders who are out of office at the
+  start of the game. They sit on no faction's tree, hold no faction, and are not on the map.
+  The function card 〈在野名將投效〉 (`exile_recruit`) buys one of them out of retirement for the
+  full `recruit_value` in cash; the general then joins the recruiting faction's tree with the
+  troops listed in `units`, appearing where that faction's great general stands. Each pool general
+  can be recruited once per game — the engine tracks this in `state.recruited_exiles`. Once the
+  pool is empty the card falls back to a unit top-up (2 infantry, 1 machine gun) charged at half
+  the faction's recruitment cash and no factory points.
 - `test_general_tree.py` contains small regression tests for the core rules.
 
 ## Hierarchy
@@ -21,9 +29,7 @@ Default hierarchy:
 | `lieutenant_general` | 2 major generals |
 | `major_general` | 0 |
 
-The common function card 「擴編直屬」 can increase a lieutenant general from 2 to 3 major-general slots. Three is the cap.
-
-Scripts can apply the same effect with:
+Events can increase slots with:
 
 ```python
 from general_tree import increase_affiliation_slots
