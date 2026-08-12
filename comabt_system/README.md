@@ -202,7 +202,81 @@ Supported operations:
 
 Use `unit: "all"` or omit `unit` to affect every unit. Use `target` for target-specific attack bonuses, such as artillery being better against machine guns.
 
-`data/general_traits.json` contains seven low-complexity trait examples:
+`data/general_traits.json` is the single source of truth for every general's
+combat numbers. The frontend reads it through `/api/bootstrap` and only keeps the
+Chinese label and description of its own; nothing multiplies these modifiers a
+second time.
+
+The 22 named generals each carry one signature skill (張宗昌 carries two):
+
+| Trait | General | Effect |
+|---|---|---|
+| `northwest_overlord` 西北霸王 | 馮玉祥 | whole command HP +10% (aura, see below) |
+| `dodging_drift` 閃躲漂 | 韓復榘 | harm taken -20%, attack -10% |
+| `broadsword_corps` 大刀隊 | 宋哲元 | infantry harm taken +10%, infantry attack +15% |
+| `northwest_vanguard` 西北先鋒 | 鹿鍾麟 | cavalry harm taken +10%, cavalry attack +15% |
+| `shanxi_king` 山西王 | 閻錫山 | whole command HP +10% (aura) |
+| `iron_bulwark` 銅牆鐵壁 | 傅作義 | harm taken -8%, artillery attack +8% |
+| `chief_of_staff` 參謀長 | 徐永昌 | harm taken -8% |
+| `xining_garrison` 西寧鎮守 | 馬麒 | whole command HP +10% (aura) |
+| `desert_guard` 大漠衛隊 | 馬福祥 | infantry and cavalry harm taken -8% |
+| `valiant_horse` 驍騎 | 馬鴻賓 | cavalry attack +10% |
+| `marshal_zhang` 張大帥 | 張作霖 | whole command HP +10% (aura) |
+| `young_marshal` 少帥 | 張學良 | cavalry and artillery attack +8% |
+| `white_russian_mercenaries` 白俄傭兵 | 張宗昌 | infantry and cavalry attack +10%, cavalry HP +7%; disabled while the owning faction's Soviet relation is 6 or higher, and 張宗昌 loses 5 loyalty |
+| `japanese_comprador` 日本買辦 | 張宗昌 | on joining a faction that faction's Japan relation +2; each Japanese condemnation card has a 10% chance of being blocked |
+| `elite_artillery` 精銳砲兵 | 楊宇霆 | artillery attack +10% |
+| `five_provinces_alliance` 五省聯軍 | 孫傳芳 | whole command HP +10% (aura) |
+| `riverine_warfare` 水域作戰 | 周蔭人、盧香亭 | harm taken -10% while fighting in 廣西、廣東、福建、浙江、江蘇、安徽、江西 |
+| `assault_breaker` 攻堅悍將 | 孟昭月 | infantry and artillery attack +7% |
+| `wu_peifu_admired` 吾佩服 | 吳佩孚 | whole command HP +10% (aura) |
+| `defensive_specialist` 防禦專家 | 靳雲鶚 | harm taken -12% |
+| `central_plains_veteran` 中原宿將 | 寇英傑 | infantry and cavalry attack +7% |
+| `wuchang_veteran` 武昌宿將 | 陳嘉謨 | infantry and artillery harm taken -7% |
+| `advantage_is_ours` 優勢在我 | 蔣介石 | whole command HP +10% (aura) |
+| `whampoa_spirit` 黃埔軍魂 | 何應欽 | infantry and machine gun harm taken +5%, their attack +15% |
+| `precision_barrage` 精準砲擊 | 白崇禧 | artillery attack +25% vs machine guns, +15% vs infantry, +5% vs artillery |
+| `mountain_division` 山地師 | 李宗仁、白崇禧、唐繼堯、龍雲、劉湘、楊森 | harm taken -10% while fighting in 廣東、廣西、雲南、貴州、四川、湖南 |
+| `elite_mountain_division` 精銳山地師 | 劉文輝 | same provinces: harm taken -10% and attack +5% |
+| `french_comprador` 法國買辦 | 唐繼堯 | on joining a faction that faction's France relation +3; each French condemnation card has a 30% chance of being blocked |
+| `tianfu_land` 天府之國 | 劉湘 | every 四川 city his faction controls yields +1 cash and +1 factory per turn |
+| `buddhist_general` 佛教將軍 | 唐生智 | harm taken -10%, attack -10%, and defection attempts against him lose 5 percentage points of success chance |
+| `hunan_governor` 我才是省長 | 趙恒惕 | every 湖南 city his faction controls yields +1 cash and +1 factory per turn; attack +10% in any battle where 唐生智 is on the other side |
+| `anticommunist_vanguard` 剿共先鋒 | 何鍵 | attack +10% against a faction whose Soviet relation is 6 or higher, and red army uprisings need only one garrison turn; disabled (and -5 loyalty) while his own faction's Soviet relation is 6 or higher |
+| `former_overlord` 前代梟雄 | 段祺瑞 | infantry and artillery attack +12% |
+| `anhui_veteran` 皖系舊部 | 盧永祥 | infantry and machine gun attack +8%; whole command HP +10% while 段祺瑞 is on the same side. 五省聯軍 cannot recruit him |
+| `zhili_veteran` 直系宿將 | 王承斌 | cavalry and artillery attack +7%; +1 loyalty while 吳佩孚 is in the same faction |
+| `old_cantonese_army` 老粵軍 | 陳炯明 | artillery attack +12%; red army uprisings need only one garrison turn. 國民革命軍 cannot recruit him |
+| `qilu_veteran` 齊魯宿將 | 田中玉 | cavalry harm taken -7%, artillery attack +7%; +1 loyalty while 張宗昌 is in the same faction |
+
+Aura, province and relation conditions cannot be expressed as plain modifiers, so
+they live in `frontend/app.js` (`AURA_TRAITS`, `PROVINCE_CONDITIONAL_TRAITS`,
+`RELATION_DISABLED_TRAITS`) and are folded into the payload sent to
+`simulate_battle`:
+
+- An aura only fires when the named subordinate joins the **same side** of the
+  **same battle** as its marshal; if they meet as enemies it does nothing. The
+  bonus stacks across everyone present, so 吳佩孚 plus 靳雲鶚 plus 寇英傑 in one
+  battle means all three commands get HP +10%. It lasts for that battle only.
+- Aura partners: 馮玉祥 → 宋哲元、鹿鍾麟; 閻錫山 → 傅作義、徐永昌;
+  馬麒 → 馬福祥、馬鴻賓; 張作霖 → 張學良; 孫傳芳 → 孟昭月、盧香亭;
+  吳佩孚 → 靳雲鶚、寇英傑、陳嘉謨.
+- Every unit in this game is a land unit, so "將領效果只對陸軍生效" needs no
+  special handling.
+- `ALLY_PRESENCE_TRAITS` is the mirror image of an aura: the bonus goes to the
+  general who owns the trait, but only while a named ally is on his side
+  (盧永祥 needs 段祺瑞). `ENEMY_PRESENCE_TRAITS` fires on a named general being
+  on the *other* side (趙恒惕 vs 唐生智), and `ENEMY_RELATION_TRAITS` on the
+  opposing faction's relation with a power (何鍵 vs anyone friendly to Moscow).
+
+Effects that belong to a faction rather than to a battle live in the engine
+(`backend/card_engine.py`): `COMPRADOR_TRAITS`, `PROVINCE_OUTPUT_TRAITS` and
+`FAST_UPRISING_SUPPRESSION_TRAITS`. The engine tracks them in
+`state["faction_general_traits"]` and moves them between factions in
+`apply_general_join`, so a captured or defecting general takes his provincial
+tax base and his foreign contacts with him.
+
+The generic traits used by NPC and in-exile generals are unchanged:
 
 - `steady_drillmaster`: infantry attack +10%.
 - `fire_support_savant`: artillery hits infantry and machine guns harder.

@@ -13,7 +13,8 @@
       "body_guard_level": null,
       "command_cap": 40,
       "traits": [
-        "warlord_supremacy"
+        "french_comprador",
+        "mountain_division"
       ],
       "skills": [],
       "units": {
@@ -23,7 +24,7 @@
         "machine_gun": 1
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 1,
       "subordinates": [
         "long_yun"
       ],
@@ -40,7 +41,7 @@
       "body_guard_level": null,
       "command_cap": 26,
       "traits": [
-        "cavalry_screen_commander"
+        "mountain_division"
       ],
       "skills": [],
       "units": {
@@ -50,7 +51,7 @@
         "machine_gun": 1
       },
       "parent_id": "tang_jiyao",
-      "subordinate_slots": 2,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }

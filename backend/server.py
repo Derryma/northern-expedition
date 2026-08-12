@@ -76,6 +76,9 @@ class PlaytestHandler(BaseHTTPRequestHandler):
 
         filename = tree_files.get(faction, tree_files['N'])
         tree = load_json(filename)
+        # 川軍、湘軍是平行編制：沒有大帥，也不掛任何部屬，直接照檔案送出。
+        if tree.get("flat_command"):
+            return tree
         for general in tree.get("generals", {}).values():
             role = general.get("role")
             if role == "great_general":
@@ -228,11 +231,17 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         return ENGINE.capture_city(str(payload["city_id"]), str(payload["faction"]))
 
     def _recruit_captive_general(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return ENGINE.recruit_captive_general(str(payload["player"]))
+        return ENGINE.recruit_captive_general(
+            str(payload["player"]), payload.get("traits"),
+        )
 
     def _attempt_defection(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.attempt_defection_with_force(
-            str(payload["player"]), int(payload["loyalty"]), float(payload.get("force", 1)),
+            str(payload["player"]),
+            int(payload["loyalty"]),
+            float(payload.get("force", 1)),
+            payload.get("traits"),
+            float(payload.get("resistance", 0) or 0),
         )
 
     def _deal(self, payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -13,7 +13,7 @@
       "body_guard_level": null,
       "command_cap": 80,
       "traits": [
-        "shock_column_leader"
+        "advantage_is_ours"
       ],
       "skills": [
         "fortress_builder"
@@ -45,9 +45,11 @@
       "body_guard_level": null,
       "command_cap": 42,
       "traits": [
-        "steady_drillmaster"
+        "whampoa_spirit"
       ],
-      "skills": [],
+      "skills": [
+        "pontoon_bridge"
+      ],
       "units": {
         "infantry": 12,
         "cavalry": 2,
@@ -70,7 +72,8 @@
       "body_guard_level": null,
       "command_cap": 40,
       "traits": [
-        "fire_support_savant"
+        "precision_barrage",
+        "mountain_division"
       ],
       "skills": [],
       "units": {
@@ -95,7 +98,8 @@
       "body_guard_level": null,
       "command_cap": 36,
       "traits": [
-        "cavalry_screen_commander"
+        "cavalry_screen_commander",
+        "mountain_division"
       ],
       "skills": [],
       "units": {

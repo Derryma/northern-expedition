@@ -47,7 +47,6 @@ const PORTRAIT_BY_ID = {
   // 在野將領
   duan_qirui: "/assets/portraits/段祺瑞.jpg",
   chen_jiongming: "/assets/portraits/陳炯明.jpg",
-  lu_hongtao: "/assets/portraits/陸洪濤.jpg",
   tian_zhongyu: "/assets/portraits/田中玉.jpg",
   wang_chengbin: "/assets/portraits/王承斌.jpg",
   li_houji: "/assets/portraits/李厚基.jpg",
@@ -162,19 +161,55 @@ const LIEUTENANT_SLOT_CAP = 3;
 
 
 const TRAIT_LABELS = {
-  warlord_supremacy: "軍閥統御",
+  // 國民革命軍、滇系、川軍、湘軍與在野將領的專屬技能
+  advantage_is_ours: "優勢在我",
+  whampoa_spirit: "黃埔軍魂",
+  precision_barrage: "精準砲擊",
+  mountain_division: "山地師",
+  elite_mountain_division: "精銳山地師",
+  french_comprador: "法國買辦",
+  tianfu_land: "天府之國",
+  buddhist_general: "佛教將軍",
+  hunan_governor: "我才是省長",
+  anticommunist_vanguard: "剿共先鋒",
+  former_overlord: "前代梟雄",
+  anhui_veteran: "皖系舊部",
+  zhili_veteran: "直系宿將",
+  old_cantonese_army: "老粵軍",
+  qilu_veteran: "齊魯宿將",
+  // 北洋各系主要將領的專屬技能
+  northwest_overlord: "西北霸王",
+  dodging_drift: "閃躲漂",
+  broadsword_corps: "大刀隊",
+  northwest_vanguard: "西北先鋒",
+  shanxi_king: "山西王",
+  iron_bulwark: "銅牆鐵壁",
+  chief_of_staff: "參謀長",
+  xining_garrison: "西寧鎮守",
+  desert_guard: "大漠衛隊",
+  valiant_horse: "驍騎",
+  marshal_zhang: "張大帥",
   young_marshal: "少帥",
-  industrial_organizer: "工業組織者",
   white_russian_mercenaries: "白俄傭兵",
-  confucian_general: "儒將",
+  japanese_comprador: "日本買辦",
+  elite_artillery: "精銳砲兵",
+  five_provinces_alliance: "五省聯軍",
+  riverine_warfare: "水域作戰",
+  assault_breaker: "攻堅悍將",
+  wu_peifu_admired: "吾佩服",
   defensive_specialist: "防禦專家",
   central_plains_veteran: "中原宿將",
+  wuchang_veteran: "武昌宿將",
+  // 其他 NPC、在野將領沿用的通用特質
+  warlord_supremacy: "軍閥統御",
+  industrial_organizer: "工業組織者",
+  confucian_general: "儒將",
   christian_general: "基督將軍",
   soviet_trained: "蘇式訓練",
-  five_provinces_alliance: "五省聯軍",
   yangzi_defender: "長江守備",
   fujian_garrison: "福建守備",
   jiangxi_commander: "江西統帥",
+  layered_defender: "縱深防禦",
   shock_column_leader: "突擊縱隊",
   steady_drillmaster: "練兵能手",
   fire_support_savant: "火力協同",
@@ -185,33 +220,144 @@ const TRAIT_LABELS = {
 };
 
 const TRAIT_DESCRIPTIONS = {
+  advantage_is_ours: "蔣介石的總司令威望。所部全體生命 +10%；何應欽在同一場戰鬥中作為友軍出現時，他的部隊生命也 +10%（戰鬥結束即恢復）。",
+  whampoa_spirit: "何應欽的黃埔部隊。步兵與機槍攻擊 +15%，代價是這兩種兵承傷 +5%。",
+  precision_barrage: "白崇禧的砲兵指揮。彈著點算得極準，對各兵種都吃得開。",
+  mountain_division: "擅長南方山地作戰。於廣東、廣西、雲南、貴州、四川、湖南境內任何地格作戰時，所部全體承傷 -10%。",
+  elite_mountain_division: "劉文輝的川康精銳。於廣東、廣西、雲南、貴州、四川、湖南境內任何地格作戰時，所部全體承傷 -10%、攻擊 +5%。",
+  french_comprador: "唐繼堯與法方的往來。加入某陣營時，該陣營對法關係 +3；該陣營遭遇法國譴責時有 30% 機率免疫。",
+  tianfu_land: "劉湘握著四川的錢袋。他所屬陣營控制的每座四川城市每回合現金 +1、工業 +1。",
+  buddhist_general: "唐生智心中有佛。所部全體承傷 -10%、攻擊 -10%，且被策反時對方成功率額外 -5%。",
+  hunan_governor: "趙恒惕的湖南省憲。他所屬陣營控制的每座湖南城市每回合現金 +1、工業 +1；戰場上遇到唐生智時所部全體攻擊 +10%（戰鬥結束即恢復）。",
+  anticommunist_vanguard: "何鍵的剿共招牌。與對蘇關係 6 以上的勢力交戰時所部全體攻擊 +10%，鎮壓紅軍起義只需一回合；但自己所屬陣營對蘇關係達 6 以上時本技能失效，且何鍵忠誠 -5。",
+  former_overlord: "段祺瑞帶得動北洋最正統的步砲部隊。",
+  anhui_veteran: "盧永祥的皖系舊部。步兵與機槍攻擊 +8%；與段祺瑞同一場戰鬥的同一邊時，所部全體生命 +10%（戰鬥結束即恢復）。五省聯軍不可延攬。",
+  zhili_veteran: "王承斌的直系班底。騎兵與砲兵攻擊 +7%；同陣營若有吳佩孚則忠誠 +1。",
+  old_cantonese_army: "陳炯明的粵軍元老。砲兵攻擊 +12%，鎮壓紅軍起義只需一回合。國民革命軍不可延攬。",
+  qilu_veteran: "田中玉的山東舊部。騎兵承傷 -7%、砲兵攻擊 +7%；同陣營若有張宗昌則忠誠 +1。",
+  northwest_overlord: "馮玉祥的統御。所部全體生命 +10%；宋哲元或鹿鍾麟在同一場戰鬥中作為友軍出現時，他們的部隊生命也 +10%（戰鬥結束即恢復）。",
+  dodging_drift: "韓復榘的看家本領。部隊極難被咬住，但也不願打硬仗。",
+  broadsword_corps: "宋哲元的大刀隊。步兵近身突擊凌厲，代價是挨得更多。",
+  northwest_vanguard: "鹿鍾麟的騎兵前導。衝得最前，也最先承受反擊。",
+  shanxi_king: "閻錫山的山西體系。所部全體生命 +10%；傅作義或徐永昌同場作為友軍時，他們的部隊生命也 +10%。",
+  iron_bulwark: "傅作義的守勢經營。陣地紮實，砲兵配置得宜。",
+  chief_of_staff: "徐永昌的參謀作業。作戰計畫周密，少犯無謂損失。",
+  xining_garrison: "馬麒的青海根基。所部全體生命 +10%；馬福祥或馬鴻賓同場作為友軍時，他們的部隊生命也 +10%。",
+  desert_guard: "馬福祥的沙漠行軍經驗。步騎兵在惡地中仍能保存實力。",
+  valiant_horse: "馬鴻賓的騎兵衝擊。",
+  marshal_zhang: "張作霖的東北基業。所部全體生命 +10%；張學良同場作為友軍時，少帥的部隊生命也 +10%。",
+  young_marshal: "張學良的新式軍事教育。善於運用騎兵與砲兵的協同機動。",
+  white_russian_mercenaries: "張宗昌收容的白俄軍官與士兵。所屬陣營對蘇關係達 6 以上時本技能失效，且張宗昌忠誠 -5。",
+  japanese_comprador: "張宗昌與日方的往來。加入某陣營時，該陣營對日關係 +2；該陣營遭遇日本譴責時有 10% 機率免疫。",
+  elite_artillery: "楊宇霆主持的奉天兵工廠。砲兵器材與訓練均屬一流。",
+  five_provinces_alliance: "孫傳芳的五省聯軍。所部全體生命 +10%；孟昭月或盧香亭同場作為友軍時，他們的部隊生命也 +10%。",
+  riverine_warfare: "熟悉東南水網。於廣西、廣東、福建、浙江、江蘇、安徽、江西境內任何地格作戰時，所部全體承傷 -10%。",
+  assault_breaker: "孟昭月的攻堅打法。步砲協同砸開對方陣地。",
+  wu_peifu_admired: "吳佩孚的威望。所部全體生命 +10%；靳雲鶚、寇英傑或陳嘉謨同場作為友軍時，他們的部隊生命也 +10%。",
+  defensive_specialist: "靳雲鶚擅長利用地形和縱深防禦，適合固守重要城市與交通線。",
+  central_plains_veteran: "寇英傑久經中原戰陣，熟悉當地地形與軍閥打法。",
+  wuchang_veteran: "陳嘉謨的武昌城防經驗。步兵與砲兵陣位安排老練，部隊耐打。",
   warlord_supremacy: "以個人威望維繫全軍，適合統率大型軍團與地方派系。",
-  young_marshal: "善於快速調動與接受新式軍事觀念，但政治根基仍在建立。",
   industrial_organizer: "擅長兵工、補給與軍需組織，提高重裝部隊的持續作戰能力。",
-  white_russian_mercenaries: "能運用白俄軍官與雇傭兵，強化騎兵及專業火力。",
   confucian_general: "重視軍紀與傳統威望，有利於穩定部隊忠誠。",
-  defensive_specialist: "擅長利用地形和縱深防禦，適合固守重要城市與交通線。",
-  central_plains_veteran: "熟悉中原地形、補給路線與軍閥作戰方式。",
   christian_general: "依靠教會與地方人脈組織軍隊和補給。",
   soviet_trained: "接受蘇式參謀與協同作戰訓練。",
-  five_provinces_alliance: "善於協調五省部隊，但必須兼顧各地派系利益。",
   yangzi_defender: "熟悉長江沿線防禦、渡口與水陸交通。",
   fujian_garrison: "熟悉福建山地、港口與地方守備體系。",
   jiangxi_commander: "熟悉江西交通、補給與地方部隊動員。",
-  shock_column_leader: "步兵與騎兵攻擊 +15%，但所受傷害 +10%。",
-  steady_drillmaster: "步兵攻擊 +10%。",
-  fire_support_savant: "砲兵攻擊機槍 +25%，攻擊步兵 +15%。",
-  local_supply_boss: "步兵與機槍的崩潰門檻提高 5%。",
-  entrenched_warlord: "以既設塹壕與地方防務固守防區，步兵與機槍承傷 -10%。",
-  cavalry_screen_commander: "以騎兵幕掩護主力調動，騎兵生命 +20%。",
-  foreign_gunnery_advisor: "外籍砲術教官帶來的反砲兵射法，砲兵對砲兵攻擊 +20%。",
+  layered_defender: "以層層陣地遲滯對手，換取時間與空間。",
+  shock_column_leader: "把步兵與騎兵直接推進對方弱點。",
+  steady_drillmaster: "能把生兵帶成可靠正規步兵的練兵者。",
+  fire_support_savant: "懂得把砲火集中在對方支撐點上。",
+  local_supply_boss: "把糧秣、彈藥與補充兵源撐到最後一刻。",
+  entrenched_warlord: "以既設塹壕與地方防務固守防區。",
+  cavalry_screen_commander: "以騎兵幕掩護主力調動、追擊潰兵。",
+  foreign_gunnery_advisor: "外籍砲術教官帶來的反砲兵射法。",
 };
+
+// 光環技能：大帥與名單上的部屬「同戰場」（同一場戰鬥、同一邊）時，
+// 部屬的部隊也吃到同一份加成。互為敵軍時不生效（規則 42）。
+// 加成是「且」的關係，大帥與每位在場部屬各自都拿到（規則 43）。
+const AURA_TRAITS = {
+  advantage_is_ours: { partners: ["he_yingqin"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+  northwest_overlord: { partners: ["song_zheyuan", "lu_zhonglin"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+  shanxi_king: { partners: ["fu_zuoyi", "xu_yongchang"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+  xining_garrison: { partners: ["ma_fuxiang", "ma_hongbin"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+  marshal_zhang: { partners: ["zhang_xueliang"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+  five_provinces_alliance: { partners: ["meng_zhaoyue", "lu_xiangting"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+  wu_peifu_admired: { partners: ["jin_yun_e", "kou_yingjie", "chen_jiamo"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+};
+
+// 自己這邊有指定友軍同戰場時，才給自己加成（盧永祥要段祺瑞在場）。
+// 和 AURA_TRAITS 方向相反：光環是「我加給別人」，這個是「別人在場我才強」。
+const ALLY_PRESENCE_TRAITS = {
+  anhui_veteran: { allies: ["duan_qirui"], modifiers: [{ stat: "hp", multiplier: 1.10 }] },
+};
+
+// 對面出現指定將領時才生效（趙恒惕碰上唐生智）。
+const ENEMY_PRESENCE_TRAITS = {
+  hunan_governor: { enemies: ["tang_shengzhi"], modifiers: [{ stat: "attack", multiplier: 1.10 }] },
+};
+
+// 敵方陣營與某列強關係到達門檻時才生效（何鍵打親蘇勢力）。
+const ENEMY_RELATION_TRAITS = {
+  anticommunist_vanguard: { power: "su", min: 6, modifiers: [{ stat: "attack", multiplier: 1.10 }] },
+};
+
+// 只在特定省份生效的技能。
+const SOUTHERN_MOUNTAIN_PROVINCES = ["廣東", "廣西", "雲南", "貴州", "四川", "湖南"];
+const SOUTHEAST_WATER_PROVINCES = ["廣西", "廣東", "福建", "浙江", "江蘇", "安徽", "江西"];
+const PROVINCE_CONDITIONAL_TRAITS = {
+  riverine_warfare: {
+    provinces: new Set(SOUTHEAST_WATER_PROVINCES),
+    modifiers: [{ stat: "harm_taken", multiplier: 0.90 }],
+  },
+  mountain_division: {
+    provinces: new Set(SOUTHERN_MOUNTAIN_PROVINCES),
+    modifiers: [{ stat: "harm_taken", multiplier: 0.90 }],
+  },
+  elite_mountain_division: {
+    provinces: new Set(SOUTHERN_MOUNTAIN_PROVINCES),
+    modifiers: [{ stat: "harm_taken", multiplier: 0.90 }, { stat: "attack", multiplier: 1.05 }],
+  },
+};
+
+// 所屬陣營與列強關係太好／太差時會失效的技能。
+const RELATION_DISABLED_TRAITS = {
+  white_russian_mercenaries: { power: "su", min: 6, loyalty_penalty: 5 },
+  anticommunist_vanguard: { power: "su", min: 6, loyalty_penalty: 5 },
+};
+
+// 同陣營有指定將領時忠誠 +1。
+const ALLY_LOYALTY_TRAITS = {
+  zhili_veteran: { ally: "wu_peifu", delta: 1 },
+  qilu_veteran: { ally: "zhang_zongchang", delta: 1 },
+};
+
+// 被策反時對方成功率的額外修正（唐生智的〈佛教將軍〉）。
+const DEFECTION_RESISTANCE_TRAITS = { buddhist_general: 0.05 };
+
+// 買辦技能：帶著它的將領轉投某陣營時，該陣營對該國關係上升；
+// 該陣營被塞那一國的譴責時每張有一定機率被擋下（後端 card_engine 處理）。
+const COMPRADOR_TRAITS = {
+  japanese_comprador: { power: "jp", gain: 2, immunity: 0.10 },
+  french_comprador: { power: "fr", gain: 3, immunity: 0.30 },
+};
+
+// 戰鬥數值只有一份來源：comabt_system/data/general_traits.json。
+// 之前這裡把 JSON 的 modifiers 和前端表格的 modifiers 相加，
+// 兩邊都有的特質會被套用兩次，現在改成只讀 JSON。
+function traitModifiers(trait) {
+  return bootstrap?.general_traits?.traits?.[trait]?.modifiers || [];
+}
 
 function traitDescription(trait) {
   const base = TRAIT_DESCRIPTIONS[trait]
     || bootstrap?.general_traits?.traits?.[trait]?.background
     || "此特質目前沒有補充說明。";
-  const modifiers = TRAIT_GAME_MODIFIERS?.[trait] || [];
+  // 光環與省份條件加成不列進「戰鬥效果」，因為說明文字已經寫清楚
+  // 生效條件了，重複列出只會讓人以為會疊加兩次。
+  const modifiers = traitModifiers(trait);
   const engineering = Object.entries(ENGINEERING_TRAIT_SKILLS || {})
     .filter(([, traits]) => traits.has(trait))
     .map(([skill]) => ENGINEERING_OPERATIONS[skill]?.label)
@@ -252,31 +398,21 @@ const ENGINEERING_OPERATIONS = {
   pontoon_bridge: { label: "架設浮橋", turns: 2 },
   fortress_builder: { label: "構築要塞", turns: 3 },
 };
+// 工程能力除了將領檔案裡的 skills 之外，也可以由特質帶出來。
+// 22 名主要將領的浮橋／要塞是寫在各自的 skills 欄位，這裡保留的是
+// 其他 NPC 與在野將領沿用的通用特質對應。
 const ENGINEERING_TRAIT_SKILLS = {
-  pontoon_bridge: new Set(["young_marshal", "christian_general", "yangzi_defender", "local_supply_boss"]),
-  fortress_builder: new Set(["industrial_organizer", "defensive_specialist", "fujian_garrison", "warlord_supremacy", "shock_column_leader"]),
-};
-const TRAIT_GAME_MODIFIERS = {
-  warlord_supremacy: [{ stat: "threshold", add: 0.03 }],
-  young_marshal: [{ stat: "attack", unit: "cavalry", multiplier: 1.08 }],
-  industrial_organizer: [{ stat: "attack", unit: "artillery", multiplier: 1.10 }],
-  white_russian_mercenaries: [{ stat: "attack", unit: "cavalry", multiplier: 1.12 }, { stat: "hp", unit: "cavalry", multiplier: 1.08 }],
-  confucian_general: [{ stat: "harm_taken", multiplier: 0.96 }],
-  defensive_specialist: [{ stat: "harm_taken", multiplier: 0.88 }],
-  central_plains_veteran: [{ stat: "attack", unit: "infantry", multiplier: 1.08 }],
-  christian_general: [{ stat: "threshold", add: 0.03 }],
-  soviet_trained: [{ stat: "attack", unit: "machine_gun", multiplier: 1.10 }],
-  five_provinces_alliance: [{ stat: "harm_taken", unit: "infantry", multiplier: 0.94 }],
-  yangzi_defender: [{ stat: "harm_taken", multiplier: 0.90 }],
-  fujian_garrison: [{ stat: "harm_taken", unit: "infantry", multiplier: 0.90 }],
-  jiangxi_commander: [{ stat: "attack", unit: "infantry", multiplier: 1.06 }],
-  shock_column_leader: [{ stat: "attack", unit: "infantry", multiplier: 1.15 }, { stat: "attack", unit: "cavalry", multiplier: 1.15 }, { stat: "harm_taken", multiplier: 1.10 }],
-  steady_drillmaster: [{ stat: "attack", unit: "infantry", multiplier: 1.10 }],
-  fire_support_savant: [{ stat: "attack", unit: "artillery", target: "machine_gun", multiplier: 1.25 }, { stat: "attack", unit: "artillery", target: "infantry", multiplier: 1.15 }],
-  local_supply_boss: [{ stat: "threshold", unit: "infantry", add: 0.05 }, { stat: "threshold", unit: "machine_gun", add: 0.05 }],
-  entrenched_warlord: [{ stat: "harm_taken", unit: "infantry", multiplier: 0.90 }, { stat: "harm_taken", unit: "machine_gun", multiplier: 0.90 }],
-  cavalry_screen_commander: [{ stat: "hp", unit: "cavalry", multiplier: 1.20 }],
-  foreign_gunnery_advisor: [{ stat: "attack", unit: "artillery", target: "artillery", multiplier: 1.20 }],
+  pontoon_bridge: new Set([
+    "young_marshal", "riverine_warfare", "dodging_drift", "central_plains_veteran",
+    "whampoa_spirit", "anhui_veteran", "old_cantonese_army",
+    "christian_general", "yangzi_defender", "local_supply_boss",
+  ]),
+  fortress_builder: new Set([
+    "broadsword_corps", "iron_bulwark", "marshal_zhang", "elite_artillery", "assault_breaker",
+    "defensive_specialist", "advantage_is_ours", "elite_mountain_division", "hunan_governor",
+    "former_overlord", "zhili_veteran", "qilu_veteran",
+    "industrial_organizer", "fujian_garrison", "warlord_supremacy", "shock_column_leader",
+  ]),
 };
 
 const TACTIC_LABELS = {
@@ -1654,14 +1790,18 @@ function renderGeneralsPanel() {
   html += `
     <section class="exile-roster">
       <h3>在野將領</h3>
-      <p class="exile-note">下野賦閒、不屬於任何陣營，開局不在場上。打出〈在野名將投效〉並付其身價全額，即可請人出山，帶著自帶部隊在大帥所在地現身。</p>
-      ${exiles.length ? exiles.map(({ general, recruitedBy, price }) => `
-        <div class="exile-general${recruitedBy ? " recruited" : ""}">
+      <p class="exile-note">下野賦閒、不屬於任何陣營，開局不在場上。打出〈在野名將投效〉並付其身價全額外加 $${EXILE_RECRUIT_SURCHARGE} 出山附加費，即可請人出山，帶著自帶部隊在大帥所在地現身。</p>
+      ${exiles.length ? exiles.map(({ general, recruitedBy, forbidden, price }) => `
+        <div class="exile-general${recruitedBy ? " recruited" : ""}${forbidden ? " forbidden" : ""}">
           ${renderGeneralTreeCard(general, { includeCaptured: true })}
           <div class="exile-meta">
             <small>${general.background || ""}</small>
             <small>${general.ability || ""}</small>
-            <small>${recruitedBy ? `已由 ${FACTIONS[recruitedBy]?.name || recruitedBy} 延攬出山` : `身價 ${general.recruit_value} · 延攬費 $${price}（全額）`}</small>
+            <small>${recruitedBy
+              ? `已由 ${FACTIONS[recruitedBy]?.name || recruitedBy} 延攬出山`
+              : forbidden
+                ? `身價 ${general.recruit_value} · 不願投靠${FACTIONS[currentPlayer]?.name || currentPlayer}`
+                : `身價 ${general.recruit_value} · 延攬費 $${price}（全額 + 出山附加費 $${EXILE_RECRUIT_SURCHARGE}）`}</small>
           </div>
         </div>`).join("") : '<div class="empty-state compact">在野將領池已空</div>'}
     </section>`;
@@ -1707,7 +1847,10 @@ function attachGeneralHandlers(root) {
       }
       button.disabled = true;
       try {
-        const result = await api("/api/recruit-captive-general", { player: currentPlayer });
+        const result = await api("/api/recruit-captive-general", {
+          player: currentPlayer,
+          traits: transferringTraits(generalTrees[record.originFaction], record.general),
+        });
         state = result.state;
         syncStrategicCitiesFromState();
         prisoners.splice(index, 1);
@@ -1780,6 +1923,17 @@ function appendGeneralToTree(general, faction, superiorId, loyalty = 2, options 
 
 function transferBranchSize(sourceTree, generalId) {
   return 1 + descendantGeneralIds(sourceTree, generalId).length;
+}
+
+// 招降／策反時整條支系都會跟著轉投，後端要知道這批人帶著哪些技能
+// （目前只有〈日本買辦〉會在轉投時產生非戰鬥效果）。
+function transferringTraits(sourceTree, general) {
+  const ids = [general.id, ...descendantGeneralIds(sourceTree, general.id)];
+  const traits = new Set(general.traits || []);
+  for (const id of ids) {
+    for (const trait of sourceTree?.generals?.[id]?.traits || []) traits.add(trait);
+  }
+  return [...traits];
 }
 
 function installTransferredCommand(transferred, destinationFaction, preferredSuperiorId, rootLoyalty = 2) {
@@ -1914,6 +2068,8 @@ async function attemptArmyDefection(army, superiorId) {
     player: currentPlayer,
     loyalty,
     force: forcePoints(armyUnits(army)),
+    traits: transferringTraits(generalTrees[factionForArmy(army)], general),
+    resistance: defectionResistance(general),
   });
   state = result.state;
   syncStrategicCitiesFromState();
@@ -1976,15 +2132,18 @@ function calculateGeneralLoyalty(general, fieldArmy) {
     return { value: 10, tooltip: "絕對忠誠: 固定 10\n不受功能卡、戰損或策反效果影響" };
   }
   if (Object.hasOwn(loyaltyOverrides, general.id)) {
-    return { value: loyaltyOverrides[general.id], tooltip: `當前忠誠: ${loyaltyOverrides[general.id]}\n受俘虜、招降、策反或功能卡影響` };
+    const adjustment = traitLoyaltyAdjustment(general);
+    const current = Math.max(0, Math.min(10, loyaltyOverrides[general.id] + adjustment.amount));
+    return { value: current, tooltip: `當前忠誠: ${current}${adjustment.note}\n受俘虜、招降、策反或功能卡影響` };
   }
-  const baseLoyalty = Number(general.loyalty);
+  const relationPenalty = traitLoyaltyAdjustment(general);
+  const baseLoyalty = Math.max(0, Math.min(10, Number(general.loyalty) + relationPenalty.amount));
   if (general.status === "in_exile") {
-    return { value: baseLoyalty, tooltip: `出山時的基礎忠誠: ${baseLoyalty}\n在野期間不套用部隊相關的增減` };
+    return { value: baseLoyalty, tooltip: `出山時的基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n在野期間不套用部隊相關的增減` };
   }
   if (!fieldArmy || fieldArmy.status === "jailed" || general.status === "recruited") {
     const value = Math.min(baseLoyalty, 2);
-    return { value, tooltip: `基礎忠誠: ${baseLoyalty}\n無直屬部隊: -${Math.max(0, baseLoyalty - value)}` };
+    return { value, tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n無直屬部隊: -${Math.max(0, baseLoyalty - value)}` };
   }
   const faction = factionForArmy(fieldArmy);
   const friendlyForces = allArmies()
@@ -2000,8 +2159,46 @@ function calculateGeneralLoyalty(general, fieldArmy) {
   const value = Math.max(0, Math.min(10, baseLoyalty + relativePower + battleLoss));
   return {
     value,
-    tooltip: `基礎忠誠: ${baseLoyalty}\n相對實力影響: ${relativePower >= 0 ? '+' : ''}${relativePower}\n戰損影響: ${battleLoss}\n現有戰力: ${Math.round(currentForce)} / 初始 ${Math.round(initialForce)}`,
+    tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n相對實力影響: ${relativePower >= 0 ? '+' : ''}${relativePower}\n戰損影響: ${battleLoss}\n現有戰力: ${Math.round(currentForce)} / 初始 ${Math.round(initialForce)}`,
   };
+}
+
+// 被策反時對方成功率的額外扣減（唐生智的〈佛教將軍〉-5%）。
+function defectionResistance(general) {
+  return (general?.traits || []).reduce(
+    (total, trait) => total + (DEFECTION_RESISTANCE_TRAITS[trait] || 0),
+    0,
+  );
+}
+
+function factionHoldingGeneral(generalId) {
+  return generalOwners[generalId]
+    || Object.keys(FACTIONS).find((key) => generalTrees[key]?.generals?.[generalId])
+    || null;
+}
+
+// 技能帶來的忠誠增減（回傳的 amount 已經是帶正負號的總和）：
+// 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5），
+// 以及同陣營有指定將領時的加成（王承斌配吳佩孚、田中玉配張宗昌各 +1）。
+function traitLoyaltyAdjustment(general) {
+  const faction = factionHoldingGeneral(general.id);
+  if (!faction) return { amount: 0, note: "" };
+  let amount = 0;
+  const reasons = [];
+  for (const trait of general.traits || []) {
+    const rule = RELATION_DISABLED_TRAITS[trait];
+    if (rule?.loyalty_penalty && traitDisabledByRelations(trait, faction)) {
+      amount -= rule.loyalty_penalty;
+      reasons.push(`〈${TRAIT_LABELS[trait] || trait}〉失效: -${rule.loyalty_penalty}`);
+    }
+    const ally = ALLY_LOYALTY_TRAITS[trait];
+    if (ally && generalTrees[faction]?.generals?.[ally.ally]) {
+      const allyName = generalTrees[faction].generals[ally.ally].name;
+      amount += ally.delta;
+      reasons.push(`同陣營有${allyName}: +${ally.delta}`);
+    }
+  }
+  return { amount, note: reasons.length ? `\n${reasons.join("\n")}` : "" };
 }
 
 function getGeneralPortrait(general) {
@@ -2604,17 +2801,26 @@ function exilePool() {
   return bootstrap?.generals_in_exile?.generals || {};
 }
 
+// 延攬費 = 身價全額 + 出山附加費。附加費是請人重新拉隊伍的開辦成本。
+const EXILE_RECRUIT_SURCHARGE = 15;
+
+// 有些在野將領有舊怨，不肯投靠特定陣營（盧永祥不投五省聯軍、陳炯明不投國民革命軍）。
+function exileForbiddenFor(general, faction = currentPlayer) {
+  return (general?.forbidden_factions || []).includes(faction);
+}
+
 function exilePoolEntries() {
   const taken = state?.recruited_exiles || {};
   return Object.values(exilePool()).map((general) => ({
     general,
     recruitedBy: taken[general.id] || null,
-    price: Number(general.recruit_value || 0),
+    forbidden: exileForbiddenFor(general),
+    price: Number(general.recruit_value || 0) + EXILE_RECRUIT_SURCHARGE,
   }));
 }
 
 function availableExiles() {
-  return exilePoolEntries().filter((entry) => !entry.recruitedBy);
+  return exilePoolEntries().filter((entry) => !entry.recruitedBy && !entry.forbidden);
 }
 
 const ARMY_ORDINALS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
@@ -2949,11 +3155,10 @@ function drawInfrastructure(ctx) {
 
   ctx.setLineDash([]);
   ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgba(31, 28, 23, 0.94)';
-  ctx.lineWidth = 4.2;
-  for (const railroad of bootstrap.strategic_map?.railroads || []) {
+  // 列強經營的鐵路（南滿、中東、滇越）畫成紅白相間，和國有各線區分開。
+  const traceRail = (railroad) => {
     const route = (railroad.cellKeys || []).map((key) => cells[key]).filter(Boolean);
-    if (!route.length) continue;
+    if (!route.length) return false;
     ctx.beginPath();
     route.forEach((cell, index) => {
       const x = hcx(cell.c);
@@ -2961,22 +3166,23 @@ function drawInfrastructure(ctx) {
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
-    ctx.stroke();
-  }
-  ctx.strokeStyle = 'rgba(238, 224, 190, 0.95)';
-  ctx.lineWidth = 1.8;
-  ctx.setLineDash([2, 4]);
-  for (const railroad of bootstrap.strategic_map?.railroads || []) {
-    const route = (railroad.cellKeys || []).map((key) => cells[key]).filter(Boolean);
-    if (!route.length) continue;
-    ctx.beginPath();
-    route.forEach((cell, index) => {
-      const x = hcx(cell.c);
-      const y = hcy(cell.c, cell.r);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    return true;
+  };
+  const rails = bootstrap.strategic_map?.railroads || [];
+  const domestic = rails.filter((line) => !line.foreign);
+  const foreign = rails.filter((line) => line.foreign);
+  for (const [group, base, dash] of [
+    [domestic, 'rgba(31, 28, 23, 0.94)', 'rgba(238, 224, 190, 0.95)'],
+    [foreign, 'rgba(176, 34, 34, 0.96)', 'rgba(252, 249, 244, 0.98)'],
+  ]) {
+    ctx.setLineDash([]);
+    ctx.strokeStyle = base;
+    ctx.lineWidth = 4.2;
+    for (const railroad of group) if (traceRail(railroad)) ctx.stroke();
+    ctx.setLineDash([2, 4]);
+    ctx.strokeStyle = dash;
+    ctx.lineWidth = 1.8;
+    for (const railroad of group) if (traceRail(railroad)) ctx.stroke();
   }
 
   ctx.setLineDash([]);
@@ -3035,7 +3241,9 @@ function drawCities(ctx) {
       ctx.closePath();
       ctx.fill();
     }
-    if (cell.railBridge) {
+    // 水波紋：所有河港都畫，不再只畫有鐵路橋的那幾座。
+    // 鐵路橋另有黃色方塊標記，兩者互不取代。
+    if (city.port === 'river' || cell.railBridge) {
       ctx.strokeStyle = '#79b8d2';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -3977,7 +4185,9 @@ function renderArmyDetail() {
   const loyaltyForDefection = Math.max(1, loyalty || 1);
   const defectionCost = Math.ceil((10 + defectionForce * 3 + loyaltyForDefection * 2) * 0.5);
   const defectionBaseChance = 0.45 - loyaltyForDefection * 0.04 - defectionForce * 0.003;
-  const defectionChance = Math.round(Math.max(0.03, Math.min(0.60, defectionBaseChance * 1.25)) * 100);
+  const defectionChance = Math.round(
+    Math.max(0.03, Math.min(0.60, defectionBaseChance * 1.25) - defectionResistance(general)) * 100,
+  );
   const lieutenants = availableLieutenantGenerals(currentPlayer);
   const branchSize = transferBranchSize(generalTrees[armyFaction], army.generalId);
   const canDefect = loyalty !== null && !general?.loyalty_exempt && !general?.absolute_loyalty && lieutenants.length
@@ -4368,13 +4578,75 @@ function absoluteTransferMarkup(army) {
   `;
 }
 
-function combatTraitModifiers(army) {
+// 技能是否因為所屬陣營的列強關係而失效（張宗昌的〈白俄傭兵〉）。
+function traitDisabledByRelations(trait, faction) {
+  const rule = RELATION_DISABLED_TRAITS[trait];
+  if (!rule) return false;
+  const value = Number(state?.players?.[faction]?.foreign_relations?.[rule.power] ?? 0);
+  if (rule.min !== undefined && value >= rule.min) return true;
+  if (rule.max !== undefined && value <= rule.max) return true;
+  return false;
+}
+
+// 這場戰鬥打在哪個省。攻方部隊還站在出發格，所以優先看戰場那一格。
+function battleProvince(army, battle) {
+  const battleCell = battle?.cellKey ? cells[battle.cellKey] : null;
+  return (battleCell ? strategicProvinceForCell(battleCell) : null) || provinceForArmy(army);
+}
+
+function generalIdsOnSide(battle, side) {
+  return battleArmies(battle, side).map((army) => army.generalId);
+}
+
+function combatTraitModifiers(army, battle = null, opponentFaction = null) {
   const faction = factionForArmy(army);
   const traits = generalTrees[faction]?.generals?.[army.generalId]?.traits || [];
-  return traits.flatMap((trait) => [
-    ...(bootstrap.general_traits?.traits?.[trait]?.modifiers || []),
-    ...(TRAIT_GAME_MODIFIERS[trait] || []),
-  ].map((modifier) => ({ ...modifier })));
+  const side = battle ? battleSideForArmy(battle, army) : null;
+  const enemySide = side === "A" ? "B" : side === "B" ? "A" : null;
+  const allyIds = side ? generalIdsOnSide(battle, side) : [];
+  const enemyIds = enemySide ? generalIdsOnSide(battle, enemySide) : [];
+  return traits.flatMap((trait) => {
+    if (traitDisabledByRelations(trait, faction)) return [];
+    const extra = [];
+
+    // 只在特定省份生效（水域作戰、山地師、精銳山地師）。
+    const province = PROVINCE_CONDITIONAL_TRAITS[trait];
+    if (province && province.provinces.has(battleProvince(army, battle))) extra.push(...province.modifiers);
+
+    // 指定友軍同戰場才生效（盧永祥要段祺瑞在場）。
+    const ally = ALLY_PRESENCE_TRAITS[trait];
+    if (ally && ally.allies.some((id) => id !== army.generalId && allyIds.includes(id))) extra.push(...ally.modifiers);
+
+    // 對面出現指定將領才生效（趙恒惕碰上唐生智）。
+    const enemy = ENEMY_PRESENCE_TRAITS[trait];
+    if (enemy && enemy.enemies.some((id) => enemyIds.includes(id))) extra.push(...enemy.modifiers);
+
+    // 敵方陣營對某列強夠友好才生效（何鍵打親蘇勢力）。
+    const enemyRelation = ENEMY_RELATION_TRAITS[trait];
+    if (enemyRelation && opponentFaction) {
+      const value = Number(state?.players?.[opponentFaction]?.foreign_relations?.[enemyRelation.power] ?? 0);
+      if (value >= enemyRelation.min) extra.push(...enemyRelation.modifiers);
+    }
+
+    return [...traitModifiers(trait), ...extra].map((modifier) => ({ ...modifier }));
+  });
+}
+
+// 光環：同一場戰鬥、同一邊的友軍將領帶來的加成（規則 42、43）。
+function combatAuraModifiers(army, battle) {
+  if (!battle) return [];
+  const side = battleSideForArmy(battle, army);
+  if (!side) return [];
+  return battleArmies(battle, side).flatMap((ally) => {
+    if (ally.id === army.id) return [];
+    const allyFaction = factionForArmy(ally);
+    const allyTraits = generalTrees[allyFaction]?.generals?.[ally.generalId]?.traits || [];
+    return allyTraits.flatMap((trait) => {
+      const aura = AURA_TRAITS[trait];
+      if (!aura || !aura.partners.includes(army.generalId)) return [];
+      return aura.modifiers.map((modifier) => ({ ...modifier, source_aura: trait }));
+    });
+  });
 }
 
 function timedCombatModifiers(faction, opponentFaction = null) {
@@ -4393,7 +4665,8 @@ function combatArmyPayload(army, tactic, defending = false, battle = null, oppon
     initial_units: battle?.initialByArmy?.[army.id] || armyUnits(army),
     tactic,
     modifiers: [
-      ...combatTraitModifiers(army),
+      ...combatTraitModifiers(army, battle, opponentFaction),
+      ...combatAuraModifiers(army, battle),
       ...timedCombatModifiers(faction, opponentFaction),
       ...(defending && completedFortresses.has(activeBattles.find((battle) => battleSideForArmy(battle, army))?.cellKey)
         ? [{ stat: "harm_taken", multiplier: 0.65 }]
@@ -5305,6 +5578,21 @@ $("endTurnBtn").addEventListener("click", () => {
 $("debugForceTurnBtn").addEventListener("click", () => {
   advanceToNextTurn(true);
 });
+
+// 除錯掛勾：把戰鬥加成的組裝過程開放給自動化檢查用（和「強制下一回合」按鈕同性質）。
+window.__neDebug = {
+  combatArmyPayload,
+  combatTraitModifiers,
+  combatAuraModifiers,
+  calculateGeneralLoyalty,
+  generalTrees,
+  activeBattles,
+  allArmies,
+  armyById,
+  generalById,
+  generalOwners,
+  getState: () => state,
+};
 
 boot().catch((error) => {
   console.error("Boot error:", error);

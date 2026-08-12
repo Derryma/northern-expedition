@@ -13,8 +13,7 @@
       "body_guard_level": null,
       "command_cap": 55,
       "traits": [
-        "christian_general",
-        "soviet_trained"
+        "northwest_overlord"
       ],
       "skills": [],
       "units": {
@@ -43,9 +42,11 @@
       "body_guard_level": null,
       "command_cap": 30,
       "traits": [
-        "central_plains_veteran"
+        "broadsword_corps"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 7,
         "cavalry": 4,
@@ -68,9 +69,11 @@
       "body_guard_level": null,
       "command_cap": 34,
       "traits": [
-        "central_plains_veteran"
+        "dodging_drift"
       ],
-      "skills": [],
+      "skills": [
+        "pontoon_bridge"
+      ],
       "units": {
         "infantry": 8,
         "cavalry": 4,
@@ -93,7 +96,7 @@
       "body_guard_level": null,
       "command_cap": 28,
       "traits": [
-        "steady_drillmaster"
+        "northwest_vanguard"
       ],
       "skills": [],
       "units": {

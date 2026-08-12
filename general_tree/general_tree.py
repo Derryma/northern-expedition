@@ -58,10 +58,19 @@ def validate_tree(tree: GeneralTree) -> GeneralTree:
 
     generals = _generals(tree)
     great_id = tree.get("great_general_id")
-    if great_id not in generals:
-        raise ValueError("tree must name an existing great_general_id")
-    if generals[great_id].get("role") != "great_general":
-        raise ValueError("great_general_id must point to a great_general")
+    if _is_flat_command(tree):
+        # 川軍與湘軍是平行編制：沒有大帥，將領彼此互不隸屬，
+        # 所以不要求 great_general_id，但也不允許出現大帥或上下級連結。
+        for general_id, general in generals.items():
+            if general.get("role") == "great_general":
+                raise ValueError(f"{general_id} cannot be a great_general in a flat-command tree")
+            if general.get("parent_id") is not None:
+                raise ValueError(f"{general_id} cannot have a parent in a flat-command tree")
+    else:
+        if great_id not in generals:
+            raise ValueError("tree must name an existing great_general_id")
+        if generals[great_id].get("role") != "great_general":
+            raise ValueError("great_general_id must point to a great_general")
 
     for general_id, general in generals.items():
         role = general.get("role")
@@ -288,8 +297,11 @@ def loyalty_report(tree: GeneralTree) -> Dict[str, Any]:
 
     validate_tree(tree)
     generals = _generals(tree)
-    great = _general(tree, str(tree["great_general_id"]))
-    core_faction = str(great["faction"])
+    if _is_flat_command(tree):
+        # 平行編制沒有大帥，改用第一位將領的陣營當作核心陣營。
+        core_faction = str(next(iter(generals.values()))["faction"])
+    else:
+        core_faction = str(_general(tree, str(tree["great_general_id"]))["faction"])
     core_strength = sum(
         calculate_force_strength(general.get("units", {}))
         for general in generals.values()
@@ -384,6 +396,12 @@ def _generals(tree: GeneralTree) -> Dict[str, Dict[str, Any]]:
     if not isinstance(generals, dict):
         raise ValueError("tree['generals'] must be an object keyed by general id")
     return generals
+
+
+def _is_flat_command(tree: GeneralTree) -> bool:
+    """川軍、湘軍這類沒有大帥、將領彼此平行的編制。"""
+
+    return bool(tree.get("flat_command", False))
 
 
 def _general(tree: GeneralTree, general_id: str) -> Dict[str, Any]:

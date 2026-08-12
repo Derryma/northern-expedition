@@ -15,9 +15,11 @@
       "body_guard_level": null,
       "command_cap": 40,
       "traits": [
-        "fire_support_savant"
+        "former_overlord"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 6,
         "cavalry": 1,
@@ -30,7 +32,7 @@
       "status": "in_exile",
       "recruit_value": 22,
       "background": "前皖系領袖，1920 年兵敗下野，寓居天津。",
-      "ability": "前代軍閥：所部砲兵命中 +1。"
+      "ability": "前代梟雄：步兵與砲兵攻擊力 +12%。可建造要塞。"
     },
     "chen_jiongming": {
       "id": "chen_jiongming",
@@ -43,9 +45,11 @@
       "body_guard_level": null,
       "command_cap": 36,
       "traits": [
-        "entrenched_warlord"
+        "old_cantonese_army"
       ],
-      "skills": [],
+      "skills": [
+        "pontoon_bridge"
+      ],
       "units": {
         "infantry": 6,
         "cavalry": 0,
@@ -58,35 +62,10 @@
       "status": "in_exile",
       "recruit_value": 22,
       "background": "前粵軍領袖，1925 年被逐，蟄居香港。",
-      "ability": "老革命家：所部生命 +1；對付共黨、黑幫、親蘇陣營時近戰命中 +1。"
-    },
-    "lu_hongtao": {
-      "id": "lu_hongtao",
-      "name": "陸洪濤",
-      "role": "lieutenant_general",
-      "faction": null,
-      "core_faction": false,
-      "loyalty": 5,
-      "loyalty_exempt": false,
-      "body_guard_level": null,
-      "command_cap": 32,
-      "traits": [
-        "cavalry_screen_commander"
-      ],
-      "skills": [],
-      "units": {
-        "infantry": 4,
-        "cavalry": 3,
-        "artillery": 0,
-        "machine_gun": 1
-      },
-      "parent_id": null,
-      "subordinate_slots": 0,
-      "subordinates": [],
-      "status": "in_exile",
-      "recruit_value": 20,
-      "background": "前甘肅督軍，1924 年為國民軍所逐。",
-      "ability": "隴上舊部：於甘肅、青海、陝西境內作戰時，所部移動 +1。"
+      "ability": "老粵軍：砲兵攻擊力 +12%；鎮壓紅軍起義只需一回合。可建造浮橋。國民革命軍不可延攬。",
+      "forbidden_factions": [
+        "N"
+      ]
     },
     "tian_zhongyu": {
       "id": "tian_zhongyu",
@@ -99,9 +78,11 @@
       "body_guard_level": null,
       "command_cap": 32,
       "traits": [
-        "defensive_specialist"
+        "qilu_veteran"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 5,
         "cavalry": 0,
@@ -114,7 +95,7 @@
       "status": "in_exile",
       "recruit_value": 20,
       "background": "前山東督軍，1923 年去職。",
-      "ability": "齊魯宿將：於山東境內守城時，所部命中 +1。"
+      "ability": "齊魯宿將：騎兵承傷 -7%、砲兵攻擊力 +7%；同陣營若有張宗昌則忠誠 +1。可建造要塞。"
     },
     "wang_chengbin": {
       "id": "wang_chengbin",
@@ -127,9 +108,11 @@
       "body_guard_level": null,
       "command_cap": 35,
       "traits": [
-        "central_plains_veteran"
+        "zhili_veteran"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 6,
         "cavalry": 2,
@@ -142,7 +125,7 @@
       "status": "in_exile",
       "recruit_value": 22,
       "background": "直系宿將，1925 年失勢賦閒。",
-      "ability": "直系老臣：加入直系陣營時忠誠 +2；所部步兵攻擊 +1。"
+      "ability": "直系宿將：騎兵與砲兵攻擊力 +7%；同陣營若有吳佩孚則忠誠 +1。可建造要塞。"
     },
     "li_houji": {
       "id": "li_houji",
@@ -155,9 +138,11 @@
       "body_guard_level": null,
       "command_cap": 36,
       "traits": [
-        "fujian_garrison"
+        "riverine_warfare"
       ],
-      "skills": [],
+      "skills": [
+        "pontoon_bridge"
+      ],
       "units": {
         "infantry": 6,
         "cavalry": 0,
@@ -170,7 +155,7 @@
       "status": "in_exile",
       "recruit_value": 18,
       "background": "前福建督軍，1922 年被逐，寓居天津。",
-      "ability": "閩海舊人：於福建、浙江境內守城時，所部生命 +1。"
+      "ability": "水域作戰：於廣西、廣東、福建、浙江、江蘇、安徽、江西境內作戰時所部全體承傷 -10%。可建造浮橋。"
     },
     "lu_yongxiang": {
       "id": "lu_yongxiang",
@@ -183,9 +168,11 @@
       "body_guard_level": null,
       "command_cap": 32,
       "traits": [
-        "jiangxi_commander"
+        "anhui_veteran"
       ],
-      "skills": [],
+      "skills": [
+        "pontoon_bridge"
+      ],
       "units": {
         "infantry": 6,
         "cavalry": 1,
@@ -198,7 +185,10 @@
       "status": "in_exile",
       "recruit_value": 18,
       "background": "前浙江督軍，1925 年下野，蟄居天津。",
-      "ability": "江浙舊部：於浙江境內作戰時，所部命中 +1。"
+      "ability": "皖系舊部：步兵與機槍攻擊力 +8%；與段祺瑞同戰場時所部全體生命 +10%（戰鬥結束即恢復）。可建造浮橋。五省聯軍不可延攬。",
+      "forbidden_factions": [
+        "S"
+      ]
     }
   }
 }

@@ -58,7 +58,8 @@ export const HAINAN = [
 
 export const RIVERS = [
   { name: '黃河', pts: [[103.8, 36.1], [106.0, 37.3], [109.0, 40.3], [110.5, 40.4], [110.7, 37.6], [110.4, 34.9], [112.5, 34.8], [114.3, 34.8], [116.5, 35.5], [118.0, 37.0], [119.0, 37.9]] },
-  { name: '長江', pts: [[104.1, 30.7], [106.5, 29.6], [108.4, 30.7], [111.3, 30.7], [114.3, 30.6], [116.5, 30.2], [118.8, 32.1], [120.4, 32.0], [121.8, 31.4]] },
+  // 蕪湖 (118.4, 31.3) 本來就在長江邊，補上這個控制點之後，原本蕪湖那一格會落在河道上。
+  { name: '長江', pts: [[104.1, 30.7], [106.5, 29.6], [108.4, 30.7], [111.3, 30.7], [114.3, 30.6], [116.5, 30.2], [117.0, 30.5], [118.4, 31.3], [118.8, 32.1], [120.4, 32.0], [121.8, 31.4]] },
   { name: '珠江', pts: [[108.3, 22.8], [111.3, 23.5], [112.5, 23.2], [113.3, 23.1], [113.6, 22.4]] },
 ];
 
@@ -202,6 +203,16 @@ for (const river of RIVERS) {
   }
 }
 
+// 折線之外另外指定為水域的地格：地形上是水面，但不在河道折線的取樣路徑上。
+const EXTRA_WATER = [
+  // 鄭州正上方一格。黃河主槽在鄭州以北，這一格就是河道本身。
+  { name: '黃河', lon: 113.38, lat: 35.24 },
+];
+for (const spot of EXTRA_WATER) {
+  const cell = cellAt(spot.lon, spot.lat);
+  if (cell) cell.river = spot.name;
+}
+
 export const ARMY_POSITIONS = {
   N: [
     { id: 'N-1', generalId: 'chiang_kai_shek', general: '蔣介石', designator: '第一軍', startCityId: 'guangzhou', lon: 113.3, lat: 23.1, units: { infantry: 15, cavalry: 2, artillery: 3, machine_gun: 4 } },
@@ -224,8 +235,8 @@ export const ARMY_POSITIONS = {
   S: [
     { id: 'S-1', generalId: 'sun_chuanfang', general: '孫傳芳', designator: '第一軍', startCityId: 'nanjing', lon: 118.8, lat: 32.1, units: { infantry: 18, cavalry: 1, artillery: 2, machine_gun: 5 } },
     { id: 'S-2', generalId: 'lu_xiangting', general: '盧香亭', designator: '第二軍', startCityId: 'shanghai', lon: 121.5, lat: 31.2, units: { infantry: 15, cavalry: 1, artillery: 2, machine_gun: 3 } },
-    { id: 'S-3', generalId: 'zhou_yinren', general: '周蔭人', designator: '第三軍', startCityId: 'nanchang', lon: 115.9, lat: 28.7, units: { infantry: 12, cavalry: 1, artillery: 1, machine_gun: 3 } },
-    { id: 'S-4', generalId: 'meng_zhaoyue', general: '孟昭月', designator: '第四軍', startCityId: 'fuzhou', lon: 119.3, lat: 26.1, units: { infantry: 11, cavalry: 2, artillery: 1, machine_gun: 2 } },
+    { id: 'S-3', generalId: 'zhou_yinren', general: '周蔭人', designator: '第三軍', startCityId: 'fuzhou', lon: 119.3, lat: 26.1, units: { infantry: 12, cavalry: 1, artillery: 1, machine_gun: 3 } },
+    { id: 'S-4', generalId: 'meng_zhaoyue', general: '孟昭月', designator: '第四軍', startCityId: 'nanchang', lon: 115.9, lat: 28.7, units: { infantry: 11, cavalry: 2, artillery: 1, machine_gun: 2 } },
   ],
   Y: [
     { id: 'Y-1', generalId: 'yan_xishan', general: '閻錫山', designator: '第一軍', startCityId: 'taiyuan', lon: 112.5, lat: 37.9, units: { infantry: 11, cavalry: 3, artillery: 2, machine_gun: 2 } },

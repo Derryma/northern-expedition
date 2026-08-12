@@ -25,6 +25,15 @@ DATA_PATHS = {
     "strategic_map": "scenario/data/strategic_map.json",
 }
 
+# 四大可玩勢力的將領樹。引擎本身不管理將領樹（那是前端的事），
+# 但開局時要知道哪個陣營帶著〈日本買辦〉這類非戰鬥技能。
+PLAYABLE_TREE_PATHS = {
+    "N": "general_tree/data/general_tree_playtest.json",
+    "F": "general_tree/data/general_tree_fengtian.json",
+    "W": "general_tree/data/general_tree_zhili.json",
+    "S": "general_tree/data/general_tree_sunfang.json",
+}
+
 
 def load_json(relative_path: str) -> Any:
     with (REPO_ROOT / relative_path).open(encoding="utf-8") as handle:
@@ -33,6 +42,9 @@ def load_json(relative_path: str) -> Any:
 
 def load_game_data() -> Dict[str, Any]:
     data = {name: load_json(path) for name, path in DATA_PATHS.items()}
+    data["playable_general_trees"] = {
+        faction: load_json(path) for faction, path in PLAYABLE_TREE_PATHS.items()
+    }
     data["indexes"] = {
         "event_cards": _index_cards(data["event_cards"]["cards"]),
         "function_cards": _index_cards(data["function_cards"]["cards"]),

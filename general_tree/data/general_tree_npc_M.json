@@ -13,7 +13,7 @@
       "body_guard_level": null,
       "command_cap": 38,
       "traits": [
-        "cavalry_screen_commander"
+        "xining_garrison"
       ],
       "skills": [],
       "units": {
@@ -41,7 +41,7 @@
       "body_guard_level": null,
       "command_cap": 28,
       "traits": [
-        "local_supply_boss"
+        "desert_guard"
       ],
       "skills": [],
       "units": {
@@ -66,7 +66,7 @@
       "body_guard_level": null,
       "command_cap": 26,
       "traits": [
-        "cavalry_screen_commander"
+        "valiant_horse"
       ],
       "skills": [],
       "units": {
