@@ -42,10 +42,10 @@
       "body_guard_level": null,
       "command_cap": 34,
       "traits": [
-        "fujian_garrison"
+        "riverine_warfare"
       ],
       "skills": [
-        "fortress_builder"
+        "pontoon_bridge"
       ],
       "units": {
         "infantry": 12,
@@ -70,7 +70,7 @@
       "body_guard_level": null,
       "command_cap": 36,
       "traits": [
-        "yangzi_defender"
+        "riverine_warfare"
       ],
       "skills": [
         "pontoon_bridge"
@@ -97,9 +97,11 @@
       "body_guard_level": null,
       "command_cap": 32,
       "traits": [
-        "jiangxi_commander"
+        "assault_breaker"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 11,
         "cavalry": 2,

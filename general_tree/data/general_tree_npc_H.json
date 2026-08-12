@@ -1,19 +1,19 @@
 {
   "version": "npc-xiang-0.1",
-  "great_general_id": "tang_shengzhi",
+  "great_general_id": null,
   "generals": {
     "tang_shengzhi": {
       "id": "tang_shengzhi",
       "name": "唐生智",
-      "role": "great_general",
+      "role": "lieutenant_general",
       "faction": "湘軍",
       "core_faction": true,
-      "loyalty": null,
-      "loyalty_exempt": true,
+      "loyalty": 5,
+      "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 42,
       "traits": [
-        "local_supply_boss"
+        "buddhist_general"
       ],
       "skills": [],
       "units": {
@@ -23,11 +23,8 @@
         "machine_gun": 2
       },
       "parent_id": null,
-      "subordinate_slots": 2,
-      "subordinates": [
-        "he_jian",
-        "zhao_hengti"
-      ],
+      "subordinate_slots": 0,
+      "subordinates": [],
       "status": "active"
     },
     "he_jian": {
@@ -41,7 +38,7 @@
       "body_guard_level": null,
       "command_cap": 26,
       "traits": [
-        "entrenched_warlord"
+        "anticommunist_vanguard"
       ],
       "skills": [],
       "units": {
@@ -50,7 +47,7 @@
         "artillery": 0,
         "machine_gun": 1
       },
-      "parent_id": "tang_shengzhi",
+      "parent_id": null,
       "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
@@ -66,19 +63,22 @@
       "body_guard_level": null,
       "command_cap": 26,
       "traits": [
-        "entrenched_warlord"
+        "hunan_governor"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 7,
         "cavalry": 2,
         "artillery": 1,
         "machine_gun": 1
       },
-      "parent_id": "tang_shengzhi",
+      "parent_id": null,
       "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }
-  }
+  },
+  "flat_command": true
 }

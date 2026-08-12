@@ -29,6 +29,17 @@ Default hierarchy:
 | `lieutenant_general` | 2 major generals |
 | `major_general` | 0 |
 
+Two NPC factions are exceptions. 川軍 and 湘軍 have no marshal at all: every
+general sits at the same level, nobody is anybody's subordinate, and capturing
+one of them brings over only that one command. Their tree files set
+`"flat_command": true` with `"great_general_id": null`, and `validate_tree`
+accepts that shape while still rejecting a stray `great_general` or `parent_id`
+inside it.
+
+Every other NPC faction hangs its whole roster off the leader, so capturing and
+recruiting the leader transfers the entire faction:
+西北軍 → 馮玉祥, 晉系 → 閻錫山, 馬家軍 → 馬麒, 滇系 → 唐繼堯.
+
 Events can increase slots with:
 
 ```python

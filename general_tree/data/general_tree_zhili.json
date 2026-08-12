@@ -13,7 +13,7 @@
       "body_guard_level": null,
       "command_cap": 75,
       "traits": [
-        "confucian_general"
+        "wu_peifu_admired"
       ],
       "skills": [],
       "units": {
@@ -70,7 +70,7 @@
       "body_guard_level": null,
       "command_cap": 35,
       "traits": [
-        "central_plains_veteran"
+        "wuchang_veteran"
       ],
       "skills": [],
       "units": {
@@ -97,7 +97,9 @@
       "traits": [
         "central_plains_veteran"
       ],
-      "skills": [],
+      "skills": [
+        "pontoon_bridge"
+      ],
       "units": {
         "infantry": 12,
         "cavalry": 4,

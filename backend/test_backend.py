@@ -1,6 +1,13 @@
 import unittest
 
-from backend.card_engine import FOREIGN_FRIENDLY_THRESHOLD, GameEngine, RECRUIT_COSTS
+from backend.card_engine import (
+    FOREIGN_CONDEMNATION_CARDS,
+    FOREIGN_CONDEMNATION_COPIES,
+    FOREIGN_FRIENDLY_THRESHOLD,
+    FOREIGN_HOSTILE_THRESHOLD,
+    GameEngine,
+    RECRUIT_COSTS,
+)
 from backend.combat_adapter import simulate
 from backend.data_store import load_game_data
 from economy import LoanBook
@@ -316,7 +323,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(engine.state["players"]["N"]["function_deck"].count("jp_condemnation"), 0)
         self.assertEqual(engine.state["players"]["N"]["function_deck"].count("uk_condemnation"), 3)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("city_development"), 8)
-        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("foreign_relation_jp"), 4)
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("foreign_relation_jp"), 5)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("young_marshal_rises"), 1)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("wang_yongjiang_financial_reform"), 1)
         self.assertEqual(engine.state["players"]["N"]["function_deck"].count("forced_march"), 8)
@@ -1241,7 +1248,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(moved, {"uk": -1, "jp": -1, "us": -1, "fr": -1})
         self.assertNotIn("su", moved)   # 蘇聯不受影響
 
-    def test_negotiation_succeeds_about_seventy_percent_and_does_nothing_on_failure(self):
+    def test_negotiation_succeeds_about_eighty_percent_and_does_nothing_on_failure(self):
         engine = GameEngine(seed=8)
         payload = engine.state["players"]["W"]
         rounds = 3000
@@ -1256,19 +1263,19 @@ class BackendTests(unittest.TestCase):
             else:
                 self.assertEqual(delta["after"], 0)      # 失敗完全沒有效果
                 self.assertEqual(delta["amount"], 0)
-        self.assertAlmostEqual(wins / rounds, 0.70, delta=0.03)
+        self.assertAlmostEqual(wins / rounds, 0.80, delta=0.03)
 
     def test_every_negotiation_card_carries_the_same_odds(self):
         index = load_game_data()["indexes"]["function_cards"]
         for power in ("jp", "su", "uk", "fr", "us"):
-            self.assertAlmostEqual(index["foreign_relation_" + power]["success_rate"], 0.70, msg=power)
+            self.assertAlmostEqual(index["foreign_relation_" + power]["success_rate"], 0.80, msg=power)
 
-    def test_twentyeight_cards_carry_a_story(self):
+    def test_thirty_cards_carry_a_story(self):
         # 17 → 18（在野名將投效）→ 27（設立情報局、盜賣文物、中國人之恥、
-        # 警政單位、五張貿易出口卡）→ 28（僑胞匯款）。
+        # 警政單位、五張貿易出口卡）→ 28（僑胞匯款）→ 30（崩鐵玩家、復興儒學）。
         cards = load_game_data()["function_cards"]["cards"]
         with_story = [card for card in cards if card.get("story")]
-        self.assertEqual(len(with_story), 28)
+        self.assertEqual(len(with_story), 30)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -1296,11 +1303,11 @@ class ExileGeneralTests(unittest.TestCase):
     """在野將領池與〈在野名將投效〉。"""
 
     POOL_IDS = {
-        "duan_qirui", "chen_jiongming", "lu_hongtao", "tian_zhongyu",
+        "duan_qirui", "chen_jiongming", "tian_zhongyu",
         "wang_chengbin", "li_houji", "lu_yongxiang",
     }
 
-    def test_pool_holds_the_seven_generals_off_board_and_factionless(self):
+    def test_pool_holds_the_six_generals_off_board_and_factionless(self):
         pool = load_game_data()["generals_in_exile"]["generals"]
         self.assertEqual(set(pool), self.POOL_IDS)
         for gid, general in pool.items():
@@ -1353,10 +1360,11 @@ class ExileGeneralTests(unittest.TestCase):
         )["exile_recruit"]
 
         self.assertEqual(outcome["general_id"], "duan_qirui")
-        self.assertEqual(outcome["price"], 22)          # 延攬費為身價全額
+        # 延攬費 = 身價全額 22 + 出山附加費 15（規則：所有在野將領招募費用 +$15）
+        self.assertEqual(outcome["price"], 37)
         self.assertEqual(outcome["owner"], "W")
         self.assertEqual(outcome["units"], {"infantry": 6, "cavalry": 1, "artillery": 2, "machine_gun": 1})
-        self.assertEqual(engine.state["players"]["W"]["treasury"], before - 22)
+        self.assertEqual(engine.state["players"]["W"]["treasury"], before - 37)
         self.assertEqual(engine.state["recruited_exiles"]["duan_qirui"], "W")
 
         # 同一人不能被第二次延攬。
@@ -1448,7 +1456,7 @@ class CardBatchTests(unittest.TestCase):
             self.assertEqual(deck.count("artifact_smuggling"), 3, code)
             self.assertEqual(deck.count("police_precinct"), 5, code)
             for power in ("jp", "su", "uk", "fr", "us"):
-                self.assertEqual(deck.count(f"trade_export_{power}"), 3, f"{code}/{power}")
+                self.assertEqual(deck.count(f"trade_export_{power}"), 5, f"{code}/{power}")
             # 中國人之恥開局一張都沒有。
             self.assertEqual(deck.count("national_shame"), 0, code)
 
@@ -1704,3 +1712,295 @@ class ConditionalDeckTests(unittest.TestCase):
         self.assertIn("zhili_infantry_drill", engine.state["players"]["W"]["hand"])
         with self.assertRaises(ValueError):
             engine.use_function("W", "zhili_infantry_drill")
+
+
+class ConfucianRevivalTests(unittest.TestCase):
+    """復興儒學：條件卡，控制山東且對蘇關係 5 以下（含 5）。"""
+
+    def _hold_shandong(self, engine, player):
+        for city in engine.data["strategic_map"]["cities"]:
+            if city["province"] == "山東":
+                engine.state["city_owners"][city["id"]] = player
+
+    def test_card_shape(self):
+        card = load_game_data()["indexes"]["function_cards"]["confucian_revival"]
+        self.assertEqual(card["name"], "復興儒學")
+        self.assertEqual(card["mechanic"], "loyalty_all")
+        self.assertEqual(card["loyalty_delta"], 1)
+        self.assertEqual(card["requires_provinces"], ["山東"])
+        self.assertEqual(card["requires_relation_max"], {"power": "su", "value": 5})
+        self.assertTrue(card["story"].strip())
+
+    def test_two_copies_once_the_conditions_hold(self):
+        engine = GameEngine(seed=5)
+        # 奉系開局全控山東、對蘇 −7，兩個條件都成立。
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("confucian_revival"), 2)
+        # 其餘三家都沒有山東，抽不到。
+        for code in ("W", "S", "N"):
+            self.assertEqual(engine.state["players"][code]["function_deck"].count("confucian_revival"), 0, code)
+
+    def test_leaves_the_deck_when_soviet_relations_rise(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["foreign_relations"]["su"] = 6      # 6 超過門檻
+        engine.next_turn(active_player="F")
+        self.assertEqual(payload["function_deck"].count("confucian_revival"), 0)
+        payload["foreign_relations"]["su"] = 5      # 5 仍在門檻內
+        engine.next_turn(active_player="F")
+        self.assertEqual(payload["function_deck"].count("confucian_revival"), 2)
+
+    def test_leaves_the_deck_when_shandong_is_lost(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        engine.state["city_owners"]["qingdao"] = "S"
+        engine.next_turn(active_player="F")
+        self.assertEqual(payload["function_deck"].count("confucian_revival"), 0)
+
+    def test_playing_it_raises_every_variable_loyalty_general_by_one(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["hand"].append("confucian_revival")
+        result = engine.use_function("F", "confucian_revival")
+        self.assertEqual(result["loyalty_delta_all"], {"owner": "F", "amount": 1})
+
+    def test_blocked_when_the_conditions_lapse(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["hand"].append("confucian_revival")
+        payload["foreign_relations"]["su"] = 6
+        with self.assertRaises(ValueError):
+            engine.use_function("F", "confucian_revival")
+
+    def test_railway_saboteur_has_a_story(self):
+        card = load_game_data()["indexes"]["function_cards"]["railway_saboteur"]
+        self.assertEqual(card["story"], "來! 快上車!")
+
+
+class JapaneseCompradorTest(unittest.TestCase):
+    """〈日本買辦〉：張宗昌轉投時帶走的人脈。"""
+
+    def test_the_comprador_starts_with_the_faction_that_holds_zhang_zongchang(self):
+        engine = GameEngine(seed=11)
+        self.assertEqual(engine.faction_general_traits("F"), ["japanese_comprador"])
+
+    def test_joining_a_faction_raises_that_factions_japan_relation_by_two(self):
+        engine = GameEngine(seed=11)
+        before = engine.state["players"]["W"]["foreign_relations"]["jp"]
+        result = engine.apply_general_join("W", ["japanese_comprador"])
+
+        self.assertEqual(result["comprador"]["amount"], 2)
+        self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["jp"], before + 2)
+        # 人脈跟著人走，舊東家不再享有。
+        self.assertEqual(engine.faction_general_traits("W"), ["japanese_comprador"])
+        self.assertEqual(engine.faction_general_traits("F"), [])
+
+    def test_generals_without_the_trait_change_nothing(self):
+        engine = GameEngine(seed=11)
+        before = engine.state["players"]["W"]["foreign_relations"]["jp"]
+        self.assertEqual(engine.apply_general_join("W", ["defensive_specialist"]), {})
+        self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["jp"], before)
+
+    def test_the_comprador_sometimes_blocks_japanese_condemnation_cards(self):
+        # 每張 10% 機率被擋，三張至少擋掉一張的機率約 27%，
+        # 所以固定種子掃一輪應該同時看得到「有擋到」與「沒擋到」。
+        blocked = 0
+        for seed in range(40):
+            engine = GameEngine(seed=seed)
+            engine.state["faction_general_traits"] = {"W": ["japanese_comprador"]}
+            engine.state["condemnation_blocked"] = {}
+            engine.state["players"]["W"]["foreign_relations"]["jp"] = FOREIGN_HOSTILE_THRESHOLD
+            engine._sync_foreign_deck_cards("W")
+            count = engine.state["players"]["W"]["function_deck"].count("jp_condemnation")
+            self.assertLessEqual(count, FOREIGN_CONDEMNATION_COPIES)
+            if count < FOREIGN_CONDEMNATION_COPIES:
+                blocked += 1
+        self.assertGreater(blocked, 0)
+        self.assertLess(blocked, 40)
+
+    def test_without_the_comprador_every_condemnation_copy_lands(self):
+        engine = GameEngine(seed=3)
+        engine.state["faction_general_traits"] = {}
+        engine.state["players"]["W"]["foreign_relations"]["jp"] = FOREIGN_HOSTILE_THRESHOLD
+        engine._sync_foreign_deck_cards("W")
+        self.assertEqual(
+            engine.state["players"]["W"]["function_deck"].count("jp_condemnation"),
+            FOREIGN_CONDEMNATION_COPIES,
+        )
+
+
+class GeneralSkillCatalogTest(unittest.TestCase):
+    """22 名主要將領的專屬技能都要在技能總表裡查得到。"""
+
+    NAMED_SKILLS = {
+        "northwest_overlord", "dodging_drift", "broadsword_corps", "northwest_vanguard",
+        "shanxi_king", "iron_bulwark", "chief_of_staff", "xining_garrison",
+        "desert_guard", "valiant_horse", "marshal_zhang", "young_marshal",
+        "white_russian_mercenaries", "japanese_comprador", "elite_artillery",
+        "five_provinces_alliance", "riverine_warfare", "assault_breaker",
+        "wu_peifu_admired", "defensive_specialist", "central_plains_veteran",
+        "wuchang_veteran",
+    }
+
+    def test_every_named_skill_exists(self):
+        traits = load_game_data()["general_traits"]["traits"]
+        self.assertTrue(self.NAMED_SKILLS.issubset(set(traits)))
+
+    def test_every_trait_used_by_a_tree_exists_in_the_catalog(self):
+        data = load_game_data()
+        traits = set(data["general_traits"]["traits"])
+        for faction, tree in data["playable_general_trees"].items():
+            for general_id, general in tree["generals"].items():
+                for trait in general.get("traits", []):
+                    self.assertIn(trait, traits, f"{faction}/{general_id}: {trait}")
+
+    def test_the_exile_pool_only_uses_known_traits(self):
+        data = load_game_data()
+        traits = set(data["general_traits"]["traits"])
+        for general_id, general in data["generals_in_exile"]["generals"].items():
+            for trait in general.get("traits", []):
+                self.assertIn(trait, traits, f"{general_id}: {trait}")
+
+
+class FactionLevelGeneralTraitTest(unittest.TestCase):
+    """陣營層級的將領技能：買辦、地方財源、剿共。技能跟著人走。"""
+
+    def test_the_french_comprador_raises_the_france_relation_by_three(self):
+        engine = GameEngine(seed=5)
+        before = engine.state["players"]["N"]["foreign_relations"]["fr"]
+        result = engine.apply_general_join("N", ["french_comprador", "mountain_division"])
+
+        self.assertEqual(result["comprador"]["power"], "fr")
+        self.assertEqual(result["comprador"]["amount"], 3)
+        self.assertEqual(engine.state["players"]["N"]["foreign_relations"]["fr"], before + 3)
+        # 山地師是戰場技能，不該被記成陣營層級技能。
+        self.assertEqual(engine.faction_general_traits("N"), ["french_comprador"])
+
+    def test_the_french_comprador_blocks_more_condemnations_than_the_japanese_one(self):
+        def blocked_copies(trait, power):
+            blocked = 0
+            for seed in range(60):
+                engine = GameEngine(seed=seed)
+                engine.state["faction_general_traits"] = {"W": [trait]}
+                engine.state["condemnation_blocked"] = {}
+                engine.state["players"]["W"]["foreign_relations"][power] = FOREIGN_HOSTILE_THRESHOLD
+                engine._sync_foreign_deck_cards("W")
+                blocked += FOREIGN_CONDEMNATION_COPIES - engine.state["players"]["W"]["function_deck"].count(
+                    FOREIGN_CONDEMNATION_CARDS[power]
+                )
+            return blocked
+
+        # 法國買辦 30% 對日本買辦 10%，擋下的總張數應該明顯較多。
+        self.assertGreater(blocked_copies("french_comprador", "fr"), blocked_copies("japanese_comprador", "jp"))
+
+    def test_tianfu_land_adds_one_cash_and_factory_to_every_sichuan_city(self):
+        engine = GameEngine(seed=5)
+        engine.state["city_owners"]["chengdu"] = "W"
+        engine.state["city_owners"]["zhengzhou"] = "W"
+        engine._refresh_city_income()
+        before = {item["id"]: (item["cash"], item["factory"]) for item in engine.state["players"]["W"]["city_economy"]}
+        engine.apply_general_join("W", ["tianfu_land"])
+        after = {item["id"]: (item["cash"], item["factory"]) for item in engine.state["players"]["W"]["city_economy"]}
+
+        self.assertEqual(after["chengdu"], (before["chengdu"][0] + 1, before["chengdu"][1] + 1))
+        self.assertEqual(after["zhengzhou"], before["zhengzhou"])   # 河南不受影響
+
+    def test_hunan_governor_covers_hunan_only(self):
+        engine = GameEngine(seed=5)
+        engine.state["city_owners"]["changsha"] = "F"
+        engine._refresh_city_income()
+        before = {item["id"]: item["cash"] for item in engine.state["players"]["F"]["city_economy"]}
+        engine.apply_general_join("F", ["hunan_governor"])
+        after = {item["id"]: item["cash"] for item in engine.state["players"]["F"]["city_economy"]}
+
+        self.assertEqual(after["changsha"], before["changsha"] + 1)
+        self.assertEqual(after["beijing"], before["beijing"])
+
+    def test_the_bonus_moves_with_the_general(self):
+        engine = GameEngine(seed=5)
+        engine.state["city_owners"]["chengdu"] = "W"
+        engine.apply_general_join("W", ["tianfu_land"])
+        with_bonus = {item["id"]: item["cash"] for item in engine.state["players"]["W"]["city_economy"]}["chengdu"]
+        engine.apply_general_join("S", ["tianfu_land"])
+        engine._refresh_city_income()
+        without_bonus = {item["id"]: item["cash"] for item in engine.state["players"]["W"]["city_economy"]}["chengdu"]
+
+        self.assertEqual(without_bonus, with_bonus - 1)
+        self.assertEqual(engine.faction_general_traits("W"), [])
+        self.assertEqual(engine.faction_general_traits("S"), ["tianfu_land"])
+
+    def test_anticommunist_vanguard_switches_off_when_its_own_faction_turns_red(self):
+        engine = GameEngine(seed=5)
+        engine.apply_general_join("S", ["anticommunist_vanguard"])
+        engine.state["players"]["S"]["foreign_relations"]["su"] = 0
+        self.assertTrue(engine._has_fast_uprising_suppression("S"))
+        engine.state["players"]["S"]["foreign_relations"]["su"] = 6
+        self.assertFalse(engine._has_fast_uprising_suppression("S"))
+
+    def test_the_old_cantonese_army_suppresses_an_uprising_in_a_single_turn(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["N"]["foreign_relations"]["su"] = FOREIGN_FRIENDLY_THRESHOLD
+        engine.state["players"]["N"]["hand"].append("red_army_uprising")
+        result = engine.use_function("N", "red_army_uprising", target_owner="S")
+        garrison = {city_id: 5 for city_id in result["city_disruption"]["city_ids"]}
+
+        engine.apply_general_join("S", ["old_cantonese_army"])
+        engine.next_turn(active_player="N", city_garrisons=garrison)
+        self.assertFalse([
+            effect for effect in engine.state["city_output_effects"]
+            if effect.get("kind") == "red_army_uprising"
+        ])
+
+    def test_without_the_trait_the_uprising_needs_two_turns(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["N"]["foreign_relations"]["su"] = FOREIGN_FRIENDLY_THRESHOLD
+        engine.state["players"]["N"]["hand"].append("red_army_uprising")
+        result = engine.use_function("N", "red_army_uprising", target_owner="S")
+        garrison = {city_id: 5 for city_id in result["city_disruption"]["city_ids"]}
+
+        engine.next_turn(active_player="N", city_garrisons=garrison)
+        self.assertTrue([
+            effect for effect in engine.state["city_output_effects"]
+            if effect.get("kind") == "red_army_uprising"
+        ])
+
+
+class ExileRecruitRestrictionTest(unittest.TestCase):
+    """有舊怨的在野將領不肯投靠特定陣營。"""
+
+    def test_lu_yongxiang_refuses_the_five_province_alliance(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["S"]["hand"].append("function_在野名將投效")
+        with self.assertRaises(ValueError):
+            engine.use_function("S", "function_在野名將投效", target_general_id="lu_yongxiang")
+
+    def test_chen_jiongming_refuses_the_national_revolutionary_army(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["N"]["hand"].append("function_在野名將投效")
+        with self.assertRaises(ValueError):
+            engine.use_function("N", "function_在野名將投效", target_general_id="chen_jiongming")
+
+    def test_everyone_else_can_still_recruit_them(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["S"]["hand"].append("function_在野名將投效")
+        outcome = engine.use_function(
+            "S", "function_在野名將投效", target_general_id="chen_jiongming",
+        )["exile_recruit"]
+        self.assertEqual(outcome["general_id"], "chen_jiongming")
+
+    def test_lu_hongtao_is_gone_from_the_pool(self):
+        self.assertNotIn("lu_hongtao", load_game_data()["generals_in_exile"]["generals"])
+
+
+class DefectionResistanceTest(unittest.TestCase):
+    """唐生智的〈佛教將軍〉讓對方策反成功率額外 -5%。"""
+
+    def test_resistance_lowers_the_success_chance(self):
+        plain = GameEngine(seed=5).attempt_defection_with_force("N", 5, 20.0)
+        resisted = GameEngine(seed=5).attempt_defection_with_force("N", 5, 20.0, None, 0.05)
+        self.assertAlmostEqual(resisted["chance"], plain["chance"] - 0.05, places=6)
+
+    def test_the_floor_still_applies(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["N"]["treasury"] = 500
+        result = engine.attempt_defection_with_force("N", 10, 200.0, None, 0.5)
+        self.assertGreaterEqual(result["chance"], 0.03)

@@ -13,7 +13,7 @@
       "body_guard_level": null,
       "command_cap": 45,
       "traits": [
-        "entrenched_warlord"
+        "shanxi_king"
       ],
       "skills": [],
       "units": {
@@ -41,9 +41,11 @@
       "body_guard_level": null,
       "command_cap": 28,
       "traits": [
-        "defensive_specialist"
+        "iron_bulwark"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 7,
         "cavalry": 4,
@@ -66,7 +68,7 @@
       "body_guard_level": null,
       "command_cap": 26,
       "traits": [
-        "local_supply_boss"
+        "chief_of_staff"
       ],
       "skills": [],
       "units": {

@@ -1,19 +1,20 @@
 {
   "version": "npc-chuan-0.1",
-  "great_general_id": "liu_xiang",
+  "great_general_id": null,
   "generals": {
     "liu_xiang": {
       "id": "liu_xiang",
       "name": "劉湘",
-      "role": "great_general",
+      "role": "lieutenant_general",
       "faction": "川軍",
       "core_faction": true,
-      "loyalty": null,
-      "loyalty_exempt": true,
+      "loyalty": 5,
+      "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 42,
       "traits": [
-        "entrenched_warlord"
+        "tianfu_land",
+        "mountain_division"
       ],
       "skills": [],
       "units": {
@@ -23,11 +24,8 @@
         "machine_gun": 1
       },
       "parent_id": null,
-      "subordinate_slots": 2,
-      "subordinates": [
-        "liu_wenhui",
-        "yang_sen"
-      ],
+      "subordinate_slots": 0,
+      "subordinates": [],
       "status": "active"
     },
     "liu_wenhui": {
@@ -41,16 +39,18 @@
       "body_guard_level": null,
       "command_cap": 30,
       "traits": [
-        "local_supply_boss"
+        "elite_mountain_division"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 8,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 1
       },
-      "parent_id": "liu_xiang",
+      "parent_id": null,
       "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
@@ -66,19 +66,22 @@
       "body_guard_level": null,
       "command_cap": 26,
       "traits": [
-        "shock_column_leader"
+        "mountain_division"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 7,
         "cavalry": 2,
         "artillery": 1,
         "machine_gun": 1
       },
-      "parent_id": "liu_xiang",
+      "parent_id": null,
       "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }
-  }
+  },
+  "flat_command": true
 }

@@ -80,20 +80,21 @@ FUNCTION_CARD_COPIES = {
     "peking_university_movement": 2,
     "forced_march": 8,
     "affiliation_slot_upgrade": 4,
-    "foreign_relation_jp": 4,
-    "foreign_relation_su": 4,
-    "foreign_relation_uk": 4,
-    "foreign_relation_fr": 4,
-    "foreign_relation_us": 4,
+    "foreign_relation_jp": 5,
+    "foreign_relation_su": 5,
+    "foreign_relation_uk": 5,
+    "foreign_relation_fr": 5,
+    "foreign_relation_us": 5,
     "function_在野名將投效": 3,
     "artifact_smuggling": 3,
     "police_precinct": 5,
-    "trade_export_jp": 3,
-    "trade_export_su": 3,
-    "trade_export_uk": 3,
-    "trade_export_fr": 3,
-    "trade_export_us": 3,
+    "trade_export_jp": 5,
+    "trade_export_su": 5,
+    "trade_export_uk": 5,
+    "trade_export_fr": 5,
+    "trade_export_us": 5,
     # 中國人之恥開局 0 張，只靠〈盜賣文物〉塞進牌庫，全場上限 9 張。
+    "confucian_revival": 2,
     "national_shame": 0,
 }
 # 與 foreign_powers/data/foreign_powers.json 同一組切點：友好 >= 6、交惡 <= -4。
@@ -146,6 +147,30 @@ FOREIGN_CONDEMNATION_CARDS = {
     "fr": "fr_condemnation",
     "us": "us_condemnation",
 }
+# 在野將領的出山附加費：延攬費 = 身價全額 + 這筆錢。
+EXILE_RECRUIT_SURCHARGE = 15
+# ── 有陣營層級效果的將領技能 ──────────────────────────────────────────
+# 這些技能的效果不在戰場上，而是掛在「持有這名將領的陣營」身上。人走效果就走，
+# 所以引擎只記「哪個陣營現在持有這個技能」，由 apply_general_join 在轉投時更新。
+#
+# 買辦：轉投時該陣營對該國關係上升，且該國的譴責進牌庫時每張有機率被擋下。
+COMPRADOR_TRAITS = {
+    "japanese_comprador": {"power": "jp", "gain": 2, "immunity": 0.10},   # 張宗昌
+    "french_comprador": {"power": "fr", "gain": 3, "immunity": 0.30},     # 唐繼堯
+}
+# 地方財源：持有者的陣營，該省每座城市每回合現金與工業各 +1。
+PROVINCE_OUTPUT_TRAITS = {
+    "tianfu_land": {"province": "四川", "cash": 1, "factory": 1},         # 劉湘
+    "hunan_governor": {"province": "湖南", "cash": 1, "factory": 1},      # 趙恒惕
+}
+# 剿共：紅軍起義只要駐滿一回合就恢復產出。
+FAST_UPRISING_SUPPRESSION_TRAITS = {
+    "anticommunist_vanguard": {"disabled_when": {"power": "su", "min": 6}},  # 何鍵
+    "old_cantonese_army": {},                                                # 陳炯明
+}
+FACTION_LEVEL_TRAITS = (
+    set(COMPRADOR_TRAITS) | set(PROVINCE_OUTPUT_TRAITS) | set(FAST_UPRISING_SUPPRESSION_TRAITS)
+)
 FEATURES = {
     "events": False,
     "function_cards": True,
@@ -294,6 +319,9 @@ class GameEngine:
             "recurring_effects": [],
             "last_economy_log": {},
             "next_deal_id": 1,
+            # 陣營層級技能目前掛在誰身上（開局時只有張宗昌的〈日本買辦〉在奉系）。
+            "faction_general_traits": self._initial_faction_general_traits(),
+            "condemnation_blocked": {},
         }
         for player in self.state["players"]:
             self._sync_foreign_deck_cards(player)
@@ -593,16 +621,35 @@ class GameEngine:
             entry["cities"].append(city["name"])
         return bonuses
 
+    def _province_output_bonus(self, player: str) -> Dict[str, Dict[str, int]]:
+        """地方財源技能（劉湘的四川、趙恒惕的湖南）帶來的每城每回合加成。"""
+
+        bonus: Dict[str, Dict[str, int]] = {}
+        for trait in self.state.get("faction_general_traits", {}).get(player, []):
+            rule = PROVINCE_OUTPUT_TRAITS.get(trait)
+            if not rule:
+                continue
+            entry = bonus.setdefault(rule["province"], {"cash": 0, "factory": 0})
+            entry["cash"] += int(rule["cash"])
+            entry["factory"] += int(rule["factory"])
+        return bonus
+
     def _city_economy_for(self, player: str) -> list[Dict[str, Any]]:
         development = self.state.get("city_development", {})
+        province_bonus = self._province_output_bonus(player)
         economy = []
         for city in self.data["strategic_map"]["cities"]:
             if self.state["city_owners"].get(city["id"], city["faction"]) != player:
                 continue
+            general_bonus = province_bonus.get(city["province"], {"cash": 0, "factory": 0})
             cash, factory = self._adjusted_city_output(
                 city["id"],
-                scaled_city_value(city, "cash") + int(development.get(city["id"], {}).get("cash", 0)),
-                scaled_city_value(city, "factory") + int(development.get(city["id"], {}).get("factory", 0)),
+                scaled_city_value(city, "cash")
+                + int(development.get(city["id"], {}).get("cash", 0))
+                + int(general_bonus["cash"]),
+                scaled_city_value(city, "factory")
+                + int(development.get(city["id"], {}).get("factory", 0))
+                + int(general_bonus["factory"]),
             )
             economy.append({
                 "id": city["id"],
@@ -652,19 +699,22 @@ class GameEngine:
             "state": self.snapshot(),
         }
 
-    def recruit_captive_general(self, player: str) -> Dict[str, Any]:
+    def recruit_captive_general(self, player: str, traits=None) -> Dict[str, Any]:
         player_state = self._player(player)
         infantry_cost = 5
         if player_state["unit_reserves"].get("infantry", 0) < infantry_cost:
             raise ValueError("recruiting a captive general requires 5 infantry reserves")
         player_state["unit_reserves"]["infantry"] -= infantry_cost
         player_state["unit_reserve"] = sum(player_state["unit_reserves"].values())
-        return {"infantry": infantry_cost, "state": self.snapshot()}
+        joined = self.apply_general_join(player, traits)
+        return {"infantry": infantry_cost, **joined, "state": self.snapshot()}
 
     def attempt_defection(self, player: str, loyalty: int) -> Dict[str, Any]:
         return self.attempt_defection_with_force(player, loyalty, 1)
 
-    def attempt_defection_with_force(self, player: str, loyalty: int, force: float) -> Dict[str, Any]:
+    def attempt_defection_with_force(
+        self, player: str, loyalty: int, force: float, traits=None, resistance: float = 0.0,
+    ) -> Dict[str, Any]:
         player_state = self._player(player)
         loyalty = max(1, min(10, int(loyalty)))
         force = max(1.0, float(force))
@@ -673,13 +723,17 @@ class GameEngine:
             raise ValueError(f"defection attempt requires {cost} cash")
         player_state["treasury"] -= cost
         base_chance = 0.45 - loyalty * 0.04 - force * 0.003
-        chance = max(0.03, min(0.60, base_chance * 1.25))
+        # 目標將領自帶的抗策反（唐生智的〈佛教將軍〉-5%）。
+        chance = max(0.03, min(0.60, base_chance * 1.25) - max(0.0, float(resistance or 0.0)))
         roll = self.random.random()
+        success = roll < chance
+        joined = self.apply_general_join(player, traits) if success else {}
         return {
-            "success": roll < chance,
+            "success": success,
             "cost": cost,
             "chance": chance,
             "roll": roll,
+            **joined,
             "state": self.snapshot(),
         }
 
@@ -1310,7 +1364,11 @@ class GameEngine:
             # 實際把人放進將領樹與地圖的是前端。
             pool = self.data["generals_in_exile"]["generals"]
             taken = self.state.setdefault("recruited_exiles", {})
-            available = [gid for gid in pool if gid not in taken]
+            # 有些人有舊怨，不肯投靠特定陣營（盧永祥不投五省聯軍、陳炯明不投國民革命軍）。
+            available = [
+                gid for gid in pool
+                if gid not in taken and player not in pool[gid].get("forbidden_factions", [])
+            ]
             if not available:
                 # 池空時本卡改為補充部隊：步兵 ×2、機槍 ×1，
                 # 只收該勢力募兵現金的一半（無條件進位），且不收工業點。
@@ -1340,8 +1398,10 @@ class GameEngine:
                 if target_general_id in taken:
                     raise ValueError("該人物已經出山，不在在野將領池中")
                 recruit = pool[target_general_id]
-                # 延攬費為身價全額。
-                price = int(recruit.get("recruit_value", 0))
+                if player in recruit.get("forbidden_factions", []):
+                    raise ValueError(f"{recruit['name']}不願投靠此陣營")
+                # 延攬費為身價全額，另加出山附加費（請人重新拉隊伍的開辦成本）。
+                price = int(recruit.get("recruit_value", 0)) + EXILE_RECRUIT_SURCHARGE
                 if int(player_state["treasury"]) < price:
                     raise ValueError(f"延攬{recruit['name']}需要 {price} 現金")
                 cost += price
@@ -2140,6 +2200,17 @@ class GameEngine:
             "text": text,
         })
 
+    def _has_fast_uprising_suppression(self, player: str) -> bool:
+        if player not in self.state.get("players", {}):
+            return False
+        for trait, rule in FAST_UPRISING_SUPPRESSION_TRAITS.items():
+            if not self._faction_has_trait(player, trait):
+                continue
+            if self._trait_relation_disabled(player, rule.get("disabled_when")):
+                continue
+            return True
+        return False
+
     def _update_red_army_uprisings(self, city_garrisons: Dict[str, int]) -> None:
         """紅軍起義沒有回合上限：一座城要連續駐滿一個旅兩回合才恢復產出。
 
@@ -2152,6 +2223,9 @@ class GameEngine:
                 continue
             required = int(effect.get("required_battalions", 5))
             required_turns = int(effect.get("required_turns", 2))
+            # 剿共技能（何鍵、陳炯明）：起義只要駐滿一回合就平定。
+            if self._has_fast_uprising_suppression(str(effect.get("target_owner", ""))):
+                required_turns = 1
             progress = effect.setdefault("garrison_progress", {})
             freed = []
             for city in effect.get("cities", []):
@@ -2234,6 +2308,85 @@ class GameEngine:
     def _perk_copies(card_id: str) -> int:
         return FOREIGN_PERK_CARD_COPIES_BY_ID.get(card_id, FOREIGN_PERK_CARD_COPIES)
 
+    # ── 陣營層級的將領技能：買辦、地方財源、剿共 ──────────────────────
+    def _initial_faction_general_traits(self) -> Dict[str, list]:
+        """開局時各可玩陣營手上有哪些陣營層級技能。"""
+
+        holders: Dict[str, list] = {}
+        for faction, tree in self.data.get("playable_general_trees", {}).items():
+            owned = sorted({
+                trait
+                for general in tree.get("generals", {}).values()
+                for trait in general.get("traits", [])
+                if trait in FACTION_LEVEL_TRAITS
+            })
+            if owned:
+                holders[faction] = owned
+        return holders
+
+    def faction_general_traits(self, player: str) -> list:
+        return list(self.state.get("faction_general_traits", {}).get(player, []))
+
+    def _faction_has_trait(self, player: str, trait: str) -> bool:
+        return trait in self.state.get("faction_general_traits", {}).get(player, [])
+
+    def _trait_relation_disabled(self, player: str, rule: Dict[str, Any]) -> bool:
+        """技能因為持有陣營的列強關係而失效（何鍵：自己也親蘇就沒得剿了）。"""
+
+        if not rule:
+            return False
+        value = int(self._player(player).get("foreign_relations", {}).get(rule["power"], 0))
+        if "min" in rule and value >= int(rule["min"]):
+            return True
+        if "max" in rule and value <= int(rule["max"]):
+            return True
+        return False
+
+    def apply_general_join(self, player: str, traits) -> Dict[str, Any]:
+        """將領轉投某陣營時帶來的非戰鬥效果。技能跟著人走，舊東家同時失去。"""
+
+        traits = [trait for trait in (traits or []) if trait in FACTION_LEVEL_TRAITS]
+        result: Dict[str, Any] = {}
+        if not traits:
+            return result
+        holders = self.state.setdefault("faction_general_traits", {})
+        for faction in list(holders):
+            remaining = [trait for trait in holders[faction] if trait not in traits]
+            if remaining:
+                holders[faction] = remaining
+            else:
+                holders.pop(faction)
+        holders[player] = sorted(set(holders.get(player, [])) | set(traits))
+
+        blocked = self.state.setdefault("condemnation_blocked", {})
+        compradors = []
+        for trait in traits:
+            rule = COMPRADOR_TRAITS.get(trait)
+            if not rule:
+                continue
+            power = rule["power"]
+            # 換東家就重新擲一次免疫，舊的紀錄作廢。
+            for key in [key for key in blocked if key.endswith(f":{power}")]:
+                blocked.pop(key, None)
+            relations = self._player(player).setdefault("foreign_relations", {})
+            before = int(relations.get(power, 0))
+            after = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX, before + int(rule["gain"])))
+            relations[power] = after
+            compradors.append({
+                "trait": trait, "owner": player, "power": power,
+                "before": before, "after": after, "amount": after - before,
+            })
+        if compradors:
+            for other in self.state["players"]:
+                self._sync_foreign_deck_cards(other)
+            # 舊欄位名保留給單一買辦的呼叫端，同時提供完整清單。
+            result["comprador"] = compradors[0]
+            result["compradors"] = compradors
+        if any(trait in PROVINCE_OUTPUT_TRAITS for trait in traits):
+            self._refresh_city_income()
+        result["faction_general_traits"] = self.faction_general_traits(player)
+        return result
+
     def _sync_foreign_deck_cards(self, player: str) -> None:
         payload = self._player(player)
         card_ids = {card["id"] for card in self.data["function_cards"]["cards"]}
@@ -2250,10 +2403,28 @@ class GameEngine:
                     self.random.shuffle(payload["function_deck"])
                 elif current > desired:
                     self._remove_undrawn_cards(payload, card_id, current - desired)
+        blocked_map = self.state.setdefault("condemnation_blocked", {})
+        immunity_by_power = {
+            rule["power"]: float(rule["immunity"])
+            for trait, rule in COMPRADOR_TRAITS.items()
+            if self._faction_has_trait(player, trait)
+        }
         for power, card_id in FOREIGN_CONDEMNATION_CARDS.items():
             if card_id not in card_ids:
                 continue
             desired = FOREIGN_CONDEMNATION_COPIES if int(relations.get(power, 0)) <= FOREIGN_HOSTILE_THRESHOLD else 0
+            # 買辦技能：該國的譴責進牌庫時每張有機率被私下擺平（日 10%、法 30%）。
+            # 只在關係惡化的那一刻擲一次並記住結果，之後每回合同步時不再重擲。
+            block_key = f"{player}:{power}"
+            if desired <= 0:
+                blocked_map.pop(block_key, None)
+            else:
+                if block_key not in blocked_map:
+                    immunity = immunity_by_power.get(power, 0.0)
+                    blocked_map[block_key] = sum(
+                        1 for _ in range(desired) if immunity and self.random.random() < immunity
+                    )
+                desired = max(0, desired - int(blocked_map[block_key]))
             current = self._card_count_in_player_zones(payload, card_id)
             if current < desired:
                 payload["function_deck"].extend([card_id] * (desired - current))

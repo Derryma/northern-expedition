@@ -13,9 +13,11 @@
       "body_guard_level": null,
       "command_cap": 80,
       "traits": [
-        "warlord_supremacy"
+        "marshal_zhang"
       ],
-      "skills": [],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 16,
         "cavalry": 6,
@@ -70,7 +72,7 @@
       "body_guard_level": null,
       "command_cap": 36,
       "traits": [
-        "industrial_organizer"
+        "elite_artillery"
       ],
       "skills": [
         "fortress_builder"
@@ -97,7 +99,8 @@
       "body_guard_level": null,
       "command_cap": 32,
       "traits": [
-        "white_russian_mercenaries"
+        "white_russian_mercenaries",
+        "japanese_comprador"
       ],
       "skills": [],
       "units": {

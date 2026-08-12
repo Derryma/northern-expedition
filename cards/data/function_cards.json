@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 119,
+  "count": 120,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -110,7 +110,8 @@
         "滬寧鐵路",
         "粵漢鐵路"
       ],
-      "repair_factory_cost": 10
+      "repair_factory_cost": 10,
+      "story": "來! 快上車!"
     },
     {
       "id": "port_bombing",
@@ -1447,7 +1448,7 @@
       "holdable": true,
       "source_event_card_id": "在野名將投效",
       "entry_requirement": null,
-      "effect": "自「在野將領池」中指定一名尚未出山的在野將領延攬，支付其身價的全額：該將領帶著自帶部隊在你的大帥所在地現身，並編入你的將領樹。\n全場每位在野將領只能被延攬一次；若在野將領池已空，本卡改為補充步兵 ×2、機槍 ×1，只需支付募兵現金的一半（無條件進位），且不消耗工業點。",
+      "effect": "自「在野將領池」中指定一名尚未出山的在野將領延攬，支付其身價的全額外加 $15 出山附加費：該將領帶著自帶部隊在你的大帥所在地現身，並編入你的將領樹。\n全場每位在野將領只能被延攬一次；若在野將領池已空，本卡改為補充步兵 ×2、機槍 ×1，只需支付募兵現金的一半（無條件進位），且不消耗工業點。",
       "base_weight": 3.0,
       "conditions": [
         {
@@ -1478,9 +1479,9 @@
       "foreign_power_key": "jp",
       "relation_delta": 2,
       "cost": 0,
-      "effect": "對日本交涉，70% 機率成功；成功則日本關係 +2，失敗則無任何效果。",
+      "effect": "對日本交涉，80% 機率成功；成功則日本關係 +2，失敗則無任何效果。",
       "generated_event_cards": [],
-      "success_rate": 0.7
+      "success_rate": 0.8
     },
     {
       "id": "foreign_relation_su",
@@ -1492,9 +1493,9 @@
       "foreign_power_key": "su",
       "relation_delta": 2,
       "cost": 0,
-      "effect": "對蘇聯交涉，70% 機率成功；成功則蘇聯關係 +2，失敗則無任何效果。",
+      "effect": "對蘇聯交涉，80% 機率成功；成功則蘇聯關係 +2，失敗則無任何效果。",
       "generated_event_cards": [],
-      "success_rate": 0.7
+      "success_rate": 0.8
     },
     {
       "id": "foreign_relation_uk",
@@ -1506,9 +1507,9 @@
       "foreign_power_key": "uk",
       "relation_delta": 2,
       "cost": 0,
-      "effect": "對英國交涉，70% 機率成功；成功則英國關係 +2，失敗則無任何效果。",
+      "effect": "對英國交涉，80% 機率成功；成功則英國關係 +2，失敗則無任何效果。",
       "generated_event_cards": [],
-      "success_rate": 0.7
+      "success_rate": 0.8
     },
     {
       "id": "foreign_relation_fr",
@@ -1520,9 +1521,9 @@
       "foreign_power_key": "fr",
       "relation_delta": 2,
       "cost": 0,
-      "effect": "對法國交涉，70% 機率成功；成功則法國關係 +2，失敗則無任何效果。",
+      "effect": "對法國交涉，80% 機率成功；成功則法國關係 +2，失敗則無任何效果。",
       "generated_event_cards": [],
-      "success_rate": 0.7
+      "success_rate": 0.8
     },
     {
       "id": "foreign_relation_us",
@@ -1534,9 +1535,9 @@
       "foreign_power_key": "us",
       "relation_delta": 2,
       "cost": 0,
-      "effect": "對美國交涉，70% 機率成功；成功則美國關係 +2，失敗則無任何效果。",
+      "effect": "對美國交涉，80% 機率成功；成功則美國關係 +2，失敗則無任何效果。",
       "generated_event_cards": [],
-      "success_rate": 0.7
+      "success_rate": 0.8
     },
     {
       "id": "jp_mitsui_arms_shipment",
@@ -2349,6 +2350,26 @@
       "factory_cost": 50,
       "cash_gain": 20,
       "relation_gain": 1
+    },
+    {
+      "id": "confucian_revival",
+      "name": "復興儒學",
+      "deck_type": "function",
+      "category": "nationalist",
+      "holdable": true,
+      "cost": 0,
+      "mechanic": "loyalty_all",
+      "loyalty_delta": 1,
+      "requires_provinces": [
+        "山東"
+      ],
+      "requires_relation_max": {
+        "power": "su",
+        "value": 5
+      },
+      "effect": "需完全控制山東，且對蘇關係 5 以下：己方全體可變忠誠將領忠誠 +1。\n條件未達成時本卡不會出現在牌庫中。",
+      "generated_event_cards": [],
+      "story": "梁漱溟受時任山東督軍聘用，以濟南為核心推展新儒學教育"
     }
   ]
 }

@@ -1,9 +1,557 @@
 {
-  "version": "experimental-0.1",
+  "version": "experimental-0.3",
+  "note": "將領技能總表。每個 trait 的 modifiers 是戰鬥數值的唯一來源，前端 app.js 只保留中文名稱與說明；有條件、光環或非戰鬥效果的技能另外在 app.js 的 AURA_TRAITS／CONDITIONAL_TRAITS 處理。",
   "traits": {
+    "advantage_is_ours": {
+      "name": "優勢在我",
+      "background": "蔣介石。北伐軍總司令，親臨的戰場士氣自然不同；何應欽與他同場時，黃埔部隊也一併受惠。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "whampoa_spirit": {
+      "name": "黃埔軍魂",
+      "background": "何應欽。黃埔系的直接統帥，步兵與機槍手打起來從不退讓，代價是傷亡也高。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 1.05
+        },
+        {
+          "stat": "harm_taken",
+          "unit": "machine_gun",
+          "multiplier": 1.05
+        },
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.15
+        },
+        {
+          "stat": "attack",
+          "unit": "machine_gun",
+          "multiplier": 1.15
+        }
+      ]
+    },
+    "precision_barrage": {
+      "name": "精準砲擊",
+      "background": "白崇禧。小諸葛的砲兵指揮，彈著點算得極準。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "target": "machine_gun",
+          "multiplier": 1.25
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "target": "infantry",
+          "multiplier": 1.15
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "target": "artillery",
+          "multiplier": 1.05
+        }
+      ]
+    },
+    "mountain_division": {
+      "name": "山地師",
+      "background": "擅長南方山地作戰。在廣東、廣西、雲南、貴州、四川、湖南境內作戰時，部隊懂得利用山勢與林道。",
+      "modifiers": []
+    },
+    "elite_mountain_division": {
+      "name": "精銳山地師",
+      "background": "劉文輝。川康山地部隊中訓練最紮實的一支，在南方山區既難打又難纏。",
+      "modifiers": []
+    },
+    "french_comprador": {
+      "name": "法國買辦",
+      "background": "唐繼堯。滇越鐵路與法屬印度支那的長年生意夥伴，法方對其陣營的懲戒常被私下擺平。",
+      "modifiers": []
+    },
+    "tianfu_land": {
+      "name": "天府之國",
+      "background": "劉湘。四川的實際主人，鹽井、田賦與厘金都攥在手裡。",
+      "modifiers": []
+    },
+    "buddhist_general": {
+      "name": "佛教將軍",
+      "background": "唐生智。皈依佛門的湘軍領袖，部隊不輕啟殺戒，卻也因此格外沉得住氣，難以被金錢動搖。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.9
+        },
+        {
+          "stat": "attack",
+          "multiplier": 0.9
+        }
+      ]
+    },
+    "hunan_governor": {
+      "name": "我才是省長",
+      "background": "趙恒惕。湖南省憲自治的推手，始終不承認唐生智取代自己的正當性。",
+      "modifiers": []
+    },
+    "anticommunist_vanguard": {
+      "name": "剿共先鋒",
+      "background": "何鍵。以剿共起家的湘軍將領；一旦自己所屬陣營也和莫斯科交好，這面招牌就砸了。",
+      "modifiers": []
+    },
+    "former_overlord": {
+      "name": "前代梟雄",
+      "background": "段祺瑞。皖系領袖、三造共和的老手，帶得動北洋最正統的步砲部隊。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.12
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.12
+        }
+      ]
+    },
+    "anhui_veteran": {
+      "name": "皖系舊部",
+      "background": "盧永祥。皖系的最後一員大將，段祺瑞在場時舊部士氣為之一振。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.08
+        },
+        {
+          "stat": "attack",
+          "unit": "machine_gun",
+          "multiplier": 1.08
+        }
+      ]
+    },
+    "zhili_veteran": {
+      "name": "直系宿將",
+      "background": "王承斌。直系老班底，吳佩孚在的陣營他才待得安心。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.07
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    "old_cantonese_army": {
+      "name": "老粵軍",
+      "background": "陳炯明。粵軍元老，砲兵底子厚，對付赤色暴動也最有一套。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.12
+        }
+      ]
+    },
+    "qilu_veteran": {
+      "name": "齊魯宿將",
+      "background": "田中玉。山東舊督軍，張宗昌在的陣營他才肯真心用命。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "cavalry",
+          "multiplier": 0.93
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    "northwest_overlord": {
+      "name": "西北霸王",
+      "background": "馮玉祥。西北軍的靈魂人物，所到之處部隊士氣高昂；宋哲元或鹿鍾麟與他並肩作戰時，兩人的部隊也一同水漲船高。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "dodging_drift": {
+      "name": "閃躲漂",
+      "background": "韓復榘。極擅長脫離接觸與轉進，部隊很難被咬住，但也因此不常打硬仗。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.8
+        },
+        {
+          "stat": "attack",
+          "multiplier": 0.9
+        }
+      ]
+    },
+    "broadsword_corps": {
+      "name": "大刀隊",
+      "background": "宋哲元。以大刀隊近身突擊聞名，步兵殺傷凌厲，但衝上去也意味著挨得更多。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 1.1
+        },
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.15
+        }
+      ]
+    },
+    "northwest_vanguard": {
+      "name": "西北先鋒",
+      "background": "鹿鍾麟。西北軍騎兵的前導，敢於突入敵陣，但也最先承受反擊。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "cavalry",
+          "multiplier": 1.1
+        },
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.15
+        }
+      ]
+    },
+    "shanxi_king": {
+      "name": "山西王",
+      "background": "閻錫山。以山西一省之力自成體系，補給與訓練皆有章法；傅作義或徐永昌同場時，兩人的部隊也一併受惠。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "iron_bulwark": {
+      "name": "銅牆鐵壁",
+      "background": "傅作義。守城名將，陣地經營與砲兵配置都紮實。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.92
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.08
+        }
+      ]
+    },
+    "chief_of_staff": {
+      "name": "參謀長",
+      "background": "徐永昌。晉軍的參謀中樞，作戰計畫周密，部隊少犯無謂的損失。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.92
+        }
+      ]
+    },
+    "xining_garrison": {
+      "name": "西寧鎮守",
+      "background": "馬麒。青海地方的實際統治者，部隊根植鄉里；馬福祥或馬鴻賓同場時，兩人的部隊也一併受惠。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "desert_guard": {
+      "name": "大漠衛隊",
+      "background": "馬福祥。熟悉沙漠與戈壁行軍，步騎兵在惡地中仍能保存實力。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 0.92
+        },
+        {
+          "stat": "harm_taken",
+          "unit": "cavalry",
+          "multiplier": 0.92
+        }
+      ]
+    },
+    "valiant_horse": {
+      "name": "驍騎",
+      "background": "馬鴻賓。馬家軍騎兵的骨幹，衝擊迅猛。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "marshal_zhang": {
+      "name": "張大帥",
+      "background": "張作霖。東北的實際主人，兵工廠與鐵路撐起整支奉軍；張學良同場時，少帥的部隊也一併受惠。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "young_marshal": {
+      "name": "少帥",
+      "background": "張學良。接受新式軍事教育，善於運用騎兵與砲兵的協同機動。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.08
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.08
+        }
+      ]
+    },
+    "white_russian_mercenaries": {
+      "name": "白俄傭兵",
+      "background": "張宗昌。收容流亡白俄軍官與士兵編成專業部隊，步騎兵戰力顯著提升；但所屬陣營一旦與蘇聯交好，白俄部隊便無法再為其所用。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.1
+        },
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.1
+        },
+        {
+          "stat": "hp",
+          "unit": "cavalry",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    "japanese_comprador": {
+      "name": "日本買辦",
+      "background": "張宗昌。與日本商社、軍部往來密切，替所屬陣營牽線；日方對其陣營的譴責也常被私下擺平。",
+      "modifiers": []
+    },
+    "elite_artillery": {
+      "name": "精銳砲兵",
+      "background": "楊宇霆。奉天兵工廠的實際主持者，砲兵的器材與訓練都是全國一流。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "five_provinces_alliance": {
+      "name": "五省聯軍",
+      "background": "孫傳芳。以五省聯軍總司令的名義統合東南各部；孟昭月或盧香亭同場時，兩人的部隊也一併受惠。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "riverine_warfare": {
+      "name": "水域作戰",
+      "background": "周蔭人、盧香亭。熟悉東南水網的渡口、圩堤與船運，在廣西、廣東、福建、浙江、江蘇、安徽、江西境內作戰時佔盡地利。",
+      "modifiers": []
+    },
+    "assault_breaker": {
+      "name": "攻堅悍將",
+      "background": "孟昭月。專攻據點與城防，步砲協同直接砸開對方陣地。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.07
+        },
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    "wu_peifu_admired": {
+      "name": "吾佩服",
+      "background": "吳佩孚。秀才出身的常勝將軍，威望足以壓服舊部；靳雲鶚、寇英傑、陳嘉謨同場時，各自的部隊也一併受惠。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "defensive_specialist": {
+      "name": "防禦專家",
+      "background": "靳雲鶚。擅長利用地形和縱深防禦，適合固守重要城市與交通線。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.88
+        }
+      ]
+    },
+    "central_plains_veteran": {
+      "name": "中原宿將",
+      "background": "寇英傑。長年在河南、湖北一帶征戰，熟悉中原地形與軍閥打法。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.07
+        },
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    "wuchang_veteran": {
+      "name": "武昌宿將",
+      "background": "陳嘉謨。武昌守將，城防與砲位安排老練，部隊耐打。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 0.93
+        },
+        {
+          "stat": "harm_taken",
+          "unit": "artillery",
+          "multiplier": 0.93
+        }
+      ]
+    },
+    "warlord_supremacy": {
+      "name": "軍閥統御",
+      "background": "以個人威望維繫全軍，適合統率大型軍團與地方派系。",
+      "modifiers": [
+        {
+          "stat": "threshold",
+          "add": 0.03
+        }
+      ]
+    },
+    "industrial_organizer": {
+      "name": "工業組織者",
+      "background": "擅長兵工、補給與軍需組織，提高重裝部隊的持續作戰能力。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "artillery",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "confucian_general": {
+      "name": "儒將",
+      "background": "重視軍紀與傳統威望，有利於穩定部隊忠誠。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.96
+        }
+      ]
+    },
+    "christian_general": {
+      "name": "基督將軍",
+      "background": "依靠教會與地方人脈組織軍隊和補給。",
+      "modifiers": [
+        {
+          "stat": "threshold",
+          "add": 0.03
+        }
+      ]
+    },
+    "soviet_trained": {
+      "name": "蘇式訓練",
+      "background": "接受蘇式參謀與協同作戰訓練。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "machine_gun",
+          "multiplier": 1.1
+        }
+      ]
+    },
+    "yangzi_defender": {
+      "name": "長江守備",
+      "background": "熟悉長江沿線防禦、渡口與水陸交通。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.9
+        }
+      ]
+    },
+    "fujian_garrison": {
+      "name": "福建守備",
+      "background": "熟悉福建山地、港口與地方守備體系。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "unit": "infantry",
+          "multiplier": 0.9
+        }
+      ]
+    },
+    "jiangxi_commander": {
+      "name": "江西統帥",
+      "background": "熟悉江西交通、補給與地方部隊動員。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "unit": "infantry",
+          "multiplier": 1.06
+        }
+      ]
+    },
+    "layered_defender": {
+      "name": "縱深防禦",
+      "background": "以層層陣地遲滯對手，換取時間與空間。",
+      "modifiers": [
+        {
+          "stat": "harm_taken",
+          "multiplier": 0.92
+        }
+      ]
+    },
     "steady_drillmaster": {
-      "name": "Steady Drillmaster",
-      "background": "A Whampoa-style trainer who turns raw infantry into dependable line troops.",
+      "name": "練兵能手",
+      "background": "黃埔式的練兵者，能把生兵帶成可靠的正規步兵。",
       "modifiers": [
         {
           "stat": "attack",
@@ -13,8 +561,8 @@
       ]
     },
     "fire_support_savant": {
-      "name": "Fire Support Savant",
-      "background": "A staff officer who knows how to concentrate guns against enemy strongpoints.",
+      "name": "火力協同",
+      "background": "懂得把砲火集中在對方支撐點上的參謀軍官。",
       "modifiers": [
         {
           "stat": "attack",
@@ -31,8 +579,8 @@
       ]
     },
     "cavalry_screen_commander": {
-      "name": "Cavalry Screen Commander",
-      "background": "A northern plains commander who uses cavalry screens to protect the army and hunt broken enemies.",
+      "name": "騎兵屏護",
+      "background": "以騎兵幕掩護主力調動、追擊潰兵的北方平原指揮官。",
       "modifiers": [
         {
           "stat": "hp",
@@ -42,8 +590,8 @@
       ]
     },
     "entrenched_warlord": {
-      "name": "Entrenched Warlord",
-      "background": "A defensive regional commander with prepared trench lines and local guides.",
+      "name": "固守軍閥",
+      "background": "以既設塹壕與地方防務固守防區的地方指揮官。",
       "modifiers": [
         {
           "stat": "harm_taken",
@@ -58,8 +606,8 @@
       ]
     },
     "shock_column_leader": {
-      "name": "Shock Column Leader",
-      "background": "A bold assault leader who drives infantry and cavalry into the weak point.",
+      "name": "突擊縱隊",
+      "background": "把步兵與騎兵直接推進對方弱點的猛將。",
       "modifiers": [
         {
           "stat": "attack",
@@ -78,8 +626,8 @@
       ]
     },
     "local_supply_boss": {
-      "name": "Local Supply Boss",
-      "background": "A provincial fixer who keeps food, ammunition, and replacements flowing just long enough.",
+      "name": "地方補給",
+      "background": "把糧秣、彈藥與補充兵源撐到最後一刻的地方實力派。",
       "modifiers": [
         {
           "stat": "threshold",
@@ -94,8 +642,8 @@
       ]
     },
     "foreign_gunnery_advisor": {
-      "name": "Foreign Gunnery Advisor",
-      "background": "An imported artillery instructor whose methods make counter-battery fire sharper.",
+      "name": "外籍砲術顧問",
+      "background": "外籍砲術教官帶來的反砲兵射法。",
       "modifiers": [
         {
           "stat": "attack",
