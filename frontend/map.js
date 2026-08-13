@@ -29,7 +29,8 @@ export const FACTIONS = {
   Y: { name: '晉系（閻錫山）', shortName: '晉', type: 'npc', color: '#6d4c41' },
   G: { name: '西北軍（馮玉祥）', shortName: '西北軍', type: 'npc', color: '#ad496f' },
   M: { name: '西北馬家軍', shortName: '馬', type: 'npc', color: '#16877b' },
-  H: { name: '湘軍（唐生智）', shortName: '湘', type: 'npc', color: '#88a84e' },
+  // 湘軍改為平行編制之後沒有大帥，名稱不再掛唐生智。
+  H: { name: '湘軍', shortName: '湘', type: 'npc', color: '#88a84e' },
   D: { name: '滇系（唐繼堯）', shortName: '滇', type: 'npc', color: '#7254a8' },
   C: { name: '川軍（防區制）', shortName: '川', type: 'npc', color: '#d8732b' },
   Q: { name: '黔（貴州·中立）', shortName: '黔', type: 'npc', color: '#aaa13d' },
@@ -129,6 +130,19 @@ for (let c = 0; c < COLS; c++) {
   }
 }
 
+// 多邊形之外、但規則上需要的額外地格。
+// 香港在珠江口右下（英國屬地）；瓊州海峽是連接海南島與大陸的水道。
+export const EXTRA_CELLS = [
+  { key: '25,36' },
+  { key: '20,38', river: '瓊州海峽' },
+];
+for (const spec of EXTRA_CELLS) {
+  if (cells[spec.key]) continue;
+  const [c, r] = spec.key.split(',').map(Number);
+  const [lon, lat] = unpx(hcx(c), hcy(c, r));
+  cells[spec.key] = { key: spec.key, c, r, lon, lat, land: true, fac: null, river: spec.river || null };
+}
+
 // Hand-drawn control polygons can leave narrow seams. Fill only those seams
 // from the nearest assigned land cell so every playable hex has an owner.
 const assignedCells = Object.values(cells).filter((cell) => cell.fac);
@@ -144,6 +158,22 @@ for (const cell of Object.values(cells)) {
     }
   }
   cell.fac = nearest?.fac || null;
+}
+
+// 列強在中國的租借地與屬地。這些地格不屬於任何中國勢力，
+// 中國各勢力（含 NPC）都不得進入或通過，也不列入任何省分。
+export const FOREIGN_CITIES = [
+  { id: 'hongkong', name: '香港', power: 'uk', level: 5, cellKey: '25,36' },
+  { id: 'lushun', name: '旅順', power: 'jp', level: 5, cellKey: '36,16' },
+  { id: 'vladivostok', name: '海參崴', power: 'su', level: 5, cellKey: '48,12' },
+];
+for (const city of FOREIGN_CITIES) {
+  const cell = cells[city.cellKey];
+  if (!cell) continue;
+  cell.power = city.power;
+  cell.foreignCity = city;
+  cell.fac = null;
+  cell.river = null;   // 列強城市一律是陸地
 }
 
 export function cellAt(lon, lat, requiredFaction = null, excludedKeys = null) {

@@ -10,9 +10,7 @@ from typing import Any, Dict
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 DATA_PATHS = {
-    "event_cards": "cards/data/event_cards.json",
     "function_cards": "cards/data/function_cards.json",
-    "injected_event_cards": "cards/data/injected_event_cards.json",
     "card_pool_rules": "cards/data/card_pool_rules.json",
     "foreign_powers": "foreign_powers/data/foreign_powers.json",
     "npc_factions": "NPC/data/npc_factions.json",
@@ -46,14 +44,10 @@ def load_game_data() -> Dict[str, Any]:
         faction: load_json(path) for faction, path in PLAYABLE_TREE_PATHS.items()
     }
     data["indexes"] = {
-        "event_cards": _index_cards(data["event_cards"]["cards"]),
         "function_cards": _index_cards(data["function_cards"]["cards"]),
-        "injected_event_cards": _index_cards(data["injected_event_cards"]["cards"]),
     }
     data["metadata"] = {
-        "event_cards": len(data["event_cards"]["cards"]),
         "function_cards": len(data["function_cards"]["cards"]),
-        "injected_event_cards": len(data["injected_event_cards"]["cards"]),
         "npc_factions": len(data["npc_factions"]["npc_factions"]),
         "foreign_powers": len(data["foreign_powers"]["powers"]),
     }

@@ -47,7 +47,7 @@ class TierTests(unittest.TestCase):
         for relation in (-10, 0, 10):
             terms = self.book.terms_for_bank("deutsch_asiatische", {"de": relation})
             self.assertEqual(terms["term_turns"], 3)
-            self.assertAlmostEqual(terms["interest_per_turn"], 0.03)
+            self.assertAlmostEqual(terms["interest_per_turn"], 0.05)
             self.assertEqual(terms["limit"], 20)
 
     def test_soviet_union_has_no_bank(self) -> None:

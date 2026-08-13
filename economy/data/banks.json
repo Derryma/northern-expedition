@@ -59,7 +59,7 @@
       "power": "germany",
       "relations_key": null,
       "neutral": true,
-      "fixed_terms": {"term_turns": 3, "interest_per_turn": 0.03},
+      "fixed_terms": {"term_turns": 3, "interest_per_turn": 0.05},
       "limits": {"standard": 20}
     }
   ],

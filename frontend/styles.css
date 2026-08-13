@@ -107,10 +107,12 @@ button, select, input, textarea {
 }
 
 .faction-stats span {
-  padding: 5px 7px;
+  padding: 6px 9px;
   border-left: 1px solid rgba(231, 225, 215, 0.2);
   color: #e7e1d7;
-  font-size: 11px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
   white-space: nowrap;
 }
 
@@ -153,16 +155,75 @@ button, select, input, textarea {
   flex: 0 0 auto;
 }
 
+/* 最上一排的 $ 與工廠：滑鼠移上去展開逐城明細。
+   浮層是掛在 body 上的固定定位元素，因為頂欄本身 overflow: hidden。 */
+.stat-chip {
+  cursor: help;
+  outline: none;
+}
+.stat-chip:hover,
+.stat-chip:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+.stat-popover {
+  position: fixed;
+  z-index: 1200;
+  min-width: 230px;
+  max-width: 320px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(231, 225, 215, 0.22);
+  border-radius: 8px;
+  background: rgba(24, 28, 25, 0.98);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  color: #e7e1d7;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.stat-popover[hidden] { display: none; }
+.stat-popover b {
+  display: block;
+  margin: 8px 0 5px;
+  color: #cbbf9f;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+}
+.stat-popover b:first-child { margin-top: 0; }
+.stat-popover span {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 1px 0;
+}
+.stat-popover i {
+  font-style: normal;
+  color: #b3aa9c;
+}
+.stat-popover strong {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.stat-popover-total {
+  margin-top: 5px;
+  padding-top: 5px !important;
+  border-top: 1px solid rgba(231, 225, 215, 0.18);
+}
+.stat-popover-total strong { color: #e8d7a6; }
+
 /* 窄畫面時先縮按鈕與數字，再縮標題，避免整排溢出。 */
 @media (max-width: 1500px) {
   .topbar-btn { padding: 8px 11px; font-size: 13px; }
-  .faction-stats span { padding: 5px 5px; font-size: 10.5px; }
+  .faction-stats span { padding: 5px 6px; font-size: 13px; }
 }
 
 @media (max-width: 1280px) {
   .game-title { font-size: 17px; }
   .topbar-btn { padding: 7px 9px; font-size: 12px; }
-  .faction-stats span { padding: 4px 4px; font-size: 10px; }
+  .faction-stats span { padding: 4px 5px; font-size: 12px; }
   .faction-select { min-width: 104px; font-size: 12px; }
 }
 
@@ -362,45 +423,6 @@ button, select, input, textarea {
   letter-spacing: 0.02em;
 }
 
-/* Event History Button (replaces old event button) */
-.event-history-btn {
-  position: fixed;
-  bottom: 24px;
-  right: 200px;
-  padding: 12px 18px;
-  background: rgba(196, 97, 47, 0.9);
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  color: white;
-  font-weight: 500;
-  font-size: 14px;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(196, 97, 47, 0.3);
-  transition: all 0.2s ease;
-  z-index: 800;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.event-history-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(196, 97, 47, 0.4);
-  background: rgba(196, 97, 47, 1);
-}
-
-.event-badge {
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 13px;
-}
-
 /* End Turn Button (Civ6 style) */
 .end-turn-btn {
   position: fixed;
@@ -438,51 +460,7 @@ button, select, input, textarea {
   font-weight: 700;
 }
 
-/* Event History Content */
-.event-history-item {
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.event-history-item:last-child {
-  border-bottom: 0;
-}
-
-.event-turn-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  background: var(--terracotta-tint);
-  color: var(--terracotta);
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.event-history-card {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.event-history-card h3 {
-  font-size: 14px;
-  margin-bottom: 6px;
-  color: var(--ink);
-}
-
-.event-history-card p {
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.5;
-  margin: 0;
-}
-
 /* Remove old styles */
-.event-btn,
-.event-icon,
 .next-turn-btn {
   display: none;
 }
@@ -563,81 +541,6 @@ button, select, input, textarea {
   padding: 20px 24px;
 }
 
-#economyContent {
-  overflow: visible;
-}
-
-/* Event Modal */
-.event-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  padding: 40px;
-}
-
-.event-modal.active {
-  display: flex;
-}
-
-.event-modal-content {
-  background: var(--surface);
-  border: 2px solid var(--terracotta);
-  border-radius: 16px;
-  padding: 32px;
-  max-width: 600px;
-  width: 100%;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
-}
-
-.event-modal-content h2 {
-  font-size: 24px;
-  color: var(--terracotta);
-  margin-bottom: 20px;
-  font-style: italic;
-}
-
-.event-card-display {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 24px;
-  min-height: 180px;
-  white-space: pre-wrap;
-  line-height: 1.6;
-  font-size: 15px;
-  margin-bottom: 24px;
-}
-
-.event-card-display.empty {
-  color: var(--muted);
-  font-style: italic;
-}
-
-.event-modal-close {
-  width: 100%;
-  padding: 14px;
-  background: var(--terracotta);
-  border: 0;
-  border-radius: 999px;
-  color: white;
-  font-weight: 600;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.event-modal-close:hover {
-  background: var(--terracotta-hover);
-  transform: translateY(-1px);
-}
 
 /* Family Tree Structure */
 .family-tree-container {
@@ -1008,14 +911,6 @@ button, select, input, textarea {
   color: var(--ink);
 }
 
-.hand-card-mini .hand-card-story {
-  margin-bottom: 4px;
-  padding-left: 6px;
-  border-left: 2px solid var(--terracotta, #b5654a);
-  font-style: italic;
-  -webkit-line-clamp: 3;
-}
-
 .card-cost {
   margin-top: 8px;
   font-size: 12px;
@@ -1055,11 +950,6 @@ button, select, input, textarea {
   color: #4a574e;
   font-size: 12px;
   line-height: 1.35;
-}
-
-.hand-dock .active-effect-list span {
-  background: rgba(231, 225, 215, 0.08);
-  color: #d7cbbb;
 }
 
 .unit-details h3 {
@@ -1176,10 +1066,6 @@ button, select, input, textarea {
 }
 
 .card-use-btn.discard,
-.hand-card-action.discard {
-  background: #9f4539;
-}
-
 .panel-note,
 .discard-panel-notice {
   margin-top: 16px;
@@ -1294,96 +1180,6 @@ button, select, input, textarea {
   background: #d9d0bf;
   color: #544a3b;
   font-weight: 700;
-}
-
-/* Economy source breakdowns */
-.economy-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.economy-stat {
-  position: relative;
-  min-height: 132px;
-  padding: 17px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: white;
-  outline: none;
-}
-
-.economy-stat.compact {
-  min-height: 88px;
-}
-
-.economy-label,
-.economy-hint {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.economy-value {
-  margin: 8px 0 4px;
-  font-size: 27px;
-  font-weight: 650;
-}
-
-.economy-value.cash { color: #4f7559; }
-.economy-value.factory { color: #8a651f; }
-.economy-value.debt { color: #9f4539; }
-
-.value-breakdown {
-  position: fixed;
-  left: auto;
-  right: 32px;
-  top: auto;
-  bottom: 70px;
-  width: min(420px, calc(100vw - 48px));
-  max-height: 250px;
-  padding: 10px;
-  display: none;
-  overflow: auto;
-  z-index: 2400;
-  border: 1px solid #cfc4b5;
-  border-radius: 6px;
-  background: #272b28;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
-  color: white;
-  font-size: 10px;
-}
-
-.economy-stat:hover .value-breakdown,
-.economy-stat:focus .value-breakdown {
-  display: block;
-}
-
-.value-breakdown b,
-.value-breakdown span {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.value-breakdown b {
-  margin-bottom: 6px;
-  color: #d4a574;
-}
-
-.value-breakdown span {
-  padding: 3px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.value-breakdown i {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-style: normal;
-}
-
-.value-breakdown strong {
-  flex: none;
 }
 
 .debt-repay-panel {
@@ -1846,31 +1642,6 @@ button, select, input, textarea {
   background: rgba(255, 255, 255, 0.84);
 }
 
-/* Bottom-left function-card hand */
-.hand-dock {
-  position: fixed;
-  left: 18px;
-  bottom: 0;
-  width: 390px;
-  height: 112px;
-  padding: 12px;
-  overflow: hidden;
-  z-index: 900;
-  color: #f7f4ef;
-  background: rgba(31, 36, 33, 0.96);
-  border: 1px solid rgba(231, 225, 215, 0.25);
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.24);
-  transition: height 0.2s ease;
-}
-
-.hand-dock:hover,
-.hand-dock:focus-within,
-.hand-dock.discard-required {
-  height: 252px;
-}
-
 .dock-header {
   min-height: 24px;
   display: flex;
@@ -1891,114 +1662,6 @@ button, select, input, textarea {
   font-size: 11px;
 }
 
-.hand-cards {
-  position: relative;
-  height: 202px;
-  margin-top: 7px;
-}
-
-.hand-card-mini {
-  --card-left: calc(var(--card-index) * 31px);
-  position: absolute;
-  top: 0;
-  left: var(--card-left);
-  width: 176px;
-  height: 194px;
-  padding: 13px;
-  overflow: hidden;
-  background: #fbf9f5;
-  border: 1px solid #d7cbbb;
-  border-top: 4px solid var(--terracotta);
-  border-radius: 6px;
-  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.32);
-  color: var(--ink);
-  z-index: calc(var(--card-index) + 1);
-  transition: left 0.2s ease, top 0.15s ease, box-shadow 0.15s ease;
-}
-
-.hand-dock:hover .hand-card-mini,
-.hand-dock:focus-within .hand-card-mini,
-.hand-dock.discard-required .hand-card-mini {
-  --card-left: calc(var(--card-index) * 64px);
-}
-
-.hand-card-mini:hover,
-.hand-card-mini:focus-within {
-  top: -7px;
-  z-index: 10;
-  box-shadow: 5px 9px 18px rgba(0, 0, 0, 0.42);
-}
-
-.hand-card-mini h3 {
-  margin: 5px 0 7px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.25;
-}
-
-.hand-card-mini p {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-}
-
-.hand-card-category {
-  color: var(--terracotta);
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.hand-card-action {
-  position: absolute;
-  right: 11px;
-  bottom: 10px;
-  min-height: 30px;
-  padding: 5px 12px;
-  border: 0;
-  border-radius: 5px;
-  background: var(--terracotta);
-  color: white;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.discard-banner {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  min-height: 30px;
-  padding: 7px 10px;
-  border-radius: 5px;
-  background: #9f4539;
-  color: white;
-  font-size: 11px;
-  z-index: 20;
-}
-
-.discard-banner ~ .hand-card-mini {
-  top: 37px;
-  height: 158px;
-}
-
-.discard-banner ~ .hand-card-mini:hover,
-.discard-banner ~ .hand-card-mini:focus-within {
-  top: 31px;
-}
-
-.hand-empty {
-  padding: 16px 4px;
-  color: #b8aea1;
-  font-size: 12px;
-}
-
 .tile-info-dock,
 .battle-report-dock {
   position: fixed;
@@ -2013,19 +1676,16 @@ button, select, input, textarea {
 }
 
 .tile-info-dock {
+  /* 緊貼在左上角縮放器下方（頂欄 56 + 縮放器 44 + 10px 間距），不重疊。
+     高度隨內容伸縮：沒有租界與港口就短，有就長；
+     max-height 只是防止極端情況下超出畫面，正常情況不會出現捲軸。 */
   left: 18px;
-  bottom: 18px;
-  /* 上緣停在縮放器下方（頂欄 56 + 縮放器 44 + 間距），內容過長就自己捲。 */
-  max-height: calc(100vh - 132px);
+  top: 126px;
+  bottom: auto;
+  max-height: calc(100vh - 144px);
   overflow: auto;
 }
 
-.cards-enabled .tile-info-dock {
-  bottom: 275px;
-  max-height: calc(100vh - 389px);
-}
-
-.cards-enabled .hand-dock { z-index: 900; }
 .cards-enabled .tile-info-dock { z-index: 830; }
 
 .battle-report-dock {
@@ -2131,6 +1791,13 @@ button, select, input, textarea {
   color: #bfb4a5;
   font-size: 10px;
 }
+
+/* 地格資訊右上角的歸屬：旗幟 + 陣營簡稱 */
+.tile-owner {
+  display: inline-flex;
+  align-items: center;
+}
+.tile-owner-flag { width: 18px; height: 12px; margin-right: 5px; }
 
 .tile-info-grid {
   display: grid;
@@ -2552,7 +2219,6 @@ button, select, input, textarea {
   font-weight: 800;
 }
 
-.turn-dock .event-history-btn,
 .turn-dock .end-turn-btn {
   position: static;
   min-height: 40px;
@@ -2560,25 +2226,6 @@ button, select, input, textarea {
   border-radius: 6px;
   box-shadow: none;
   transform: none;
-}
-
-.turn-dock .event-history-btn {
-  padding: 8px 10px;
-  border: 1px solid rgba(231, 225, 215, 0.2);
-  background: rgba(255, 255, 255, 0.07);
-  font-size: 11px;
-}
-
-.turn-dock .event-history-btn:hover {
-  transform: none;
-  background: rgba(255, 255, 255, 0.13);
-  box-shadow: none;
-}
-
-.turn-dock .event-badge {
-  width: 20px;
-  height: 20px;
-  font-size: 10px;
 }
 
 .turn-dock .end-turn-btn {
@@ -2666,15 +2313,12 @@ button, select, input, textarea {
     width: 70px;
   }
 
-  .hand-dock {
-    left: 8px;
-    width: min(360px, calc(100vw - 16px));
-  }
-
   .tile-info-dock {
     left: 8px;
-    bottom: 8px;
+    top: 114px;
+    bottom: auto;
     width: min(320px, calc(100vw - 16px));
+    max-height: calc(100vh - 126px);
   }
 
   .battle-report-dock {
@@ -2691,7 +2335,6 @@ button, select, input, textarea {
     max-height: 38vh;
   }
 
-  .tile-info-dock { bottom: calc(38vh + 130px); }
 }
 
 /* Utility */
@@ -2787,6 +2430,8 @@ button, select, input, textarea {
 }
 .tile-tag-concession { border: 1px solid #c9a227; color: #e6c65c; }
 .tile-tag-port { border: 1px solid #5b86a6; color: #8fc0dc; }
+.tile-tag-foreign { border: 1px solid #b02222; color: #e58a86; }
+.tile-foreign-note { color: #b3aa9c; font-size: 11px; }
 .tile-concession-power { display: inline-flex; align-items: center; }
 .concession-flag { width: 20px; height: 13px; margin-right: 4px; }
 

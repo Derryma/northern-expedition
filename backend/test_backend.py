@@ -1,7 +1,9 @@
+import re
 import unittest
 
 from backend.card_engine import (
     FOREIGN_CONDEMNATION_CARDS,
+    FOREIGN_PERK_CARDS,
     FOREIGN_CONDEMNATION_COPIES,
     FOREIGN_FRIENDLY_THRESHOLD,
     FOREIGN_HOSTILE_THRESHOLD,
@@ -19,21 +21,23 @@ class BackendTests(unittest.TestCase):
     def test_data_loads_with_unique_card_ids(self):
         data = load_game_data()
 
-        self.assertGreater(data["metadata"]["event_cards"], 100)
         self.assertGreater(data["metadata"]["function_cards"], 50)
-        self.assertGreater(data["metadata"]["injected_event_cards"], 10)
+        # 事件卡與後果卡整套移除之後，卡池裡只剩功能卡。
+        self.assertNotIn("event_cards", data["metadata"])
+        self.assertNotIn("injected_event_cards", data["metadata"])
+        self.assertEqual(set(data["indexes"]), {"function_cards"})
 
-    def test_turn_keeps_events_disabled_and_does_not_auto_buy_function_cards(self):
+    def test_turn_does_not_auto_buy_function_cards(self):
         engine = GameEngine(seed=7)
         result = engine.next_turn()
 
         self.assertEqual(result["turn"]["turn"], 1)
-        self.assertIsNone(result["turn"]["event"])
         self.assertIsNone(result["turn"]["function_purchase_offer"])
+        self.assertNotIn("event", result["turn"])
         for player in ("F", "W", "S", "N"):
             self.assertEqual(result["state"]["counts"]["players"][player]["hand"], 0)
             self.assertFalse(result["state"]["players"][player]["function_purchase_used"])
-        self.assertEqual(engine.bootstrap()["features"]["event_interval"], 3)
+        self.assertNotIn("events", engine.bootstrap()["features"])
 
     def test_active_player_gets_optional_function_purchase_offer(self):
         engine = GameEngine(seed=7)
@@ -672,7 +676,7 @@ class BackendTests(unittest.TestCase):
     def test_soviet_riot_cards_follow_the_relation_not_the_faction(self):
         """共黨暴動與紅軍起義只看對蘇關係，四個陣營一視同仁。
 
-        這裡刻意不寫死任何陣營代號：規則是「跨過友好門檻就有 2 張，掉下去就收走」，
+        這裡刻意不寫死任何陣營代號：規則是「跨過友好門檻就有 3 張，掉下去就收走」，
         開局誰拿得到只是初始關係值的結果，不是陣營特權。
         """
         cards = ("communist_riot", "red_army_uprising")
@@ -683,7 +687,7 @@ class BackendTests(unittest.TestCase):
         friendly = FOREIGN_FRIENDLY_THRESHOLD
         for code in engine.state["players"]:
             player = engine.state["players"][code]
-            for relation, expected in ((friendly, 2), (friendly - 1, 0)):
+            for relation, expected in ((friendly, 3), (friendly - 1, 0)):
                 player["foreign_relations"]["su"] = relation
                 engine._sync_foreign_deck_cards(code)
                 for card_id in cards:
@@ -1161,15 +1165,16 @@ class BackendTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "自由中國教育家"):
                 engine.use_function("N", card_id, target_owner="F")
 
-    def test_free_china_educators_requires_beijing_and_a_cool_moscow(self):
+    def test_free_china_educators_only_needs_a_cool_moscow(self):
+        # 控制北京的條件已取消，現在只看對蘇關係。
         engine = GameEngine(seed=8)
         player = engine.state["players"]["N"]        # 對蘇 9，不持北京
         player["hand"].append("free_china_educators")
-        with self.assertRaisesRegex(ValueError, "北京"):
-            engine.use_function("N", "free_china_educators")
-        engine.state["city_owners"]["beijing"] = "N"
         with self.assertRaisesRegex(ValueError, "對蘇關係"):
             engine.use_function("N", "free_china_educators")
+        player["foreign_relations"]["su"] = 3
+        engine.use_function("N", "free_china_educators")
+        self.assertIsNotNone(engine._ideology_shield("N", "communist_riot"))
 
     def test_peking_university_movement_cancels_the_shield(self):
         engine = GameEngine(seed=8)
@@ -1270,12 +1275,15 @@ class BackendTests(unittest.TestCase):
         for power in ("jp", "su", "uk", "fr", "us"):
             self.assertAlmostEqual(index["foreign_relation_" + power]["success_rate"], 0.80, msg=power)
 
-    def test_thirty_cards_carry_a_story(self):
+    def test_forty_four_cards_carry_a_story(self):
         # 17 → 18（在野名將投效）→ 27（設立情報局、盜賣文物、中國人之恥、
         # 警政單位、五張貿易出口卡）→ 28（僑胞匯款）→ 30（崩鐵玩家、復興儒學）。
+        # 這批文案補寫再加 14 張：情報網、鼓吹地方自治、結盟江浙財團、滿州墾殖團、
+        # 共黨暴動、紅軍起義、怡和洋行投資案、滇越鐵路沿線擴建、美商投資公共租界，
+        # 以及英美日法蘇五張譴責卡 → 44。
         cards = load_game_data()["function_cards"]["cards"]
         with_story = [card for card in cards if card.get("story")]
-        self.assertEqual(len(with_story), 30)
+        self.assertEqual(len(with_story), 44)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -1449,7 +1457,7 @@ class CardBatchTests(unittest.TestCase):
             deck = engine.state["players"][code]["function_deck"]
             self.assertEqual(deck.count("function_在野名將投效"), 3, code)
             self.assertEqual(deck.count("unit_promotion"), 10, code)
-            self.assertEqual(deck.count("local_autonomy_agitation"), 5, code)
+            self.assertEqual(deck.count("local_autonomy_agitation"), 7, code)
             self.assertEqual(deck.count("body_guard_squad"), 5, code)
             self.assertEqual(deck.count("wang_yaqiao_assassination"), 3, code)
             self.assertEqual(deck.count("forced_march"), 8, code)
@@ -1505,6 +1513,63 @@ class CardBatchTests(unittest.TestCase):
         for code in ("F", "S", "N"):
             self.assertEqual(
                 engine._card_count_in_player_zones(engine.state["players"][code], "national_shame"), 0, code)
+
+    def test_artifact_smuggling_cannot_target_germany(self):
+        # 只賣得給日、蘇、英、美、法五國，德國不在名單上。
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["W"]
+        payload["hand"].append("artifact_smuggling")
+        with self.assertRaisesRegex(ValueError, "盜賣文物只能指定"):
+            engine.use_function("W", "artifact_smuggling", target_power="de")
+        self.assertEqual(
+            engine._card_template("artifact_smuggling")["powers"],
+            ["jp", "su", "uk", "fr", "us"],
+        )
+
+    def test_foreign_combat_perks_run_three_turns_for_the_whole_faction(self):
+        # 打出門檻、進牌庫門檻、失效門檻現在都是關係 6。
+        index = load_game_data()["indexes"]["function_cards"]
+        for card_id in (
+            "jp_infantry_drill_mission", "su_galen_advisers", "uk_machine_gun_advisers",
+            "fr_artillery_school", "us_firepower_doctrine",
+        ):
+            card = index[card_id]
+            self.assertEqual(card["mechanic"], "timed_combat_effect", card_id)
+            self.assertEqual(card["duration_turns"], 3, card_id)
+            self.assertEqual(card["requires_relation_min"], 6, card_id)
+            self.assertEqual(card["expires_below_relation"], 6, card_id)
+
+    def test_combat_perk_is_playable_at_relation_six(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["F"]
+        payload["foreign_relations"]["jp"] = 5
+        payload["hand"].append("jp_infantry_drill_mission")
+        with self.assertRaisesRegex(ValueError, "關係需達 6"):
+            engine.use_function("F", "jp_infantry_drill_mission")
+        payload["foreign_relations"]["jp"] = 6
+        engine.use_function("F", "jp_infantry_drill_mission")
+        effect = next(e for e in payload["timed_effects"] if e["id"] == "jp_infantry_drill_mission")
+        self.assertEqual(effect["remaining_turns"], 3)
+
+    def test_combat_perk_dies_when_the_relation_slips(self):
+        engine = GameEngine(seed=7)
+        payload = engine.state["players"]["F"]
+        payload["foreign_relations"]["jp"] = 9
+        payload["hand"].append("jp_infantry_drill_mission")
+        engine.use_function("F", "jp_infantry_drill_mission")
+        effect = next(e for e in payload["timed_effects"] if e["id"] == "jp_infantry_drill_mission")
+        self.assertEqual(effect["remaining_turns"], 3)
+        self.assertEqual(effect["foreign_power_key"], "jp")
+
+        # 關係還在 6 以上：效果照舊。
+        payload["foreign_relations"]["jp"] = 6
+        engine._sync_foreign_deck_cards("F")
+        self.assertTrue(any(e["id"] == "jp_infantry_drill_mission" for e in payload["timed_effects"]))
+
+        # 跌破 6 就立刻失效，不等回合數走完。
+        payload["foreign_relations"]["jp"] = 5
+        engine._sync_foreign_deck_cards("F")
+        self.assertFalse(any(e["id"] == "jp_infantry_drill_mission" for e in payload["timed_effects"]))
 
     def test_trade_export_burns_factory_points_for_cash_and_relation(self):
         engine = GameEngine(seed=7)
@@ -1773,7 +1838,7 @@ class ConfucianRevivalTests(unittest.TestCase):
 
     def test_railway_saboteur_has_a_story(self):
         card = load_game_data()["indexes"]["function_cards"]["railway_saboteur"]
-        self.assertEqual(card["story"], "來! 快上車!")
+        self.assertEqual(card["story"], "來！快上車！")
 
 
 class JapaneseCompradorTest(unittest.TestCase):
@@ -2004,3 +2069,92 @@ class DefectionResistanceTest(unittest.TestCase):
         engine.state["players"]["N"]["treasury"] = 500
         result = engine.attempt_defection_with_force("N", 10, 200.0, None, 0.5)
         self.assertGreaterEqual(result["chance"], 0.03)
+
+
+class DebtServiceInterestBreakdownTest(unittest.TestCase):
+    """債務結算要記下每種利率各收了多少利息，介面才不會寫死一個百分比。"""
+
+    def engine_with_two_rates(self):
+        engine = GameEngine(seed=5)
+        # 匯豐關係 9 是優惠級 3%；德華銀行固定 5%。
+        engine.state["players"]["W"]["foreign_relations"]["uk"] = 9
+        engine.take_loan("W", "hsbc", 30)
+        engine.take_loan("W", "deutsch_asiatische", 20)
+        return engine
+
+    def test_breakdown_matches_the_actual_loan_rates(self):
+        engine = self.engine_with_two_rates()
+        engine.next_turn(active_player="W")
+        service = engine.state["players"]["W"]["last_debt_service"]
+        rates = {entry["rate"] for entry in service["interest_breakdown"]}
+
+        self.assertEqual(rates, {0.03, 0.05})
+        # 明細加總必須等於實際入帳的利息，不能各算各的。
+        self.assertEqual(sum(entry["interest"] for entry in service["interest_breakdown"]), service["interest"])
+        self.assertEqual(
+            sum(entry["outstanding"] for entry in service["interest_breakdown"]),
+            service["debt_before"],
+        )
+
+    def test_no_loans_means_an_empty_breakdown(self):
+        engine = GameEngine(seed=5)
+        engine.next_turn(active_player="W")
+        service = engine.state["players"]["W"]["last_debt_service"]
+        self.assertEqual(service["interest_breakdown"], [])
+        self.assertEqual(service["interest"], 0)
+
+    def test_the_recorded_rate_is_never_a_fixed_two_percent(self):
+        engine = self.engine_with_two_rates()
+        engine.next_turn(active_player="W")
+        service = engine.state["players"]["W"]["last_debt_service"]
+        self.assertNotIn(0.02, {entry["rate"] for entry in service["interest_breakdown"]})
+
+
+class ForeignPerkCopiesTest(unittest.TestCase):
+    """列強友好卡的份數：暴動兩張各 3 份，其餘各 2 份。"""
+
+    def test_every_ordinary_perk_card_comes_in_two_copies(self):
+        engine = GameEngine(seed=4)
+        payload = engine.state["players"]["W"]
+        for power, cards in FOREIGN_PERK_CARDS.items():
+            payload["foreign_relations"][power] = 10
+        engine._sync_foreign_deck_cards("W")
+        for power, cards in FOREIGN_PERK_CARDS.items():
+            for card_id in cards:
+                expected = 3 if card_id in ("communist_riot", "red_army_uprising") else 2
+                with self.subTest(card=card_id):
+                    self.assertEqual(engine._card_count_in_player_zones(payload, card_id), expected)
+
+    def test_falling_below_the_threshold_removes_every_copy(self):
+        engine = GameEngine(seed=4)
+        payload = engine.state["players"]["W"]
+        payload["foreign_relations"]["us"] = 10
+        engine._sync_foreign_deck_cards("W")
+        self.assertEqual(engine._card_count_in_player_zones(payload, "us_browning_samples"), 2)
+        payload["foreign_relations"]["us"] = FOREIGN_FRIENDLY_THRESHOLD - 1
+        engine._sync_foreign_deck_cards("W")
+        self.assertEqual(engine._card_count_in_player_zones(payload, "us_browning_samples"), 0)
+
+
+class CardPunctuationTest(unittest.TestCase):
+    """卡牌的說明與故事一律使用全形中文標點。"""
+
+    HALF_WIDTH = re.compile(r"[!,;:?'\"()/]|\.{2,}")
+
+    def test_no_half_width_chinese_punctuation(self):
+        data = load_game_data()
+        offenders = []
+        for key in ("function_cards",):
+            for card in data[key]["cards"]:
+                for field in ("effect", "story"):
+                    text = card.get(field)
+                    if not isinstance(text, str):
+                        continue
+                    for match in self.HALF_WIDTH.finditer(text):
+                        offenders.append(f"{card['id']}.{field}: {match.group(0)!r}")
+        self.assertEqual(offenders, [])
+
+    def test_no_card_carries_generated_event_cards(self):
+        # 事件系統移除後，功能卡不該再帶著把事件卡塞進牌池的欄位。
+        for card in load_game_data()["function_cards"]["cards"]:
+            self.assertNotIn("generated_event_cards", card, card["id"])

@@ -19,7 +19,7 @@
     {"id":"kaifeng","name":"開封","province":"河南","faction":"W","lon":114.3,"lat":34.8,"level":4,"cash":9,"factory":3,"port":"river"},
     {"id":"luoyang","name":"洛陽","province":"河南","faction":"W","lon":112.4,"lat":34.6,"level":3,"cash":6,"factory":2,"port":"river"},
     {"id":"hankou","name":"漢口","province":"湖北","faction":"W","lon":114.3,"lat":30.6,"level":5,"cash":12,"factory":5,"concession":["uk","fr","jp"],"port":"river"},
-    {"id":"wuchang","name":"武昌","province":"湖北","faction":"W","lon":114.33,"lat":30.35,"level":4,"cash":9,"factory":3},
+    {"id":"wuchang","name":"武昌","province":"湖北","faction":"W","lon":114.33,"lat":30.35,"level":4,"cash":9,"factory":3,"port":"river"},
     {"id":"yichang","name":"宜昌","province":"湖北","faction":"W","lon":111.3,"lat":30.7,"level":3,"cash":6,"factory":2,"port":"river"},
     {"id":"xiangyang","name":"襄陽","province":"湖北","faction":"W","lon":112.1,"lat":32.0,"level":3,"cash":6,"factory":2,"port":"river"},
     {"id":"nanjing","name":"南京","province":"江蘇","faction":"S","lon":118.8,"lat":32.1,"level":4,"cash":10,"factory":4,"port":"river"},

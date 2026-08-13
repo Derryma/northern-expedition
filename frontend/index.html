@@ -19,7 +19,6 @@
     <div class="topbar-center">
       <button class="topbar-btn" data-panel="generals">將領樹</button>
       <button class="topbar-btn" data-panel="recruitment">募兵</button>
-      <button class="topbar-btn" data-panel="economy">經濟</button>
       <button class="topbar-btn" data-panel="loans">借款</button>
       <button class="topbar-btn" data-panel="foreign">外交</button>
       <button class="topbar-btn feature-cards" data-panel="cards">手牌</button>
@@ -50,15 +49,6 @@
     <span class="phase-label">回合制策略</span>
   </div>
 
-  <!-- Function-card hand -->
-  <section class="hand-dock" id="handDock" aria-label="功能卡手牌">
-    <div class="dock-header">
-      <span>功能卡</span>
-      <span class="dock-count" id="handCount">0 / 4</span>
-    </div>
-    <div class="hand-cards" id="handCards"></div>
-  </section>
-
   <aside class="tile-info-dock" id="tileInfoDock" aria-label="地格情報">
     <div class="tile-info" id="tileInfo" hidden></div>
   </aside>
@@ -81,10 +71,6 @@
     <div class="turn-dock-actions">
       <button class="undo-order-btn" id="undoOrderBtn" title="撤銷本回合上一道軍令" disabled>↶</button>
       <button class="debug-turn-btn" id="debugForceTurnBtn" title="Debug：強制進入下一回合" hidden>DBG</button>
-      <button class="event-history-btn feature-events" id="eventHistoryBtn">
-        <span class="event-badge" id="eventBadge">!</span>
-        <span>事件</span>
-      </button>
       <button class="end-turn-btn" id="endTurnBtn">
         <span id="endTurnLabel">處理軍令</span>
         <span class="turn-arrow">→</span>
@@ -111,14 +97,6 @@
     <div class="panel-content" id="recruitmentContent"></div>
   </div>
 
-  <div class="overlay-panel" id="panelEconomy">
-    <div class="panel-header">
-      <h2>經濟建設</h2>
-      <button class="panel-close" data-close="economy">×</button>
-    </div>
-    <div class="panel-content" id="economyContent"></div>
-  </div>
-
   <div class="overlay-panel" id="panelLoans">
     <div class="panel-header">
       <h2>借款</h2>
@@ -141,24 +119,6 @@
       <button class="panel-close" data-close="cards">×</button>
     </div>
     <div class="panel-content" id="cardsContent"></div>
-  </div>
-
-  <!-- Event Modal -->
-  <div class="event-modal" id="eventModal">
-    <div class="event-modal-content">
-      <h2>本回合世界事件</h2>
-      <div class="event-card-display" id="eventCardDisplay"></div>
-      <button class="event-modal-close" id="eventModalClose">明白了</button>
-    </div>
-  </div>
-
-  <!-- Event History Panel -->
-  <div class="overlay-panel" id="panelEventHistory">
-    <div class="panel-header">
-      <h2>事件歷史</h2>
-      <button class="panel-close" data-close="eventHistory">×</button>
-    </div>
-    <div class="panel-content" id="eventHistoryContent"></div>
   </div>
 
   <script type="module" src="/map.js"></script>

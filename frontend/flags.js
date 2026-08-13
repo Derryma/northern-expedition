@@ -17,6 +17,11 @@ export const FLAG = {
   roc: `<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#e60012"/><rect x="15" y="9" width="30" height="22" fill="#12279e"/>
     ${sunRays(30, 20, 9.2, 4.6, 12, "#fff")}<circle cx="30" cy="20" r="4.4" fill="#fff"/></svg>`,
 
+  // 星月旗（馬家軍）：紅色三角旗、白色新月與星。引用自 PJ Boardgame 陣營操作板。
+  ma: `<svg viewBox="0 0 60 40"><polygon points="0,0 60,20 0,40" fill="#e60012"/>
+    <circle cx="15" cy="20" r="8.4" fill="#fff"/><circle cx="18.6" cy="20" r="6.9" fill="#e60012"/>
+    ${sunRays(24.5, 17, 3.6, 1.5, 5, "#fff")}</svg>`,
+
   // 旭日旗（日本陸軍）
   jp: `<svg viewBox="0 0 60 40"><rect width="60" height="40" fill="#fff"/>
     <g>${Array.from({ length: 16 }, (_, i) => {
@@ -42,9 +47,13 @@ export const FLAG = {
   de: `<svg viewBox="0 0 60 40"><rect width="60" height="13.3" fill="#000"/><rect y="13.3" width="60" height="13.3" fill="#DD0000"/><rect y="26.6" width="60" height="13.4" fill="#FFCE00"/></svg>`,
 };
 
-// Playable factions. 奉系、直系、五省聯軍 all fly the Beiyang five-colour flag;
-// only the Nationalists fly their own.
-export const FACTION_FLAG = { F: "wuse", W: "wuse", S: "wuse", N: "roc" };
+// 奉系、直系、五省聯軍與多數 NPC 都掛北洋五色旗；國民革命軍掛青天白日滿地紅，
+// 馬家軍掛回族星月旗。旗幟歸屬與 PJ Boardgame 陣營操作板一致。
+export const FACTION_FLAG = {
+  F: "wuse", W: "wuse", S: "wuse", N: "roc",
+  Y: "wuse", G: "wuse", H: "wuse", C: "wuse", D: "wuse", Q: "wuse",
+  M: "ma",
+};
 
 // economy/data/banks.json records each bank's power under this name.
 export const POWER_FLAG = {
