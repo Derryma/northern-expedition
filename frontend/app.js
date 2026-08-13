@@ -1,6 +1,6 @@
 import { factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
 import { RIVERS } from './map.js';
-import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, COASTAL_WATER_CELLS, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s } from './map.js';
+import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s } from './map.js';
 
 const portraits = {
   F: "/assets/portraits/張作霖.jpg",
@@ -152,7 +152,7 @@ const UNIT_FORCE_POINTS = {
   artillery: 4,
 };
 const DEFAULT_ARMY_FORCE_CAP = 100;
-const LAND_CITY_TILE_IDS = new Set(["yichang", "nanchang", "luoyang", "zhengzhou", "hangzhou", "wuzhou", "foshan"]);
+const LAND_CITY_TILE_IDS = new Set(["yichang", "nanchang", "luoyang", "zhengzhou", "hangzhou", "wuzhou", "foshan", "yueyang"]);
 const FIXED_LAND_BRIDGES = [
   { id: "haikou_mainland", fromCityId: "haikou", toLon: 110.2, toLat: 20.8, label: "瓊州海峽浮橋" },
 ];
@@ -3460,27 +3460,6 @@ function initMap() {
 
   drawOutsideMapAtmosphere(ctx);
 
-  ctx.save();
-  ctx.globalAlpha = 0.86;
-  for (const cell of COASTAL_WATER_CELLS) {
-    const X = hcx(cell.c), Y = hcy(cell.c, cell.r);
-    ctx.fillStyle = '#6f9fb0';
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = Math.PI / 180 * (60 * i);
-      const hx = X + s * Math.cos(a);
-      const hy = Y + s * Math.sin(a);
-      if (i === 0) ctx.moveTo(hx, hy);
-      else ctx.lineTo(hx, hy);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#4d7c8c99';
-    ctx.lineWidth = 0.4;
-    ctx.stroke();
-  }
-  ctx.restore();
-
   // Draw China proper (mainland)
   ctx.save();
   ctx.globalAlpha = PLAYABLE_LAYER_ALPHA;
@@ -4393,7 +4372,7 @@ function renderTileInfo() {
   // 租界僅標明身分與租界國，不寫加成數字。港口同樣只標身分。
   const concessionPowers = Array.isArray(city?.concession) ? city.concession : [];
   const tags = [];
-  if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
+  if (city?.port === "river" && !LAND_CITY_TILE_IDS.has(city.id)) tags.push('<span class="tile-tag tile-tag-port">河港</span>');
   if (concessionPowers.length) {
     tags.push(`<span class="tile-tag tile-tag-concession">租界城市</span>` + concessionPowers.map((key) => `
       <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
