@@ -19,7 +19,6 @@
     <div class="topbar-center">
       <button class="topbar-btn" data-panel="generals">將領樹</button>
       <button class="topbar-btn" data-panel="recruitment">募兵</button>
-      <button class="topbar-btn" data-panel="economy">經濟</button>
       <button class="topbar-btn" data-panel="loans">借款</button>
       <button class="topbar-btn" data-panel="foreign">外交</button>
       <button class="topbar-btn feature-cards" data-panel="cards">手牌</button>
@@ -49,15 +48,6 @@
   <div class="phase-banner" id="phaseBanner">
     <span class="phase-label">回合制策略</span>
   </div>
-
-  <!-- Function-card hand -->
-  <section class="hand-dock" id="handDock" aria-label="功能卡手牌">
-    <div class="dock-header">
-      <span>功能卡</span>
-      <span class="dock-count" id="handCount">0 / 4</span>
-    </div>
-    <div class="hand-cards" id="handCards"></div>
-  </section>
 
   <aside class="tile-info-dock" id="tileInfoDock" aria-label="地格情報">
     <div class="tile-info" id="tileInfo" hidden></div>
@@ -109,14 +99,6 @@
       <button class="panel-close" data-close="recruitment">×</button>
     </div>
     <div class="panel-content" id="recruitmentContent"></div>
-  </div>
-
-  <div class="overlay-panel" id="panelEconomy">
-    <div class="panel-header">
-      <h2>經濟建設</h2>
-      <button class="panel-close" data-close="economy">×</button>
-    </div>
-    <div class="panel-content" id="economyContent"></div>
   </div>
 
   <div class="overlay-panel" id="panelLoans">

@@ -930,7 +930,7 @@
       "holdable": true,
       "source_event_card_id": "軍閥公債",
       "entry_requirement": null,
-      "effect": "發行：現金 +50、負債 +25，利率每回合 5%，須於 3 回合內還清；但此後你向任何列強銀行借款時，皆只有 75% 成功率，也就是說有可能遭到銀行拒貸。",
+      "effect": "發行：現金 +50、負債 +25，利率每回合 5%，須於 3 回合內還清；列強銀行隨後 5 回合拒絕提供新貸，既有貸款仍可照常償還。",
       "generated_event_cards": [],
       "cost": 0,
       "mechanic": "warlord_bond",
@@ -939,7 +939,7 @@
       "interest_per_turn": 0.05,
       "term_turns": 3,
       "off_quota": true,
-      "bank_success_rate": 0.75,
+      "loan_ban_turns": 5,
       "domestic_bond": true
     },
     {
@@ -2076,19 +2076,6 @@
         "jp": 1
       },
       "story": "直系勢力受列強指示，通電全國呼籲剿共。"
-    },
-    {
-      "id": "forced_march",
-      "name": "急行軍",
-      "deck_type": "function",
-      "category": "maneuver",
-      "holdable": true,
-      "mechanic": "rural_movement",
-      "duration_turns": 3,
-      "tiles": 2,
-      "cost": 0,
-      "effect": "3 回合內，己方軍隊在非鐵路鄉村地格可移動 2 格；跨河仍需浮橋或鐵路橋。",
-      "generated_event_cards": []
     },
     {
       "id": "affiliation_slot_upgrade",

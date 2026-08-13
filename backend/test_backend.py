@@ -181,6 +181,12 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(updated["unit_reserves"]["machine_gun"], before - 1)
         self.assertEqual(updated["army_reinforcements"]["N-1"]["machine_gun"], 1)
 
+    def test_reinforcement_rejects_army_force_over_cap(self):
+        engine = GameEngine(seed=5)
+
+        with self.assertRaisesRegex(ValueError, "army force cap"):
+            engine.reinforce_army("N", "N-1", "guangzhou", "artillery", current_force=98)
+
     def test_restore_snapshot_rehydrates_engine_state(self):
         engine = GameEngine(seed=5)
         snapshot = engine.capture_city("hankou", "N")["state"]
@@ -326,7 +332,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("foreign_relation_jp"), 5)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("young_marshal_rises"), 1)
         self.assertEqual(engine.state["players"]["F"]["function_deck"].count("wang_yongjiang_financial_reform"), 1)
-        self.assertEqual(engine.state["players"]["N"]["function_deck"].count("forced_march"), 8)
+        self.assertNotIn("forced_march", engine.state["players"]["N"]["function_deck"])
         self.assertIn("zhili_infantry_drill", engine.state["players"]["W"]["function_deck"])
         self.assertIn("zhili_infantry_drill", engine.state["players"]["S"]["function_deck"])
 
@@ -396,15 +402,18 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result["army_unit_delta"]["general_id"], "zhang_xueliang")
         self.assertEqual(result["army_unit_delta"]["unit_reserves"]["infantry"], 10)
 
-    def test_forced_march_creates_rural_movement_effect(self):
+    def test_paid_forced_march_spends_cash_and_factory(self):
         engine = GameEngine(seed=4)
-        engine.state["players"]["N"]["hand"] = ["forced_march"]
+        player = engine.state["players"]["N"]
+        player["factory_points"] = 30
+        before = (player["treasury"], player["factory_points"])
 
-        result = engine.use_function("N", "forced_march")
+        result = engine.pay_forced_march("N")
 
-        self.assertEqual(result["timed_effect"]["kind"], "rural_movement")
-        self.assertEqual(result["timed_effect"]["tiles"], 2)
-        self.assertEqual(result["timed_effect"]["remaining_turns"], 3)
+        self.assertEqual(result["cash"], 20)
+        self.assertEqual(result["factory"], 20)
+        self.assertEqual(player["treasury"], before[0] - 20)
+        self.assertEqual(player["factory_points"], before[1] - 20)
 
     def test_affiliation_slot_upgrade_returns_slot_delta(self):
         engine = GameEngine(seed=4)
@@ -1000,8 +1009,8 @@ class BackendTests(unittest.TestCase):
         self.assertAlmostEqual(loan["interest_per_turn"], 0.03)
         self.assertEqual(loan["term_turns"], 3)
         self.assertTrue(loan["off_quota"])
-        # 額度未被佔用：花旗標準額度 30，關係 9 是優惠級 58。
-        self.assertEqual(LOANS.available_credit("citibank", player["foreign_relations"], player["loans"]), 58)
+        # 額度未被佔用：花旗標準額度 38，關係 9 是優惠級 73。
+        self.assertEqual(LOANS.available_credit("citibank", player["foreign_relations"], player["loans"]), 73)
 
     def test_citibank_default_takes_factory_from_three_cities_for_five_turns(self):
         engine = GameEngine(seed=6)
@@ -1051,29 +1060,28 @@ class BackendTests(unittest.TestCase):
         self.assertTrue(service["penalties"])                # 罰則另外生效
         self.assertEqual(len(service["penalties"][0]["cities"]), 2)
 
-    def test_warlord_bond_makes_bank_lending_a_gamble(self):
+    def test_warlord_bond_freezes_new_bank_lending(self):
         engine = GameEngine(seed=6)
         player = engine.state["players"]["N"]
-        self.assertIsNone(player["bank_success_rate"])
+        self.assertIsNone(player["loan_ban_until_turn"])
         player["hand"].append("function_軍閥公債")
         cash_before = player["treasury"]
         engine.use_function("N", "function_軍閥公債")
         self.assertEqual(player["treasury"], cash_before + 50)
         self.assertEqual(player["loans"][-1]["principal"], 25)
         self.assertAlmostEqual(player["loans"][-1]["interest_per_turn"], 0.05)
-        self.assertAlmostEqual(player["bank_success_rate"], 0.75)
+        self.assertEqual(player["loan_ban_until_turn"], engine.state["turn"] + 5)
 
         player["foreign_relations"]["uk"] = 0
-        accepted = refused = 0
-        for _ in range(400):
-            try:
-                engine.take_loan("N", "hsbc", 1)
-                accepted += 1
-                player["loans"] = [loan for loan in player["loans"] if loan["bank"] != "hsbc"]
-            except ValueError as error:
-                self.assertIn("拒絕", str(error))
-                refused += 1
-        self.assertAlmostEqual(accepted / 400, 0.75, delta=0.06)
+        offers = engine.loan_offers("N")
+        self.assertEqual(offers["loan_ban_remaining_turns"], 5)
+        self.assertFalse(next(row for row in offers["offers"] if row["bank"] == "hsbc")["can_borrow"])
+        with self.assertRaisesRegex(ValueError, "拒絕新貸"):
+            engine.take_loan("N", "hsbc", 1)
+
+        engine.state["turn"] = player["loan_ban_until_turn"]
+        loan = engine.take_loan("N", "hsbc", 1)["loan"]
+        self.assertEqual(loan["principal"], 1)
 
     def test_jiangzhe_alliance_needs_both_provinces_and_unlocks_two_cards(self):
         engine = GameEngine(seed=8)
@@ -1452,7 +1460,7 @@ class CardBatchTests(unittest.TestCase):
             self.assertEqual(deck.count("local_autonomy_agitation"), 5, code)
             self.assertEqual(deck.count("body_guard_squad"), 5, code)
             self.assertEqual(deck.count("wang_yaqiao_assassination"), 3, code)
-            self.assertEqual(deck.count("forced_march"), 8, code)
+            self.assertEqual(deck.count("forced_march"), 0, code)
             self.assertEqual(deck.count("artifact_smuggling"), 3, code)
             self.assertEqual(deck.count("police_precinct"), 5, code)
             for power in ("jp", "su", "uk", "fr", "us"):

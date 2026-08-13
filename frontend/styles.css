@@ -2020,14 +2020,6 @@ button, select, input, textarea {
   overflow: auto;
 }
 
-.cards-enabled .tile-info-dock {
-  bottom: 275px;
-  max-height: calc(100vh - 389px);
-}
-
-.cards-enabled .hand-dock { z-index: 900; }
-.cards-enabled .tile-info-dock { z-index: 830; }
-
 .battle-report-dock {
   top: 84px;
   right: 18px;
@@ -2666,11 +2658,6 @@ button, select, input, textarea {
     width: 70px;
   }
 
-  .hand-dock {
-    left: 8px;
-    width: min(360px, calc(100vw - 16px));
-  }
-
   .tile-info-dock {
     left: 8px;
     bottom: 8px;
@@ -2749,6 +2736,14 @@ button, select, input, textarea {
 .loan-overdue-row { background: rgba(208, 121, 112, 0.1); }
 .loan-neutral { opacity: 0.6; }
 .loan-empty { opacity: 0.7; font-size: 13px; padding: 8px 0; }
+.loan-ban-notice {
+  margin: 10px 0;
+  padding: 9px 11px;
+  border-left: 3px solid #b56a4c;
+  background: rgba(181, 106, 76, 0.12);
+  color: #6d3827;
+  font-size: 13px;
+}
 
 /* ---- 旗幟 ---- */
 .flag-chip {

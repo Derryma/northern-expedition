@@ -129,6 +129,41 @@ for (let c = 0; c < COLS; c++) {
   }
 }
 
+// Keep a shallow operating sea around the eastern and southern coastline for
+// future naval rules. These hexes render as water, but are intentionally not
+// part of `cells`, so existing land movement/pathfinding cannot enter them.
+export const COASTAL_WATER_CELLS = [];
+let waterFrontier = new Set(Object.keys(cells));
+const waterKeys = new Set();
+for (let depth = 0; depth < 2; depth++) {
+  const nextFrontier = new Set();
+  for (const key of waterFrontier) {
+    const [c, r] = key.split(',').map(Number);
+    const diagonalRows = c % 2 ? [r, r + 1] : [r - 1, r];
+    const neighborKeys = [
+      `${c},${r - 1}`,
+      `${c},${r + 1}`,
+      `${c - 1},${diagonalRows[0]}`,
+      `${c - 1},${diagonalRows[1]}`,
+      `${c + 1},${diagonalRows[0]}`,
+      `${c + 1},${diagonalRows[1]}`,
+    ];
+    for (const neighborKey of neighborKeys) {
+      if (cells[neighborKey] || waterKeys.has(neighborKey)) continue;
+      const [nc, nr] = neighborKey.split(',').map(Number);
+      if (nc < 0 || nr < 0 || nc >= COLS || nr >= ROWS) continue;
+      const lon = unpx(hcx(nc), hcy(nc, nr))[0];
+      const lat = unpx(hcx(nc), hcy(nc, nr))[1];
+      if (lon < 108 || lat > 42) continue;
+      const cell = { key: neighborKey, c: nc, r: nr, lon, lat, land: false, fac: null, river: '沿海' };
+      COASTAL_WATER_CELLS.push(cell);
+      waterKeys.add(neighborKey);
+      nextFrontier.add(neighborKey);
+    }
+  }
+  waterFrontier = nextFrontier;
+}
+
 // Hand-drawn control polygons can leave narrow seams. Fill only those seams
 // from the nearest assigned land cell so every playable hex has an owner.
 const assignedCells = Object.values(cells).filter((cell) => cell.fac);
