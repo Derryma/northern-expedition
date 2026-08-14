@@ -1388,7 +1388,8 @@ class EventCardTests(unittest.TestCase):
         self.assertEqual(len(engine.state["event_history"]), 4)
         self.assertEqual(len(engine.state["event_pool"]), 25)
 
-    def test_choice_cards_poll_every_faction_starting_with_the_drawer(self):
+    def test_choice_cards_poll_every_faction_in_any_order(self):
+        """測試版不鎖順序：誰在看誰就能點，但每家只能表態一次，效果各歸各家。"""
         engine = GameEngine(seed=3)
         card = engine._event_template("arcos_raid")
         engine.state["turn"] = 2
@@ -1396,18 +1397,43 @@ class EventCardTests(unittest.TestCase):
         engine.next_turn(active_player="F")
         view = engine.pending_event_view()
         self.assertEqual(view["card"]["id"], "arcos_raid")
-        self.assertEqual(view["responders"], ["F", "W", "S", "N"])
+        self.assertEqual(view["responders"], ["F", "W", "S", "N"])   # 顯示用的建議順序
+        self.assertTrue(view["needs_every_faction"])
+        self.assertFalse(view["strict_order"])
         self.assertEqual(card["resolution"]["type"], "choice")
 
-        with self.assertRaisesRegex(ValueError, "現在輪到"):
-            engine.respond_event("W", choice="back_britain")
         with self.assertRaisesRegex(ValueError, "需要選擇"):
-            engine.respond_event("F")
+            engine.respond_event("W")
 
-        before = engine.state["players"]["F"]["foreign_relations"]["uk"]
-        engine.respond_event("F", choice="back_britain")
-        self.assertEqual(engine.state["players"]["F"]["foreign_relations"]["uk"], min(10, before + 2))
-        self.assertEqual(engine.pending_event_view()["waiting_for"], "W")
+        # 不是抽到的那一家也可以先答，效果只落在自己身上。
+        uk_before = {code: engine.state["players"][code]["foreign_relations"]["uk"] for code in "FWSN"}
+        engine.respond_event("W", choice="back_britain")
+        self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["uk"], min(10, uk_before["W"] + 2))
+        self.assertEqual(engine.state["players"]["F"]["foreign_relations"]["uk"], uk_before["F"])
+        with self.assertRaisesRegex(ValueError, "已經回應過"):
+            engine.respond_event("W", choice="back_soviets")
+
+        # 四家都表態過才換下一張。
+        self.assertEqual(set(engine.pending_event_view()["pending_responders"]), {"F", "S", "N"})
+        for code, pick in (("F", "back_britain"), ("S", "back_soviets"), ("N", "back_soviets")):
+            engine.respond_event(code, choice=pick)
+        self.assertIsNone(engine.state["pending_events"])
+        self.assertEqual(engine.state["players"]["S"]["foreign_relations"]["su"], min(10, 
+            engine.state["players"]["S"]["foreign_relations"]["su"]))
+
+    def test_plain_events_take_any_single_click(self):
+        """單純事件不必等抽到的那一家：任何人點閱都算數，不會卡住回合。"""
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["amsterdam_olympics"]
+        engine.next_turn(active_player="F")
+        view = engine.pending_event_view()
+        self.assertEqual(view["drawer"], "F")
+        self.assertFalse(view["needs_every_faction"])
+        # 抽到的是奉系，但由國民革命軍點閱一樣結得掉。
+        engine.respond_event("N")
+        self.assertIsNone(engine.state["pending_events"])
+        self.assertEqual(engine.state["event_history"][-1]["responses"], {"N": "acknowledged"})
 
     def test_acknowledge_card_applies_its_payload_once(self):
         engine = GameEngine(seed=3)

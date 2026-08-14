@@ -10,7 +10,9 @@
       "S",
       "N"
     ],
-    "reshuffle": false
+    "reshuffle": false,
+    "strict_response_order": false,
+    "strict_response_order_note": "正式版要照 response_order 依序回應；測試版先放寬成任一陣營都可點，需要各自表態的卡則四家都要點過才算結束，效果各自套用在點擊的陣營身上。"
   },
   "cards": [
     {
