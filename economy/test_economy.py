@@ -31,14 +31,14 @@ class TierTests(unittest.TestCase):
     def test_standard_terms(self) -> None:
         terms = self.book.terms_for_bank("hsbc", {"uk": 0})
         self.assertEqual(terms["term_turns"], 3)
-        self.assertAlmostEqual(terms["interest_per_turn"], 0.10)
-        self.assertEqual(terms["limit"], 38)
+        self.assertAlmostEqual(terms["interest_per_turn"], 0.05)
+        self.assertEqual(terms["limit"], 30)
 
     def test_preferred_terms(self) -> None:
         terms = self.book.terms_for_bank("hsbc", {"uk": 9})
         self.assertEqual(terms["term_turns"], 6)
-        self.assertAlmostEqual(terms["interest_per_turn"], 0.06)
-        self.assertEqual(terms["limit"], 81)
+        self.assertAlmostEqual(terms["interest_per_turn"], 0.03)
+        self.assertEqual(terms["limit"], 65)
 
     def test_blocked_bank_offers_no_terms(self) -> None:
         self.assertIsNone(self.book.terms_for_bank("hsbc", {"uk": -4}))
@@ -47,8 +47,8 @@ class TierTests(unittest.TestCase):
         for relation in (-10, 0, 10):
             terms = self.book.terms_for_bank("deutsch_asiatische", {"de": relation})
             self.assertEqual(terms["term_turns"], 3)
-            self.assertAlmostEqual(terms["interest_per_turn"], 0.06)
-            self.assertEqual(terms["limit"], 25)
+            self.assertAlmostEqual(terms["interest_per_turn"], 0.05)
+            self.assertEqual(terms["limit"], 20)
 
     def test_soviet_union_has_no_bank(self) -> None:
         self.assertNotIn("su", {b.get("relations_key") for b in self.book.data["banks"]})
@@ -64,15 +64,15 @@ class BorrowingTests(unittest.TestCase):
 
     def test_limit_is_enforced(self) -> None:
         with self.assertRaises(ValueError):
-            self.book.borrow(self.loans, "hsbc", 39, {"uk": 0}, turn=1, next_loan_id=1)
-        self.book.borrow(self.loans, "hsbc", 38, {"uk": 0}, turn=1, next_loan_id=1)
+            self.book.borrow(self.loans, "hsbc", 31, {"uk": 0}, turn=1, next_loan_id=1)
+        self.book.borrow(self.loans, "hsbc", 30, {"uk": 0}, turn=1, next_loan_id=1)
         self.assertEqual(len(self.loans), 1)
 
     def test_outstanding_debt_consumes_the_limit(self) -> None:
         self.book.borrow(self.loans, "hsbc", 20, {"uk": 0}, turn=1, next_loan_id=1)
-        self.assertEqual(self.book.available_credit("hsbc", {"uk": 0}, self.loans), 18)
+        self.assertEqual(self.book.available_credit("hsbc", {"uk": 0}, self.loans), 10)
         with self.assertRaises(ValueError):
-            self.book.borrow(self.loans, "hsbc", 19, {"uk": 0}, turn=1, next_loan_id=2)
+            self.book.borrow(self.loans, "hsbc", 11, {"uk": 0}, turn=1, next_loan_id=2)
 
     def test_cannot_borrow_from_a_hostile_power(self) -> None:
         with self.assertRaises(ValueError):
@@ -95,18 +95,18 @@ class AccrualTests(unittest.TestCase):
         self.loans: list = []
 
     def test_interest_applies_every_turn(self) -> None:
-        # 匯豐 standard: limit 38, 10% a turn.
+        # 匯豐 standard: limit 30, 5% a turn.
         self.book.borrow(self.loans, "hsbc", 30, {"uk": 0}, turn=1, next_loan_id=1)
         self.book.accrue_interest(self.loans)
-        self.assertEqual(self.loans[0]["outstanding"], 33)  # 30 + round(3.0)
+        self.assertEqual(self.loans[0]["outstanding"], 32)  # 30 + round(1.5)
         self.book.accrue_interest(self.loans)
-        self.assertEqual(self.loans[0]["outstanding"], 36)  # 33 + round(3.3)
+        self.assertEqual(self.loans[0]["outstanding"], 34)  # 32 + round(1.6)
 
     def test_preferred_rate_is_lower(self) -> None:
-        # Same principal, preferred tier: 6% instead of 10%.
+        # Same principal, preferred tier: 3% instead of 5%.
         self.book.borrow(self.loans, "hsbc", 30, {"uk": 9}, turn=1, next_loan_id=1)
         self.book.accrue_interest(self.loans)
-        self.assertEqual(self.loans[0]["outstanding"], 32)  # 30 + round(1.8)
+        self.assertEqual(self.loans[0]["outstanding"], 31)  # 30 + round(0.9)
 
     def test_overdue_is_flagged_after_the_due_turn(self) -> None:
         self.book.borrow(self.loans, "hsbc", 10, {"uk": 0}, turn=1, next_loan_id=1)
@@ -157,10 +157,10 @@ class RepaymentTests(unittest.TestCase):
         self.assertEqual([loan["bank"] for loan in self.loans], ["hsbc"])
 
     def test_repaying_frees_the_credit_line(self) -> None:
-        self.book.borrow(self.loans, "hsbc", 38, {"uk": 0}, turn=1, next_loan_id=1)
+        self.book.borrow(self.loans, "hsbc", 30, {"uk": 0}, turn=1, next_loan_id=1)
         self.assertEqual(self.book.available_credit("hsbc", {"uk": 0}, self.loans), 0)
-        self.book.repay(self.loans, 38)
-        self.assertEqual(self.book.available_credit("hsbc", {"uk": 0}, self.loans), 38)
+        self.book.repay(self.loans, 30)
+        self.assertEqual(self.book.available_credit("hsbc", {"uk": 0}, self.loans), 30)
 
 
 class OutputTests(unittest.TestCase):

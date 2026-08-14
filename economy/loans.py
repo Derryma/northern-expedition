@@ -5,7 +5,7 @@ Every rule here comes from the design brief:
 * A loan's tier is decided by the borrower's relation with the bank's power.
   -10..-4 cannot borrow at all, -3..5 borrows on standard terms (3 turns, 5% a
   turn), 6..10 borrows on preferred terms (6 turns, 3% a turn).
-* 德華銀行 is neutral: no relation, always 3 turns at 3%.
+* 德華銀行 is neutral: no relation, always 3 turns at 5%.
 * 蘇聯 does not lend commercially and has no bank.
 * Interest is added once at the start of every turn, to each outstanding loan.
   That accrued figure is the debt for the rest of the turn.

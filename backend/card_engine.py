@@ -430,6 +430,17 @@ class GameEngine:
             debt_before = LOANS.total_outstanding(loans)
 
             # 3.4 — one turn of interest on every loan, before anything else happens.
+            # 每筆貸款各用自己的利率計息，所以先照利率分組記下明細，
+            # 介面才不會拿一個寫死的百分比來充當「利息」。
+            interest_breakdown: Dict[float, Dict[str, Any]] = {}
+            for loan in loans:
+                rate = float(loan["interest_per_turn"])
+                entry = interest_breakdown.setdefault(
+                    rate, {"rate": rate, "outstanding": 0, "interest": 0, "loans": 0},
+                )
+                entry["outstanding"] += int(loan["outstanding"])
+                entry["interest"] += int(round(int(loan["outstanding"]) * rate))
+                entry["loans"] += 1
             interest = LOANS.accrue_interest(loans)
 
             # 3.6.1 — a power that has turned hostile calls its loans in.
@@ -471,6 +482,9 @@ class GameEngine:
             service = {
                 "gross_income": gross_income,
                 "interest": interest,
+                "interest_breakdown": sorted(
+                    interest_breakdown.values(), key=lambda entry: -entry["rate"],
+                ),
                 "seized_cash": seized_cash,
                 "seized_income": seized_income,
                 "forced_repayment": seized_cash + seized_income,
@@ -2425,6 +2439,32 @@ class GameEngine:
             self._refresh_city_income()
         result["faction_general_traits"] = self.faction_general_traits(player)
         return result
+
+    def _expire_relation_locked_effects(self, player: str) -> list:
+        """關係跌破門檻的列強戰鬥 perk 立即失效。
+
+        每個會動到外交關係的路徑都會呼叫 _sync_foreign_deck_cards，所以掛在那裡就等於
+        「關係一變就重算」；回合推進時也會再掃一次做保險。
+        """
+        payload = self._player(player)
+        relations = payload.get("foreign_relations", {})
+        kept, expired = [], []
+        for effect in payload.get("timed_effects", []):
+            floor = effect.get("expires_below_relation")
+            power = effect.get("foreign_power_key")
+            if floor is not None and power and int(relations.get(str(power), 0)) < int(floor):
+                expired.append({
+                    "id": effect.get("id"),
+                    "name": effect.get("name"),
+                    "power": str(power),
+                    "relation": int(relations.get(str(power), 0)),
+                    "floor": int(floor),
+                })
+                continue
+            kept.append(effect)
+        if expired:
+            payload["timed_effects"] = kept
+        return expired
 
     def _sync_foreign_deck_cards(self, player: str) -> None:
         payload = self._player(player)

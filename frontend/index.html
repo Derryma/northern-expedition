@@ -71,10 +71,6 @@
     <div class="turn-dock-actions">
       <button class="undo-order-btn" id="undoOrderBtn" title="撤銷本回合上一道軍令" disabled>↶</button>
       <button class="debug-turn-btn" id="debugForceTurnBtn" title="Debug：強制進入下一回合" hidden>DBG</button>
-      <button class="event-history-btn feature-events" id="eventHistoryBtn">
-        <span class="event-badge" id="eventBadge">!</span>
-        <span>事件</span>
-      </button>
       <button class="end-turn-btn" id="endTurnBtn">
         <span id="endTurnLabel">處理軍令</span>
         <span class="turn-arrow">→</span>
@@ -123,24 +119,6 @@
       <button class="panel-close" data-close="cards">×</button>
     </div>
     <div class="panel-content" id="cardsContent"></div>
-  </div>
-
-  <!-- Event Modal -->
-  <div class="event-modal" id="eventModal">
-    <div class="event-modal-content">
-      <h2>本回合世界事件</h2>
-      <div class="event-card-display" id="eventCardDisplay"></div>
-      <button class="event-modal-close" id="eventModalClose">明白了</button>
-    </div>
-  </div>
-
-  <!-- Event History Panel -->
-  <div class="overlay-panel" id="panelEventHistory">
-    <div class="panel-header">
-      <h2>事件歷史</h2>
-      <button class="panel-close" data-close="eventHistory">×</button>
-    </div>
-    <div class="panel-content" id="eventHistoryContent"></div>
   </div>
 
   <script type="module" src="/map.js"></script>

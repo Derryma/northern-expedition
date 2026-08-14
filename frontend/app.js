@@ -1,6 +1,6 @@
 import { factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
 import { RIVERS } from './map.js';
-import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s } from './map.js';
+import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES } from './map.js';
 
 const portraits = {
   F: "/assets/portraits/張作霖.jpg",
@@ -64,7 +64,6 @@ const generalOwners = {};
 const loyaltyOverrides = {};
 let currentPhase = "event"; // event, preparation, military
 let currentPlayer = null;
-let eventHistory = []; // Store all events that have occurred
 let selectedArmyId = null;
 const resolvedArmyIds = new Set();
 const MAX_HAND_SIZE = 6;
@@ -76,7 +75,9 @@ let moveMode = false;
 let engineeringMode = null;
 let uiNotice = null;
 const armyOrderHistory = [];
-const completedPontoons = new Set();
+// 瓊州海峽開局就架著浮橋，海南島才連得上大陸。
+const PREBUILT_PONTOONS = ['20,38'];
+const completedPontoons = new Set(PREBUILT_PONTOONS);
 const completedFortresses = new Set();
 const activeBattles = [];
 const battleReports = [];
@@ -102,7 +103,6 @@ let sharedRevision = 0;
 let sharedSnapshotHash = "";
 let sharedEngineHash = "";
 let sharedSyncInFlight = false;
-let sharedPublishQueue = Promise.resolve();
 let sharedReady = false;
 const skippedFunctionPurchasePrompts = new Set();
 // 後端寫給某一勢力的通知（紅軍起義、鐵路搶修等），已讀的記在這裡。
@@ -135,6 +135,10 @@ const SCAN_RIGHT_EDGE = [
 ];
 // 可遊玩區域的陸地與六角格透明度：留一點讓底圖透出來，好看出兩者的對位。
 const PLAYABLE_LAYER_ALPHA = 0.86;
+
+// 列強租借地的顏色，與列強鐵路（南滿、中東、滇越）同一個紅。
+const FOREIGN_TERRITORY_FILL = 'rgba(176, 34, 34, 0.34)';
+const FOREIGN_CITY_OUTLINE = '#b02222';
 outsideMapArt.addEventListener("load", () => {
   if (state) initMap();
 });
@@ -145,21 +149,6 @@ const UNIT_META = {
   machine_gun: { name: "機槍", short: "機", symbol: "machine-gun" },
   artillery: { name: "砲兵", short: "砲", symbol: "artillery" },
 };
-const UNIT_FORCE_POINTS = {
-  infantry: 1,
-  cavalry: 1,
-  machine_gun: 2,
-  artillery: 4,
-};
-const DEFAULT_ARMY_FORCE_CAP = 100;
-const LAND_CITY_TILE_IDS = new Set(["yichang", "nanchang", "luoyang", "zhengzhou", "hangzhou", "wuzhou", "foshan", "yueyang"]);
-const FIXED_LAND_BRIDGES = [
-  { id: "haikou_mainland", fromCityId: "haikou", toLon: 110.2, toLat: 20.8, label: "瓊州海峽浮橋" },
-];
-const FORCED_MARCH_COST = { cash: 20, factory: 20 };
-const FORCED_MARCH_DURATION = 3;
-const FORCED_MARCH_COOLDOWN = 3;
-const NPC_GROWTH_FACTIONS = new Set(Object.entries(FACTIONS).filter(([, faction]) => faction.type === "npc").map(([code]) => code));
 
 const UNIT_DISPLAY_SCALE = {
   infantry: { multiplier: 1000, suffix: "人" },
@@ -411,8 +400,8 @@ function traitChip(trait) {
 }
 
 const ENGINEERING_OPERATIONS = {
-  pontoon_bridge: { label: "架設浮橋", turns: 2, cost: { factory: 10 } },
-  fortress_builder: { label: "構築要塞", turns: 3, cost: { factory: 15 } },
+  pontoon_bridge: { label: "架設浮橋", turns: 2 },
+  fortress_builder: { label: "構築要塞", turns: 3 },
 };
 // 工程能力除了將領檔案裡的 skills 之外，也可以由特質帶出來。
 // 22 名主要將領的浮橋／要塞是寫在各自的 skills 欄位，這裡保留的是
@@ -531,15 +520,17 @@ function factionIsNpc(faction) {
 }
 
 function npcTacticForSide(battle, side) {
-  if (!battle || !factionIsNpc(battleFactionForSide(battle, side))) return null;
+  if (!battle || !factionIsNpc(side === "A" ? battle.attackerFaction : battle.defenderFaction)) return null;
   if (side === "B") return "layered_delaying";
   return "normal_advance";
 }
 
 function applyNpcBattleDefaults(battle) {
   if (!battle) return;
-  ensureBattleSides(battle);
-  for (const side of battleSides(battle)) {
+  battle.tactics ||= { A: "normal_advance", B: "normal_advance" };
+  battle.confirmed ||= { A: false, B: false };
+  battle.tacticRevision ||= { A: true, B: true };
+  for (const side of ["A", "B"]) {
     const tactic = npcTacticForSide(battle, side);
     if (!tactic) continue;
     battle.tactics[side] = tactic;
@@ -887,7 +878,6 @@ function renderSynchronizedState() {
   updatePhaseBanner();
   updateFeatureVisibility();
   initMap();
-  renderHandDock();
   renderPendingActions();
   const openPanel = document.querySelector(".overlay-panel.active");
   if (openPanel) renderPanel(openPanel.id.replace("panel", "").toLowerCase());
@@ -908,7 +898,6 @@ async function pullSharedState() {
   } else if (engineChanged && sharedReady) {
     initMap();
     updateTopBar();
-    renderHandDock();
     renderPendingActions();
   }
   return remote;
@@ -932,14 +921,6 @@ async function publishSharedState(force = false) {
     await pullSharedState();
     throw error;
   }
-}
-
-function queueSharedPublish(errorPrefix = "同步失敗") {
-  sharedPublishQueue = sharedPublishQueue
-    .catch(() => {})
-    .then(() => publishSharedState(true))
-    .catch((error) => showNotice(`${errorPrefix}：${error.message}`));
-  return sharedPublishQueue;
 }
 
 async function synchronizeSharedGame() {
@@ -1014,8 +995,6 @@ function indexScenarioCells() {
     if (cell.naturalRiver === undefined) cell.naturalRiver = cell.river;
     cell.river = cell.naturalRiver;
     cell.portWater = false;
-    cell.fixedBridgeNeighbors = new Set();
-    cell.fixedBridgeLabels = {};
   }
   for (const railroad of scenario.railroads || []) {
     const route = railroadRouteCells(railroad);
@@ -1038,6 +1017,7 @@ function indexScenarioCells() {
     INITIAL_CITY_FACTIONS[city.id] ||= city.faction;
     const candidates = Object.values(cells).filter((cell) =>
       !occupiedCityCells.has(cell.key)
+      && !cell.power                       // 列強租借地不能拿來擺中國城市
       && (!cell.river || cell.railBridge)
     );
     const sameFaction = candidates.filter((cell) => cell.fac === city.faction);
@@ -1054,8 +1034,7 @@ function indexScenarioCells() {
   }
 
   markRiverPortWater();
-  markLandCityTiles();
-  indexFixedLandBridges();
+  bridgeRailwaysOverWater();
 }
 
 // 河港城市的地格一律視為水域。天然河道保留原名，其餘標為內河。
@@ -1067,45 +1046,12 @@ function markRiverPortWater() {
   }
 }
 
-function markLandCityTiles() {
-  for (const city of bootstrap.strategic_map?.cities || []) {
-    if (!LAND_CITY_TILE_IDS.has(city.id)) continue;
-    const cell = cells[city.cellKey];
-    if (!cell) continue;
-    cell.river = null;
-    cell.portWater = false;
-    cell.naturalRiver = null;
+// 河港是在城市指派之後才把地格改成水域的，所以上面那輪標鐵路橋時它們
+// 還算陸地，漏掉了橋。這裡補一次：地格是水域又有鐵路通過就一定有鐵路橋。
+function bridgeRailwaysOverWater() {
+  for (const cell of Object.values(cells)) {
+    if (cell.river && cell.railroads?.size) cell.railBridge = true;
   }
-}
-
-function indexFixedLandBridges() {
-  const cityById = new Map((bootstrap.strategic_map?.cities || []).map((city) => [city.id, city]));
-  for (const bridge of FIXED_LAND_BRIDGES) {
-    const fromCity = cityById.get(bridge.fromCityId);
-    const from = fromCity?.cellKey ? cells[fromCity.cellKey] : null;
-    const to = cellAt(bridge.toLon, bridge.toLat, fromCity?.faction || null) || cellAt(bridge.toLon, bridge.toLat);
-    if (!from || !to || from.key === to.key) continue;
-    from.fixedBridgeNeighbors.add(to.key);
-    to.fixedBridgeNeighbors.add(from.key);
-    from.fixedBridgeLabels[to.key] = bridge.label;
-    to.fixedBridgeLabels[from.key] = bridge.label;
-  }
-}
-
-function landNeighbors(cellOrKey) {
-  const cell = typeof cellOrKey === "string" ? cells[cellOrKey] : cellOrKey;
-  if (!cell) return [];
-  const neighbors = new Map(cellNeighbors(cell).map((neighbor) => [neighbor.key, neighbor]));
-  for (const key of cell.fixedBridgeNeighbors || []) {
-    const bridged = cells[key];
-    if (bridged) neighbors.set(key, bridged);
-  }
-  return [...neighbors.values()];
-}
-
-function fixedBridgeBetween(from, to) {
-  if (!from || !to) return null;
-  return from.fixedBridgeLabels?.[to.key] || null;
 }
 
 function nearestRiverName(cell, maxDegrees = 1.6) {
@@ -1260,37 +1206,95 @@ function setupMapZoom() {
   fitMap(true);
 }
 
-function cardTitle(card) {
-  if (!card) return "無事件";
-  const bits = [card.name || card.id];
-  if (card.category) bits.push(card.category);
-  if (card.foreign_power) bits.push(card.foreign_power);
-  if (card.npc_faction) bits.push(card.npc_faction);
-  return bits.join(" · ");
+function formatLoanRate(rate) {
+  const percent = Number(rate || 0) * 100;
+  return `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`;
 }
 
-function shortEffect(card) {
-  if (!card) return "尚未抽事件。按「下一回合」開始新回合。";
-  const injected = card.generated_event_cards?.length
-    ? `\n\n注入事件：${card.generated_event_cards.map((c) => c.name || c.id).join("、")}`
-    : "";
-  return `${cardTitle(card)}\n\n${card.effect || "無效果文字"}${injected}`;
+// 利息不是固定百分比：每筆貸款各用自己的利率計息（普通借貸 5%、優惠借貸 3%、
+// 孔祥熙從政之後的新借款 2%……），所以標題要照後端記下的明細寫出實際利率。
+function interestRateLabel(service) {
+  const breakdown = (service?.interest_breakdown || []).filter((entry) => entry.outstanding > 0);
+  if (!breakdown.length) return "貸款利息";
+  if (breakdown.length === 1) return `貸款利息（${formatLoanRate(breakdown[0].rate)}／回合）`;
+  return `貸款利息（${breakdown.map((entry) => formatLoanRate(entry.rate)).join("、")}）`;
 }
 
-function debtServiceTitle(profile = state?.players?.[currentPlayer]) {
-  const service = profile?.last_debt_service;
-  if (!service) return "現金收入；若有負債，每回合先加 2% 利息，再用一半現金收入還債。";
-  const effects = (service.cash_effects || [])
-    .map((effect) => `${effect.name || effect.effect_id}: ${effect.amount >= 0 ? "+" : ""}${effect.amount}`)
-    .join("；");
-  return [
-    `城市收入 ${service.gross_income ?? 0}`,
-    `債務利息 +${service.interest ?? 0}`,
-    `強制還債 -${service.forced_repayment ?? 0}`,
-    `實收 ${service.net_income ?? 0}`,
-    `負債 ${service.debt_before ?? 0} -> ${service.debt_after ?? 0}`,
-    effects ? `持續效果：${effects}` : "",
-  ].filter(Boolean).join("；");
+// 最上一排的 $ 與工廠：滑鼠移上去（或鍵盤聚焦）就展開逐城明細。
+// 浮層掛在 body 上而不是頂欄裡，因為頂欄是 overflow: hidden，放裡面會被裁掉。
+function statBreakdownMarkup(kind, profile = state?.players?.[currentPlayer]) {
+  if (!profile) return "";
+  const cities = profile.city_economy || [];
+  const field = kind === "cash" ? "cash" : "factory";
+  const unit = kind === "cash" ? "$" : "";
+  const suffix = kind === "cash" ? "" : " 點";
+  const total = cities.reduce((sum, city) => sum + Number(city[field] || 0), 0);
+  const rows = cities.length
+    ? [...cities]
+      .sort((first, second) => Number(second[field] || 0) - Number(first[field] || 0))
+      .map((city) => `<span><i>${city.name} · ${city.province}</i><strong>${unit}${city[field] || 0}${suffix}</strong></span>`)
+      .join("")
+    : '<span><i>目前沒有控制任何城市</i><strong>—</strong></span>';
+
+  const service = profile.last_debt_service;
+  const breakdown = (service?.interest_breakdown || []).filter((entry) => entry.outstanding > 0);
+  const interestRows = breakdown.length > 1
+    // 手上同時有不同利率的貸款時，逐一列出，不要混成一個數字。
+    ? breakdown.map((entry) => `
+        <span><i>利息 ${formatLoanRate(entry.rate)}／回合（餘額 $${entry.outstanding}）</i><strong>+$${entry.interest} 債</strong></span>
+      `).join("")
+    : `<span><i>${interestRateLabel(service)}</i><strong>+$${service?.interest ?? 0} 債</strong></span>`;
+  const debtRows = kind === "cash" && service ? `
+    <b>上回合債務結算</b>
+    <span><i>城市收入</i><strong>+$${service.gross_income ?? 0}</strong></span>
+    ${interestRows}
+    <span><i>逾期強制清償</i><strong>-$${service.forced_repayment ?? 0}</strong></span>
+    <span><i>實收現金</i><strong>+$${service.net_income ?? 0}</strong></span>
+    ${(service.cash_effects || []).map((effect) => `
+      <span><i>${effect.name || effect.effect_id}</i><strong>${effect.amount >= 0 ? "+" : ""}$${effect.amount}</strong></span>
+    `).join("")}
+  ` : "";
+  const footer = kind === "cash"
+    ? `<span class="stat-popover-total"><i>每回合現金合計</i><strong>+$${total}</strong></span>`
+    : `<span class="stat-popover-total"><i>每回合工廠合計</i><strong>+${total} 點</strong></span>
+       <span class="stat-popover-total"><i>目前可用工廠點</i><strong>${profile.factory_points ?? 0} 點</strong></span>`;
+
+  return `
+    <b>${kind === "cash" ? "城市現金來源" : "城市工廠來源"}</b>
+    ${rows}
+    ${footer}
+    ${debtRows}
+  `;
+}
+
+function setupStatPopover() {
+  const popover = document.createElement("div");
+  popover.className = "stat-popover";
+  popover.hidden = true;
+  document.body.appendChild(popover);
+
+  const show = (chip) => {
+    popover.innerHTML = statBreakdownMarkup(chip.dataset.stat);
+    popover.hidden = false;
+    const rect = chip.getBoundingClientRect();
+    popover.style.top = `${rect.bottom + 6}px`;
+    popover.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+  };
+  const hide = () => { popover.hidden = true; };
+
+  const stats = $("factionStats");
+  stats.addEventListener("mouseover", (event) => {
+    const chip = event.target.closest("[data-stat]");
+    if (chip) show(chip);
+  });
+  stats.addEventListener("mouseout", (event) => {
+    if (!event.relatedTarget || !event.relatedTarget.closest?.("[data-stat]")) hide();
+  });
+  stats.addEventListener("focusin", (event) => {
+    const chip = event.target.closest("[data-stat]");
+    if (chip) show(chip);
+  });
+  stats.addEventListener("focusout", hide);
 }
 
 function updateTopBar() {
@@ -1299,8 +1303,8 @@ function updateTopBar() {
   if (!profile) return;
   // 旗幟與陣營名移到右側部隊操作板頂端，最上一排只留數字。
   $("factionStats").innerHTML = `
-    <span title="${debtServiceTitle(profile)}">$${profile.treasury ?? 0} (+${profile.income ?? 0}/回合)</span>
-    <span title="可用工廠點與每回合城市產出">工廠 ${profile.factory_points ?? 0} (+${profile.factory_income ?? 0}/回合)</span>
+    <span class="stat-chip" data-stat="cash" tabindex="0">$${profile.treasury ?? 0} (+${profile.income ?? 0}/回合)</span>
+    <span class="stat-chip" data-stat="factory" tabindex="0">工廠 ${profile.factory_points ?? 0} (+${profile.factory_income ?? 0}/回合)</span>
     <span title="預備兵力">預備 ${profile.unit_reserve ?? 0}</span>
     <span title="債務">債 ${profile.debt ?? 0}</span>
   `;
@@ -1375,7 +1379,6 @@ async function buyFunctionCard(button) {
         ? `已支付 $${result.draw_cost} 購買「${result.card.name}」；本回合抽牌已達上限。`
         : null;
     updateTopBar();
-    renderHandDock();
     renderPendingActions();
     if ($("panelCards")?.classList.contains("active")) renderPanel("cards");
   } catch (error) {
@@ -1447,7 +1450,7 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
   );
   const railways = (state.railway_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
   const economyFlags = Boolean(payload?.loan_penalties?.length || payload?.soong_patronage
-    || payload?.loan_ban_until_turn || payload?.loan_interest_override);
+    || payload?.bank_success_rate || payload?.loan_interest_override);
   if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length && !economyFlags) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
@@ -1477,8 +1480,7 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     ${payload?.soong_patronage ? `<span>上海宋家支持：每三回合 +$${payload.soong_patronage.cash}、工廠 +${payload.soong_patronage.factory}</span>` : ""}
     ${payload?.loan_interest_override !== null && payload?.loan_interest_override !== undefined
       ? `<span>中央銀行：新借款利率 ${Math.round(payload.loan_interest_override * 100)}%、期限 +${payload.loan_term_bonus || 0}</span>` : ""}
-    ${payload?.loan_ban_until_turn && Number(payload.loan_ban_until_turn) > Number(state.turn || 0)
-      ? `<span>信用受損：列強銀行拒貸至第 ${payload.loan_ban_until_turn} 回合</span>` : ""}
+    ${payload?.bank_success_rate ? `<span>信用受損：列強銀行申貸成功率 ${Math.round(payload.bank_success_rate * 100)}%</span>` : ""}
   </div>`;
 }
 
@@ -1568,7 +1570,7 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const loan = action.loan_effect;
     const rate = loan.interest_per_turn !== null ? `利率 ${Math.round(loan.interest_per_turn * 100)}%` : "";
     parts.push(`現金 +$${loan.cash}、負債 +${loan.debt}（${rate}，第 ${loan.due_turn} 回合到期）`);
-    if (loan.loan_ban_until_turn) parts.push(`列強銀行拒貸至第 ${loan.loan_ban_until_turn} 回合`);
+    if (loan.bank_success_rate) parts.push(`此後列強銀行申貸成功率 ${Math.round(loan.bank_success_rate * 100)}%`);
   }
   if (action.unlock_effect?.kind === "central_bank") {
     const bank = action.unlock_effect;
@@ -1678,26 +1680,18 @@ function functionActionVisibleTo(action, viewer = currentPlayer) {
 
 function updateFeatureVisibility() {
   const cardsEnabled = Boolean(bootstrap?.features?.function_cards);
-  const eventsEnabled = Boolean(bootstrap?.features?.events);
   document.body.classList.toggle("cards-enabled", cardsEnabled);
   document.querySelectorAll(".feature-cards").forEach((element) => { element.hidden = !cardsEnabled; });
-  document.querySelectorAll(".feature-events").forEach((element) => { element.hidden = !eventsEnabled || !state?.last_event; });
-  const handDock = $("handDock");
-  if (handDock) handDock.hidden = true;
 }
 
 function updatePhaseBanner() {
   const phaseLabels = {
-    event: "事件階段",
     preparation: "準備階段",
-    military: "軍事行動"
+    military: "軍事行動",
   };
-  const eventName = state?.last_event?.name;
-  const phaseName = phaseLabels[currentPhase] || "事件階段";
-  $("phaseBanner").querySelector(".phase-label").textContent = eventName
-    ? `${phaseName} · ${eventName}`
-    : phaseName;
-  $("phaseBanner").title = state?.last_event?.effect || phaseName;
+  const phaseName = phaseLabels[currentPhase] || "軍事行動";
+  $("phaseBanner").querySelector(".phase-label").textContent = phaseName;
+  $("phaseBanner").title = phaseName;
 }
 
 function setupPanels() {
@@ -1723,12 +1717,6 @@ function setupPanels() {
     });
   });
 
-  // Event history button
-  $("eventHistoryBtn").addEventListener("click", () => {
-    if (!state.last_event) return;
-    $("eventModal").classList.add("active");
-    $("eventCardDisplay").textContent = shortEffect(state.last_event);
-  });
 }
 
 function closeAllPanels() {
@@ -1764,30 +1752,7 @@ function renderPanel(panelName) {
       element.innerHTML = renderCardsPanel();
       attachCardHandlers(element);
       break;
-    case "eventHistory":
-      renderEventHistory();
-      break;
   }
-}
-
-function renderEventHistory() {
-  const element = $("eventHistoryContent");
-  if (!element) return;
-
-  if (eventHistory.length === 0) {
-    element.innerHTML = '<div class="empty-state">尚無事件記錄</div>';
-    return;
-  }
-
-  element.innerHTML = eventHistory.map((evt, idx) => `
-    <div class="event-history-item">
-      <div class="event-turn-badge">第 ${evt.turn} 回合</div>
-      <div class="event-history-card">
-        <h3>${evt.card ? evt.card.name : '無事件'}</h3>
-        ${evt.card ? `<p>${evt.card.effect || '無效果'}</p>` : ''}
-      </div>
-    </div>
-  `).reverse().join('');
 }
 
 function renderGeneralsPanel() {
@@ -2158,11 +2123,9 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
   if (!includeCaptured && generalOwners[general.id] !== currentPlayer) return "";
   if (!includeCaptured && fieldArmy?.status === "jailed") return "";
   const hasArmy = Boolean(fieldArmy) && fieldArmy.status !== "jailed" && general.status !== "recruited";
-  const fieldForce = hasArmy ? forcePoints(armyUnits(fieldArmy)) : 0;
-  const armyForceCap = currentArmyForceCap();
   const unitsText = general.status === "in_exile"
     ? `自帶 ${unitSummary(Object.fromEntries(Object.entries(general.units || {}).filter(([, count]) => Number(count) > 0)))}`
-    : (hasArmy ? `${unitSummary(armyUnits(fieldArmy))} · 戰力 ${Math.round(fieldForce)} / ${armyForceCap}` : "無部隊");
+    : (hasArmy ? unitSummary(armyUnits(fieldArmy)) : "無部隊");
   const loyalty = calculateGeneralLoyalty(general, fieldArmy);
   const lowLoyalty = loyalty.value !== null && loyalty.value < 6;
   const loyaltyText = loyalty.value !== null ? loyalty.value : '—';
@@ -2357,67 +2320,6 @@ function attachRecruitmentHandlers() {
   });
 }
 
-function renderEconomyPanel() {
-  if (!currentPlayer || !state.players[currentPlayer]) {
-    return `<div class="empty-state">請選擇玩家</div>`;
-  }
-
-  const payload = state.players[currentPlayer];
-  const cityEconomy = payload.city_economy || [];
-  const breakdown = (field, suffix) => `
-    <div class="value-breakdown">
-      <b>城市來源</b>
-      ${cityEconomy.map((city) => `
-        <span><i>${city.name} · ${city.province}</i><strong>${city[field]} ${suffix}</strong></span>
-      `).join("")}
-    </div>
-  `;
-  const debtService = payload.last_debt_service;
-  const debtBreakdown = debtService ? `
-    <div class="value-breakdown">
-      <b>上回合債務結算</b>
-      <span><i>城市收入</i><strong>+$${debtService.gross_income ?? 0}</strong></span>
-      <span><i>2% 利息</i><strong>+$${debtService.interest ?? 0} 債</strong></span>
-      <span><i>逾期強制清償</i><strong>-$${debtService.forced_repayment ?? 0}</strong></span>
-      <span><i>實收現金</i><strong>+$${debtService.net_income ?? 0}</strong></span>
-      ${(debtService.cash_effects || []).map((effect) => `
-        <span><i>${effect.name || effect.effect_id}</i><strong>${effect.amount >= 0 ? "+" : ""}$${effect.amount}</strong></span>
-      `).join("")}
-    </div>
-  ` : "";
-  const canRepay = (payload.debt || 0) > 0 && (payload.treasury || 0) > 0;
-
-  return `
-    <div class="economy-grid">
-      <div class="economy-stat" tabindex="0" title="${debtServiceTitle(payload)}">
-        <div class="economy-label">每回合現金</div>
-        <div class="economy-value cash">+$${payload.income ?? 0}</div>
-        <div class="economy-hint">${(payload.debt || 0) > 0 ? "逾期貸款才會強制扣收入" : "城市稅收"}</div>
-        ${breakdown("cash", "現金")}
-      </div>
-      <div class="economy-stat" tabindex="0">
-        <div class="economy-label">可用工廠點</div>
-        <div class="economy-value factory">${payload.factory_points ?? 0}</div>
-        <div class="economy-hint">每回合 +${payload.factory_income ?? 0}</div>
-        ${breakdown("factory", "工廠")}
-      </div>
-      <div class="economy-stat compact">
-        <div class="economy-label">金庫</div>
-        <div class="economy-value">$${payload.treasury ?? 0}</div>
-      </div>
-      <div class="economy-stat compact">
-        <div class="economy-label">負債</div>
-        <div class="economy-value debt">$${payload.debt ?? 0}</div>
-        ${debtBreakdown}
-      </div>
-    </div>
-    <div class="debt-repay-panel">
-      <label>償還負債<input id="debtRepayAmount" type="number" min="1" max="${Math.min(payload.debt || 0, payload.treasury || 0)}" value="${Math.min(payload.debt || 0, payload.treasury || 0)}" ${canRepay ? "" : "disabled"}></label>
-      <button data-repay-debt ${canRepay ? "" : "disabled"}>還款</button>
-    </div>
-  `;
-}
-
 // ---- 借款面板 ---------------------------------------------------------
 // 上半部：各家銀行的可貸額度、利率、還款期限。下半部：尚未清償的貸款。
 // 兩者都直接讀 /api/loan-offers，所以列強關係一變動，額度與等級即時反映。
@@ -2444,9 +2346,6 @@ function renderLoanOfferRow(row) {
   const relation = row.relation == null
     ? '<small class="loan-neutral">中立商行</small>'
     : `<small>關係 ${row.relation > 0 ? "+" : ""}${row.relation}</small>`;
-  const blockedNote = row.loan_ban_until_turn
-    ? `拒貸至第 ${row.loan_ban_until_turn} 回合`
-    : row.tier === "blocked" ? "關係交惡" : row.tier_label || "不承作";
   return `
     <tr class="${blocked ? "loan-blocked" : ""}">
       <td class="loan-bank-cell">${powerFlagMarkup(row.power, "flag-chip bank-flag")}<span><b>${row.name}</b><br>${relation}</span></td>
@@ -2455,13 +2354,13 @@ function renderLoanOfferRow(row) {
       <td class="num">${rate}</td>
       <td class="num">${term}</td>
       <td>${blocked
-        ? `<span class="loan-blocked-note">${blockedNote}</span>`
+        ? `<span class="loan-blocked-note">${row.tier === "blocked" ? "關係交惡" : row.tier_label || "不承作"}</span>`
         : `<button class="loan-borrow-btn" data-borrow-bank="${row.bank}" data-max="${row.available}">借款</button>`}</td>
     </tr>
   `;
 }
 
-function renderLoanRow(loan, turn, canRepay) {
+function renderLoanRow(loan, turn) {
   const overdue = loan.overdue;
   const remaining = loan.turns_remaining;
   const remainingText = overdue
@@ -2476,7 +2375,6 @@ function renderLoanRow(loan, turn, canRepay) {
       <td class="num">${Math.round(loan.interest_per_turn * 100)}%</td>
       <td class="num">${remainingText}</td>
       <td><small>${loan.domestic ? "公債" : loan.source && loan.source.startsWith("card:") ? "功能卡" : "銀行"}</small></td>
-      <td><button data-repay-loan="${loan.id}" data-repay-max="${loan.outstanding}" ${canRepay ? "" : "disabled"}>還款</button></td>
     </tr>
   `;
 }
@@ -2485,17 +2383,12 @@ function renderLoansMarkup(data) {
   const offers = data.offers || [];
   const loans = data.loans || [];
   const total = loans.reduce((sum, loan) => sum + loan.outstanding, 0);
-  const canRepay = total > 0 && Number(data.treasury || 0) > 0;
-  const banNotice = data.loan_ban_remaining_turns > 0
-    ? `<div class="loan-ban-notice">軍閥公債信用受損：所有列強銀行拒絕新貸至第 ${data.loan_ban_until_turn} 回合，尚餘 ${data.loan_ban_remaining_turns} 回合。</div>`
-    : "";
   return `
     <div class="loan-summary">
       <span>金庫 <b>$${data.treasury ?? 0}</b></span>
       <span>負債總額 <b class="debt">$${total}</b></span>
       <span>回合 <b>${data.turn ?? 0}</b></span>
     </div>
-    ${banNotice}
 
     <h3 class="loan-heading">可借額度</h3>
     <table class="loan-table">
@@ -2506,14 +2399,29 @@ function renderLoansMarkup(data) {
     <h3 class="loan-heading">未清償貸款</h3>
     ${loans.length ? `
       <table class="loan-table">
-        <thead><tr><th>銀行</th><th>餘額</th><th>利率</th><th>到期</th><th>來源</th><th></th></tr></thead>
-        <tbody>${loans.map((loan) => renderLoanRow(loan, data.turn, canRepay)).join("")}</tbody>
+        <thead><tr><th>銀行</th><th>餘額</th><th>利率</th><th>到期</th><th>來源</th></tr></thead>
+        <tbody>${loans.map((loan) => renderLoanRow(loan, data.turn)).join("")}</tbody>
       </table>
-      <div class="debt-repay-panel">
-        <label>還款金額<input id="debtRepayAmount" type="number" min="1" max="${Math.min(total, data.treasury || 0)}" value="${Math.min(total, data.treasury || 0)}" ${canRepay ? "" : "disabled"}></label>
-        <button data-repay-debt ${canRepay ? "" : "disabled"}>按金額還款</button>
-      </div>
     ` : '<p class="loan-empty">目前沒有未清償的貸款。</p>'}
+
+    <h3 class="loan-heading">提前還款</h3>
+    ${debtRepayMarkup()}
+  `;
+}
+
+// 提前還款：原本擺在「經濟」面板，經濟面板取消後移到借款面板最下方。
+function debtRepayMarkup() {
+  const payload = state.players[currentPlayer] || {};
+  const debt = Number(payload.debt || 0);
+  const treasury = Number(payload.treasury || 0);
+  const max = Math.min(debt, treasury);
+  const canRepay = max > 0;
+  return `
+    <div class="debt-repay-panel">
+      <label>償還負債<input id="debtRepayAmount" type="number" min="1" max="${max}" value="${max}" ${canRepay ? "" : "disabled"}></label>
+      <button data-repay-debt ${canRepay ? "" : "disabled"}>還款</button>
+    </div>
+    ${canRepay ? "" : `<p class="loan-empty">${debt <= 0 ? "目前沒有負債。" : "金庫沒有現金可用來還款。"}</p>`}
   `;
 }
 
@@ -2531,6 +2439,7 @@ async function renderLoansPanel(element) {
 }
 
 function attachLoanHandlers(root) {
+  attachDebtRepayHandler(root);
   root.querySelectorAll("[data-borrow-bank]").forEach((button) => {
     button.addEventListener("click", async () => {
       const bank = button.dataset.borrowBank;
@@ -2555,6 +2464,10 @@ function attachLoanHandlers(root) {
       }
     });
   });
+}
+
+
+function attachDebtRepayHandler(root = document) {
   root.querySelector("[data-repay-debt]")?.addEventListener("click", async () => {
     try {
       const result = await api("/api/repay-debt", {
@@ -2565,32 +2478,12 @@ function attachLoanHandlers(root) {
       syncStrategicCitiesFromState();
       updateTopBar();
       loanPanelCache = null;
-      await renderLoansPanel(root);
+      await renderLoansPanel(document.getElementById("loansContent"));
       renderPendingActions();
       showNotice(`${factionLabel(currentPlayer)}償還負債 $${result.amount}。`);
     } catch (error) {
       showNotice(error.message);
     }
-  });
-  root.querySelectorAll("[data-repay-loan]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      try {
-        const amount = Math.min(Number(button.dataset.repayMax || 0), Number(loanPanelCache?.treasury || 0));
-        const result = await api("/api/repay-debt", {
-          player: currentPlayer,
-          amount,
-        });
-        state = result.state;
-        syncStrategicCitiesFromState();
-        updateTopBar();
-        loanPanelCache = null;
-        await renderLoansPanel(root);
-        renderPendingActions();
-        showNotice(`${factionLabel(currentPlayer)}償還負債 $${result.amount}。`);
-      } catch (error) {
-        showNotice(error.message);
-      }
-    });
   });
 }
 
@@ -2611,9 +2504,9 @@ function renderForeignPanel() {
     const relations = payload.foreign_relations || {};
     const powers = [
       { key: "jp", name: "日本", territories: "朝鮮、台灣、關東州" },
-      { key: "su", name: "蘇聯", territories: "蘇聯遠東、海參崴" },
-      { key: "uk", name: "英國", territories: "華南沿海商路、印緬、印度" },
-      { key: "fr", name: "法國", territories: "法屬印度支那、河內" },
+      { key: "su", name: "蘇聯", territories: "蘇聯遠東、外蒙古" },
+      { key: "uk", name: "英國", territories: "華南沿海商路、香港、緬甸、印度" },
+      { key: "fr", name: "法國", territories: "法屬印度支那" },
       { key: "us", name: "美國", territories: "太平洋外交與商業利益" },
     ];
     return tabs + `<div class="relations-list">${powers.map((power) => {
@@ -2749,7 +2642,7 @@ function renderCardsPanel() {
     ${pendingCard ? `<div class="discard-panel-notice">新牌「${pendingCard.name}」等待加入。請棄置一張現有手牌。</div>` : ""}
     <div style="margin-bottom: 16px; padding: 12px; background: var(--terracotta-tint); border-radius: 8px;">
       <div style="font-size: 13px; color: var(--muted);">
-        牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length} · 棄牌 ${payload.discard.length} · 本回合抽牌 ${payload.function_purchase_count || 0}/${functionCardDrawLimit()}
+        牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length}/${MAX_HAND_SIZE} · 棄牌 ${payload.discard.length} · 本回合抽牌 ${payload.function_purchase_count || 0}/${functionCardDrawLimit()}
       </div>
     </div>
     <div class="card-detail-list">${cardsHtml}</div>
@@ -2759,6 +2652,17 @@ function renderCardsPanel() {
 function attachCardHandlers(root = document) {
   root.querySelectorAll("[data-buy-function-card]").forEach((button) => {
     button.addEventListener("click", () => buyFunctionCard(button));
+  });
+
+  // 黑幫暴動：換了目標勢力，可選省份也跟著換成該勢力當前控制的省份。
+  root.querySelectorAll("[data-gang-riot]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const card = cardIndex[select.dataset.gangRiot];
+      const provinceSelect = root.querySelector(`[data-card-target-province="${select.dataset.gangRiot}"]`);
+      if (!card || !provinceSelect) return;
+      const entry = gangRiotTargets(card).find((item) => item.owner === select.value);
+      provinceSelect.innerHTML = provinceOptionMarkup(entry?.provinces || []);
+    });
   });
 
   root.querySelectorAll("[data-use]").forEach((button) => {
@@ -2800,10 +2704,8 @@ function attachCardHandlers(root = document) {
         await publishSharedState(true);
         updateTopBar();
         initMap();
-        renderHandDock();
         renderPendingActions();
         if ($("panelGenerals")?.classList.contains("active")) renderPanel("generals");
-        if ($("panelLoans")?.classList.contains("active")) refreshLoansIfOpen();
         if ($("panelCards").classList.contains("active")) renderPanel("cards");
       } catch (error) {
         button.disabled = false;
@@ -2822,7 +2724,6 @@ function attachCardHandlers(root = document) {
         });
         state = result.state;
         syncStrategicCitiesFromState();
-        renderHandDock();
         renderPendingActions();
         if ($("panelCards").classList.contains("active")) renderPanel("cards");
       } catch (error) {
@@ -2985,13 +2886,64 @@ function subordinateSlotTargets() {
     .map((general) => ({ general, slots: normalizedSlotCount(general) }));
 }
 
+// 黑幫暴動類卡片只列真的打得出去的目標：對方在該省要有城市、
+// 該省沒有警政單位駐防、對方也沒有宋家撐腰。
+function gangRiotShielded(owner, province, mechanic) {
+  return (state?.players?.[owner]?.timed_effects || []).some((effect) =>
+    effect.kind === "gang_riot_shield"
+    && Number(effect.remaining_turns || 0) > 0
+    && effect.province === province
+    && (effect.blocked_mechanics || []).includes(mechanic));
+}
+
+function ideologyShielded(owner, cardId) {
+  return (state?.players?.[owner]?.timed_effects || []).some((effect) =>
+    effect.kind === "ideology_shield"
+    && Number(effect.remaining_turns || 0) > 0
+    && (effect.shields_cards || []).includes(cardId));
+}
+
+function gangRiotTargets(card) {
+  const allowed = card.provinces?.length ? new Set(card.provinces) : null;
+  return TURN_PLAYERS
+    .filter((player) => player !== currentPlayer)
+    .map((owner) => {
+      const payload = state?.players?.[owner] || {};
+      if ((payload.soong_patronage?.immune_cards || []).includes(card.id)) return { owner, provinces: [] };
+      const controlled = new Set((payload.city_economy || []).map((city) => city.province).filter(Boolean));
+      const provinces = [...controlled]
+        .filter((province) => !allowed || allowed.has(province))
+        .filter((province) => !gangRiotShielded(owner, province, card.mechanic))
+        .sort((first, second) => first.localeCompare(second, "zh-Hant"));
+      return { owner, provinces };
+    })
+    .filter((entry) => entry.provinces.length);
+}
+
+// 共黨暴動與紅軍起義：對方要有城市可癱瘓，而且沒有「自由中國教育家」護持。
+function riotTargets(card) {
+  return TURN_PLAYERS
+    .filter((player) => player !== currentPlayer)
+    .filter((owner) => (state?.players?.[owner]?.city_economy || []).length)
+    .filter((owner) => !ideologyShielded(owner, card.id));
+}
+
+function provinceOptionMarkup(provinces) {
+  return provinces.map((province) => `<option value="${province}">${province}</option>`).join("");
+}
+
 function functionCardTargetMarkup(card) {
   if (card.mechanic === "qing_gang_riot") {
-    const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
-    const provinces = provinceOptions();
+    const entries = gangRiotTargets(card);
+    if (!entries.length) {
+      const scope = card.provinces?.length ? `本卡限 ${card.provinces.join("、")}；` : "";
+      return `<div class="card-target-note">${scope}對手在這些省份都沒有城市，或已有警政單位駐防</div>`;
+    }
+    // 省份清單跟著上面選到的勢力走，切換勢力時由 attachCardHandlers 重填。
     return `
-      <label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>
-      <label class="card-target">指定省份<select data-card-target-province="${card.id}">${provinces.map((province) => `<option value="${province}">${province}</option>`).join("")}</select></label>`;
+      <label class="card-target">指定勢力<select data-card-target-owner="${card.id}" data-gang-riot="${card.id}">${entries
+        .map(({ owner }) => `<option value="${owner}">${FACTIONS[owner]?.name || owner}</option>`).join("")}</select></label>
+      <label class="card-target">指定省份<select data-card-target-province="${card.id}">${provinceOptionMarkup(entries[0].provinces)}</select></label>`;
   }
   if (card.mechanic === "railway_sabotage") {
     const downed = disabledRailways();
@@ -2999,7 +2951,12 @@ function functionCardTargetMarkup(card) {
     if (!lines.length) return `<div class="card-target-note">所有可指定的鐵路都已在搶修中</div>`;
     return `<label class="card-target">指定鐵路<select data-card-target-railway="${card.id}">${lines.map((name) => `<option value="${name}">${name}</option>`).join("")}</select></label>`;
   }
-  if (["reserve_loss", "communist_riot", "red_army_uprising"].includes(card.mechanic)) {
+  if (["communist_riot", "red_army_uprising"].includes(card.mechanic)) {
+    const targets = riotTargets(card);
+    if (!targets.length) return `<div class="card-target-note">目前沒有可癱瘓的對手：對方沒有城市，或已有「自由中國教育家」護持</div>`;
+    return `<label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>`;
+  }
+  if (card.mechanic === "reserve_loss") {
     const targets = TURN_PLAYERS.filter((player) => player !== currentPlayer);
     return `<label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>`;
   }
@@ -3053,71 +3010,6 @@ function functionCardTargetMarkup(card) {
   return loyaltyCardTargetMarkup(card);
 }
 
-function renderHandDock() {
-  if (!bootstrap.features?.function_cards) return;
-  if (!$("handDock") || !$("handCount") || !$("handCards")) return;
-  const payload = state.players[currentPlayer];
-  if (!payload) return;
-  const cards = payload.hand.map((id) => cardIndex[id]).filter(Boolean);
-  const pendingCard = payload.pending_draw ? cardIndex[payload.pending_draw] : null;
-  $("handCount").textContent = `${cards.length} / ${MAX_HAND_SIZE}`;
-  $("handDock").classList.toggle("discard-required", Boolean(pendingCard));
-
-  const prompt = pendingCard
-    ? `<div class="discard-banner">新牌「${pendingCard.name}」等待加入：選一張棄置</div>`
-    : functionPurchaseMarkup(payload, "dock") + activeEffectsMarkup(payload);
-  const cardMarkup = cards.length
-    ? cards.map((card, index) => `
-      <article class="hand-card-mini" style="--card-index:${index}" tabindex="0">
-        <div class="hand-card-category">${card.category || "功能"}</div>
-        <h3>${card.name}</h3>
-        ${card.story ? `<p class="hand-card-story">${card.story}</p>` : ""}
-        <p>${card.effect || "無效果文字"}</p>
-        ${functionCardTargetMarkup(card)}
-        ${pendingCard
-          ? `<button class="hand-card-action discard" data-discard="${card.id}">棄置此牌</button>`
-          : `<button class="hand-card-action" data-use="${card.id}" data-player="${currentPlayer}">打出</button>`}
-      </article>
-    `).join("")
-    : '<div class="hand-empty">目前無手牌</div>';
-
-  $("handCards").innerHTML = prompt + cardMarkup;
-  attachCardHandlers($("handCards"));
-}
-
-function setupEventModal() {
-  $("eventModalClose").addEventListener("click", () => {
-    $("eventModal").classList.remove("active");
-    // After viewing event, stay in same phase (Civ6 style)
-  });
-}
-
-function showEventIfNeeded(turn) {
-  if (!bootstrap.features?.events) return;
-  if (!state.last_event) return;
-  if (!eventHistory.some((entry) => entry.turn === turn)) {
-    eventHistory.push({ turn, card: state.last_event });
-  }
-  updateEventBadge();
-
-  // Keep routine events in the turn dock; interrupt only at major intervals.
-  if (turn % 3 === 0) {
-    $("eventModal").classList.add("active");
-    $("eventCardDisplay").textContent = shortEffect(state.last_event);
-    $("eventCardDisplay").classList.remove("empty");
-  }
-}
-
-function updateEventBadge() {
-  const badge = $("eventBadge");
-  if (state?.last_event) {
-    badge.textContent = "!";
-    badge.style.display = 'flex';
-  } else {
-    badge.style.display = 'none';
-  }
-}
-
 async function boot() {
   [bootstrap, provinceGeoJson] = await Promise.all([
     api("/api/bootstrap"),
@@ -3166,7 +3058,6 @@ async function boot() {
     // Re-render army markers for new faction
     renderArmyMarkers(currentPlayer);
     updateTopBar();
-    renderHandDock();
     renderPendingActions();
 
     // Refresh all open panels when faction changes
@@ -3181,16 +3072,15 @@ async function boot() {
   });
 
   setupPanels();
-  setupEventModal();
   setupPendingActions();
   setupUiTooltip();
+  setupStatPopover();
   updateTopBar();
   updatePhaseBanner();
 
   // Initialize map rendering
   initMap();
   setupMapZoom();
-  renderHandDock();
   renderPendingActions();
   sharedReady = true;
   if (!shared.tactical) await publishSharedState(true);
@@ -3340,7 +3230,7 @@ function drawCities(ctx) {
     }
     // 水波紋：所有河港都畫，不再只畫有鐵路橋的那幾座。
     // 鐵路橋另有黃色方塊標記，兩者互不取代。
-    if ((city.port === 'river' && !LAND_CITY_TILE_IDS.has(city.id)) || cell.railBridge) {
+    if (city.port === 'river' || cell.railBridge) {
       ctx.strokeStyle = '#79b8d2';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -3348,6 +3238,15 @@ function drawCities(ctx) {
       ctx.quadraticCurveTo(x - 4, y + 2, x, y + 7);
       ctx.quadraticCurveTo(x + 4, y + 12, x + 9, y + 7);
       ctx.stroke();
+    }
+    // 鐵路橋標記畫在城市六邊形之上。鐵路那一層也畫過同樣的方塊，但城市會蓋掉，
+    // 所以有城市的地格要在這裡補畫一次，位置挪到左上角避開城樓與等級標記。
+    if (cell.railBridge) {
+      ctx.fillStyle = '#f2cf73';
+      ctx.strokeStyle = '#2c261e';
+      ctx.lineWidth = 1.2;
+      ctx.fillRect(x - 10, y - 12, 6, 6);
+      ctx.strokeRect(x - 10, y - 12, 6, 6);
     }
     for (let marker = 0; marker < level; marker++) {
       ctx.fillStyle = level >= 4 ? '#f0c65a' : '#dcd3bf';
@@ -3366,24 +3265,59 @@ function drawCities(ctx) {
   ctx.restore();
 }
 
+// 列強租借地上的城市。畫法與中國城市相同，但用列強紅、不標產出，
+// 因為它們不屬於任何勢力的經濟，只是地圖上不可進入的一塊。
+function drawForeignCities(ctx) {
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const city of FOREIGN_CITIES) {
+    const cell = cells[city.cellKey];
+    if (!cell) continue;
+    const x = hcx(cell.c), y = hcy(cell.c, cell.r);
+    ctx.beginPath();
+    hexPts(x, y).forEach(([hx, hy], index) => index ? ctx.lineTo(hx, hy) : ctx.moveTo(hx, hy));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(74, 26, 24, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = FOREIGN_CITY_OUTLINE;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff3ec';
+    ctx.fillRect(x - 11, y + 2, 22, 1.5);
+    [
+      { offset: 0, width: 4, height: 11 },
+      { offset: -5, width: 4, height: 8 },
+      { offset: 5, width: 4, height: 8 },
+      { offset: -9, width: 3, height: 6 },
+      { offset: 9, width: 3, height: 6 },
+    ].forEach((building) => {
+      ctx.fillRect(x + building.offset - building.width / 2, y + 2 - building.height, building.width, building.height);
+    });
+    ctx.fillStyle = FOREIGN_CITY_OUTLINE;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 12);
+    ctx.lineTo(x + 5, y - 9.5);
+    ctx.lineTo(x, y - 7.5);
+    ctx.closePath();
+    ctx.fill();
+    for (let marker = 0; marker < city.level; marker++) {
+      ctx.fillRect(x - ((city.level - 1) * 2) + marker * 4 - 1, y + 5, 2, 2);
+    }
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#f1ead8';
+    ctx.font = '700 10px Inter';
+    ctx.strokeText(city.name, x, y - s - 7);
+    ctx.fillStyle = '#8c1f1c';
+    ctx.fillText(city.name, x, y - s - 7);
+  }
+  ctx.restore();
+}
+
 function drawCompletedEngineering(ctx) {
   ctx.save();
-  ctx.setLineDash([7, 4]);
-  for (const bridge of FIXED_LAND_BRIDGES) {
-    const from = bridge.fromCityId
-      ? cells[(bootstrap.strategic_map?.cities || []).find((city) => city.id === bridge.fromCityId)?.cellKey]
-      : null;
-    const to = from
-      ? [...(from.fixedBridgeNeighbors || [])].map((key) => cells[key]).find(Boolean)
-      : null;
-    if (!from || !to) continue;
-    ctx.strokeStyle = '#e8c864';
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(hcx(from.c), hcy(from.c, from.r));
-    ctx.lineTo(hcx(to.c), hcy(to.c, to.r));
-    ctx.stroke();
-  }
   for (const key of completedPontoons) {
     const cell = cells[key];
     if (!cell) continue;
@@ -3508,6 +3442,21 @@ function initMap() {
         factionCentroids[cell.fac].count++;
       }
 
+      // 列強租借地：用與列強鐵路相同的紅色標示。
+      if (cell.power) {
+        ctx.fillStyle = FOREIGN_TERRITORY_FILL;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 180 * (60 * i);
+          const hx = X + s * Math.cos(a);
+          const hy = Y + s * Math.sin(a);
+          if (i === 0) ctx.moveTo(hx, hy);
+          else ctx.lineTo(hx, hy);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+
       // Highlight river hexes
       if (cell.river) {
         ctx.fillStyle = '#92b6c1';
@@ -3564,6 +3513,7 @@ function initMap() {
   });
 
   drawCities(ctx);
+  drawForeignCities(ctx);
   drawCompletedEngineering(ctx);
 
   ctx.strokeStyle = '#7c6a44';
@@ -3700,40 +3650,13 @@ function armiesShareBattle(firstArmy, secondArmy) {
   );
 }
 
-function ensureBattleSides(battle) {
-  if (!battle) return [];
-  battle.sideOrder ||= ["A", "B"];
-  battle.factions ||= { A: battle.attackerFaction, B: battle.defenderFaction };
-  battle.leadIds ||= { A: battle.attackerId, B: battle.defenderId };
-  battle.origins ||= { A: battle.attackerOrigin || null, B: null };
-  battle.initial ||= { A: {}, B: {} };
-  battle.reinforcementIds ||= {};
-  battle.tactics ||= {};
-  battle.confirmed ||= {};
-  battle.tacticRevision ||= {};
-  battle.focus ||= {};
-  for (const side of battle.sideOrder) {
-    battle.reinforcementIds[side] ||= [];
-    battle.tactics[side] ||= side === "B" ? "normal_advance" : "normal_advance";
-    if (battle.confirmed[side] === undefined) battle.confirmed[side] = false;
-    if (battle.tacticRevision[side] === undefined) battle.tacticRevision[side] = true;
-    battle.initial[side] ||= battle.leadIds[side] ? armyUnits(armyById(battle.leadIds[side])) : {};
-  }
-  return battle.sideOrder;
-}
-
-function battleSides(battle) {
-  return ensureBattleSides(battle).filter((side) => battle.leadIds?.[side] || battle.reinforcementIds?.[side]?.length);
-}
-
 function battleArmyIds(battle, side) {
-  ensureBattleSides(battle);
-  const leadId = battle.leadIds?.[side] || (side === "A" ? battle.attackerId : battle.defenderId);
+  const leadId = side === "A" ? battle.attackerId : battle.defenderId;
   return [leadId, ...(battle.reinforcementIds?.[side] || [])];
 }
 
 function battleParticipantIds(battle) {
-  return battleSides(battle).flatMap((side) => battleArmyIds(battle, side)).filter(Boolean);
+  return [...battleArmyIds(battle, "A"), ...battleArmyIds(battle, "B")];
 }
 
 function battleArmies(battle, side) {
@@ -3741,15 +3664,14 @@ function battleArmies(battle, side) {
 }
 
 function battleSideForFaction(battle, faction) {
-  ensureBattleSides(battle);
-  return battleSides(battle).find((side) => battle.factions?.[side] === faction) || null;
+  if (battle.attackerFaction === faction) return "A";
+  if (battle.defenderFaction === faction) return "B";
+  return null;
 }
 
 function battleSideForArmy(battle, army) {
-  if (!battle || !army) return null;
-  for (const side of battleSides(battle)) {
-    if (battleArmyIds(battle, side).includes(army.id)) return side;
-  }
+  if (battleArmyIds(battle, "A").includes(army?.id)) return "A";
+  if (battleArmyIds(battle, "B").includes(army?.id)) return "B";
   return null;
 }
 
@@ -3805,7 +3727,7 @@ function joinableBattleForArmy(army) {
   const faction = factionForArmy(army);
   return activeBattles.find((battle) => {
     if (!["pending", "ongoing"].includes(battle.status) || !battleSideForFaction(battle, faction)) return false;
-    return landNeighbors(cells[army.cellKey]).some((cell) => cell.key === battle.cellKey);
+    return cellNeighbors(cells[army.cellKey]).some((cell) => cell.key === battle.cellKey);
   }) || null;
 }
 
@@ -3820,40 +3742,10 @@ function battleSideUnits(battle, side) {
   return battleArmies(battle, side).reduce((totals, army) => addUnitTotals(totals, armyUnits(army)), {});
 }
 
-function battleFactionForSide(battle, side) {
-  ensureBattleSides(battle);
-  return battle.factions?.[side] || (side === "A" ? battle.attackerFaction : battle.defenderFaction);
-}
-
-function hostileBattleSides(battle, side) {
-  const faction = battleFactionForSide(battle, side);
-  return battleSides(battle).filter((otherSide) =>
-    otherSide !== side && factionsAtWar(faction, battleFactionForSide(battle, otherSide))
-  );
-}
-
-function sideForce(battle, side) {
-  return forcePoints(battleSideUnits(battle, side));
-}
-
-function battleFocusTarget(battle, side) {
-  const target = battle.focus?.[side] || "";
-  return hostileBattleSides(battle, side).includes(target) ? target : "";
-}
-
-function attackShareAgainst(battle, side, targetSide) {
-  const focused = battleFocusTarget(battle, side);
-  if (focused) return focused === targetSide ? 1 : 0;
-  const hostileSides = hostileBattleSides(battle, side);
-  const totalHostileForce = hostileSides.reduce((sum, otherSide) => sum + Math.max(1, sideForce(battle, otherSide)), 0);
-  if (totalHostileForce <= 0) return 0;
-  return Math.max(1, sideForce(battle, targetSide)) / totalHostileForce;
-}
-
 function fallbackBattleOrigin(army, collisionCell) {
   const occupied = new Set(allArmies().filter((other) => other.id !== army.id).map((other) => other.cellKey));
-  return landNeighbors(collisionCell).find((cell) => cell.fac === factionForArmy(army) && !occupied.has(cell.key))?.key
-    || landNeighbors(collisionCell).find((cell) => !occupied.has(cell.key))?.key
+  return cellNeighbors(collisionCell).find((cell) => cell.fac === factionForArmy(army) && !occupied.has(cell.key))?.key
+    || cellNeighbors(collisionCell).find((cell) => !occupied.has(cell.key))?.key
     || collisionCell.key;
 }
 
@@ -3871,10 +3763,6 @@ function startBattle(attacker, defender, collisionCell, attackerOrigin, action =
     defenderFaction,
     attackerOrigin: attackerOrigin || fallbackBattleOrigin(attacker, collisionCell),
     originalFaction: collisionCell.fac,
-    sideOrder: ["A", "B"],
-    factions: { A: attackerFaction, B: defenderFaction },
-    leadIds: { A: attacker.id, B: defender.id },
-    origins: { A: attackerOrigin || fallbackBattleOrigin(attacker, collisionCell), B: null },
     initial: { A: armyUnits(attacker), B: armyUnits(defender) },
     initialByArmy: {
       [attacker.id]: { ...armyUnits(attacker) },
@@ -3911,62 +3799,6 @@ function startBattle(attacker, defender, collisionCell, attackerOrigin, action =
   return battle;
 }
 
-function sideKeyForNewFaction(battle, faction) {
-  if (!["A", "B"].includes(faction) && !battle.sideOrder?.includes(faction)) return faction;
-  let index = 1;
-  while (battle.sideOrder?.includes(`${faction}${index}`)) index += 1;
-  return `${faction}${index}`;
-}
-
-function addArmyToExistingBattle(army, battle, originCellKey, action = null) {
-  if (!army || !battle || activeBattleForArmy(army)) return null;
-  ensureBattleSides(battle);
-  const faction = factionForArmy(army);
-  let side = battleSideForFaction(battle, faction);
-  if (!side) {
-    side = sideKeyForNewFaction(battle, faction);
-    battle.sideOrder.push(side);
-    battle.factions[side] = faction;
-    battle.leadIds[side] = null;
-    battle.origins[side] = originCellKey || army.previousCellKey || null;
-    battle.reinforcementIds[side] = [];
-    battle.initial[side] = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
-    battle.tactics[side] = "normal_advance";
-    battle.confirmed[side] = false;
-    battle.tacticRevision[side] = true;
-  }
-  battle.reinforcementIds[side] ||= [];
-  if (!battle.reinforcementIds[side].includes(army.id)) battle.reinforcementIds[side].push(army.id);
-  battle.initial[side] = addUnitTotals(battle.initial[side], armyUnits(army));
-  battle.initialByArmy ||= {};
-  battle.initialByArmy[army.id] = { ...armyUnits(army) };
-  battle.tacticRevision[side] = true;
-  battle.confirmed[side] = false;
-  battle.focus ||= {};
-  if (action) action.joinedBattle = { battleId: battle.id, side };
-  applyNpcBattleDefaults(battle);
-  markArmyResolved(army);
-  selectedBattleId = battle.id;
-  uiNotice = `${armyCombatLabel(army)}已進入混戰。`;
-  return side;
-}
-
-function removeBattleSide(battle, side) {
-  battle.sideOrder = battle.sideOrder.filter((item) => item !== side);
-  delete battle.factions?.[side];
-  delete battle.leadIds?.[side];
-  delete battle.origins?.[side];
-  delete battle.initial?.[side];
-  delete battle.reinforcementIds?.[side];
-  delete battle.tactics?.[side];
-  delete battle.confirmed?.[side];
-  delete battle.tacticRevision?.[side];
-  delete battle.focus?.[side];
-  for (const otherSide of battleSides(battle)) {
-    if (battle.focus?.[otherSide] === side) battle.focus[otherSide] = "";
-  }
-}
-
 function ensureHostileEncounters() {
   if (!state) return;
   const occupantsByCell = new Map();
@@ -3976,18 +3808,6 @@ function ensureHostileEncounters() {
     occupantsByCell.set(army.cellKey, occupants);
   }
   for (const [cellKey, occupants] of occupantsByCell) {
-    const existingBattle = activeBattles.find((battle) =>
-      ["pending", "ongoing"].includes(battle.status) && battle.cellKey === cellKey
-    );
-    if (existingBattle) {
-      for (const army of occupants) {
-        if (battleParticipantIds(existingBattle).includes(army.id)) continue;
-        if (battleSides(existingBattle).some((side) => factionsAtWar(factionForArmy(army), battleFactionForSide(existingBattle, side)))) {
-          addArmyToExistingBattle(army, existingBattle, army.previousCellKey || army.cellKey);
-        }
-      }
-      continue;
-    }
     for (let first = 0; first < occupants.length; first++) {
       for (let second = first + 1; second < occupants.length; second++) {
         let attacker = occupants[first];
@@ -4009,7 +3829,7 @@ function cellWithinRange(fromKey, toKey, range = 2) {
   for (let step = 0; step < range; step++) {
     const next = [];
     for (const cell of frontier.filter(Boolean)) {
-      for (const neighbor of landNeighbors(cell)) {
+      for (const neighbor of cellNeighbors(cell)) {
         if (neighbor.key === toKey) return true;
         if (!visited.has(neighbor.key)) {
           visited.add(neighbor.key);
@@ -4052,12 +3872,10 @@ function wholeUnits(units) {
 }
 
 function forcePoints(units) {
-  return Object.entries(UNIT_FORCE_POINTS)
-    .reduce((sum, [type, points]) => sum + (Number(units?.[type] || 0) * points), 0);
-}
-
-function currentArmyForceCap() {
-  return Number(bootstrap?.features?.army_force_cap || DEFAULT_ARMY_FORCE_CAP);
+  return (units.infantry || 0)
+    + (units.cavalry || 0)
+    + (units.machine_gun || 0) * 2
+    + (units.artillery || 0) * 4;
 }
 
 function citiesInProvince(province) {
@@ -4139,7 +3957,6 @@ function transferCityEconomy(city, previousFaction, nextFaction) {
     payload.factory_income = (payload.city_economy || []).reduce((sum, item) => sum + (item.factory || 0), 0) + Number(bonus.factory || 0);
   }
   updateTopBar();
-  if ($("panelLoans")?.classList.contains("active")) refreshLoansIfOpen();
 }
 
 function queueCityOwnershipSync(cityId, faction) {
@@ -4234,24 +4051,25 @@ function estimatedRoundsUntilBreak(battle, side) {
     0.1,
     initialForce * Number(ownTactic.threshold) - casualtiesSoFar,
   );
-  const incomingPerRound = hostileBattleSides(battle, side).reduce((sum, opponentSide) => {
-    const opponentForce = forcePoints(battleSideUnits(battle, opponentSide));
-    const opponentTactic = tacticData(battle.tactics[opponentSide]);
-    return sum + opponentForce
+  const incomingPerRound = opponentForce
     * Number(opponentTactic.attack_multiplier)
-    * attackShareAgainst(battle, opponentSide, side);
-  }, 0)
     * Number(ownTactic.harm_taken_multiplier)
     * COMBAT_ESTIMATE_CALIBRATION;
   if (incomingPerRound <= 0) return Infinity;
   return Math.max(1, Math.ceil(damageUntilBreak / incomingPerRound));
 }
 
-function retreatEstimate(battle, sideOrder = battleSides(battle)) {
-  const turns = Object.fromEntries(sideOrder.map((side) => [side, estimatedRoundsUntilBreak(battle, side)]));
-  if (!Object.values(turns).some((value) => Number.isFinite(value))) return "目前火力不足，無法估計退卻時間";
+function retreatEstimate(battle, sideOrder = ["A", "B"]) {
+  const turnsA = estimatedRoundsUntilBreak(battle, "A");
+  const turnsB = estimatedRoundsUntilBreak(battle, "B");
+  if (!Number.isFinite(turnsA) && !Number.isFinite(turnsB)) return "目前火力不足，無法估計退卻時間";
+  const turns = { A: turnsA, B: turnsB };
   const estimate = (side, turns) => `${battleSideLabel(battle, side)} ${turns === 0 ? "已達退卻線" : Number.isFinite(turns) ? `約 ${turns} 輪` : "暫無退卻壓力"}`;
   return sideOrder.map((side) => estimate(side, turns[side])).join("；");
+}
+
+function battleFactionForSide(battle, side) {
+  return side === "A" ? battle.attackerFaction : battle.defenderFaction;
 }
 
 function retreatConfirmationKey(battle, side) {
@@ -4289,7 +4107,7 @@ function renderBattlePanel() {
   const reports = [...activeBattles, ...battleReports].filter((item) => !hiddenBattleReportIds.has(item.id));
   const battle = reports.find((item) => item.id === selectedBattleId)
     || [...reports].reverse().find((item) =>
-      battleSideForFaction(item, currentPlayer)
+      item.attackerFaction === currentPlayer || item.defenderFaction === currentPlayer
     );
   if (!battle) {
     root.hidden = true;
@@ -4301,17 +4119,21 @@ function renderBattlePanel() {
   selectedBattleId = battle.id;
   $("battleReportDock").hidden = false;
   root.dataset.battleId = String(battle.id);
-  const currentSide = battleSideForFaction(battle, currentPlayer);
-  const sideOrder = currentSide ? [currentSide, ...battleSides(battle).filter((side) => side !== currentSide)] : battleSides(battle);
-  const remaining = Object.fromEntries(sideOrder.map((side) => [side, battleSideUnits(battle, side)]));
-  const losses = Object.fromEntries(sideOrder.map((side) => [side, casualties(battle.initial[side] || {}, remaining[side])]));
+  const currentSide = battle.attackerFaction === currentPlayer ? "A"
+    : battle.defenderFaction === currentPlayer ? "B" : null;
+  const sideOrder = currentSide ? [currentSide, currentSide === "A" ? "B" : "A"] : ["A", "B"];
+  const remaining = { A: battleSideUnits(battle, "A"), B: battleSideUnits(battle, "B") };
+  const losses = {
+    A: casualties(battle.initial.A, remaining.A),
+    B: casualties(battle.initial.B, remaining.B),
+  };
   root.hidden = false;
   root.classList.toggle("collapsed", collapsedBattleIds.has(battle.id));
   const active = battle.status === "pending" || battle.status === "ongoing";
   const openingRound = active && (battle.rounds || 0) === 0;
   const tacticLocked = !currentSide || !battle.tacticRevision?.[currentSide] || battle.confirmed?.[currentSide];
   root.innerHTML = `
-    <div class="battle-heading"><b>${active ? `交戰中 · 第 ${(battle.rounds || 0) + 1} 輪` : "戰果"}</b><span>${sideOrder.map((side) => FACTIONS[battleFactionForSide(battle, side)]?.shortName || battleFactionForSide(battle, side)).join(" vs ")}${completedFortresses.has(battle.cellKey) ? " · 要塞守備" : ""}</span><button class="battle-collapse" data-toggle-battle="${battle.id}" title="${collapsedBattleIds.has(battle.id) ? "展開戰鬥情報" : "收起戰鬥情報"}">${collapsedBattleIds.has(battle.id) ? "+" : "−"}</button></div>
+    <div class="battle-heading"><b>${active ? `交戰中 · 第 ${(battle.rounds || 0) + 1} 輪` : "戰果"}</b><span>${sideOrder.map((side) => FACTIONS[battleFactionForSide(battle, side)].shortName).join(" vs ")}${completedFortresses.has(battle.cellKey) ? " · 要塞守備" : ""}</span><button class="battle-collapse" data-toggle-battle="${battle.id}" title="${collapsedBattleIds.has(battle.id) ? "展開戰鬥情報" : "收起戰鬥情報"}">${collapsedBattleIds.has(battle.id) ? "+" : "−"}</button></div>
     <div class="battle-sides">
       ${sideOrder.map((side) => `<div><b>${battleSideLabel(battle, side)}</b>${unitSummary(remaining[side])}<div class="battle-loss"><em>損失</em>${unitSummary(losses[side])}</div></div>`).join("")}
     </div>
@@ -4324,17 +4146,11 @@ function renderBattlePanel() {
       <label class="battle-tactic">戰術
         <select data-battle-tactic="${currentSide}" ${tacticLocked ? "disabled" : ""}>${tacticOptionsMarkup(battle.tactics[currentSide], currentSide)}</select>
       </label>
-      ${hostileBattleSides(battle, currentSide).length > 1 ? `<label class="battle-tactic">火力
-        <select data-battle-focus="${currentSide}">
-          <option value="" ${battleFocusTarget(battle, currentSide) ? "" : "selected"}>平均分配</option>
-          ${hostileBattleSides(battle, currentSide).map((side) => `<option value="${side}" ${battleFocusTarget(battle, currentSide) === side ? "selected" : ""}>集中攻擊 ${FACTIONS[battleFactionForSide(battle, side)]?.shortName || battleFactionForSide(battle, side)}</option>`).join("")}
-        </select>
-      </label>` : ""}
       <div class="battle-actions">
         ${battle.tacticRevision?.[currentSide] ? `<button data-resolve-battle="${battle.id}" ${tacticLocked ? "disabled" : ""}>${battle.confirmed?.[currentSide] ? "戰術已確認" : "確認戰術"}</button>` : ""}
         ${retreatButtonMarkup(battle, currentSide)}
       </div>
-      <small class="battle-confirmation">${openingRound ? battleSides(battle).map((side) => `${battle.confirmed?.[side] ? "已定策" : "等待"}${FACTIONS[battleFactionForSide(battle, side)]?.shortName || side}`).join(" · ") : battle.tacticRevision?.[currentSide] ? "援軍抵達，可重新定策一次" : battle.roundResolvedTurn === state.turn ? "本回合戰鬥已結算" : "沿用既定戰術；回合結束時自動交戰"}</small>` : `<div class="battle-result">${battle.status === "surrendered" ? `${battleSideLabel(battle, battle.surrenderedSide)}投降並被俘` : battle.result ? `勝方：${battle.result.winner && battle.result.winner !== "draw" && battle.result.winner !== "undecided" ? battleSideLabel(battle, battle.result.winner) : "多方退卻"} · ${battle.result.rounds} 回合` : "部隊已撤出戰場"}<small>右鍵移除此情報</small></div>`}
+      <small class="battle-confirmation">${openingRound ? `${battle.confirmed?.A ? "進攻方已定策" : "等待進攻方"} · ${battle.confirmed?.B ? "防守方已定策" : "等待防守方"}` : battle.tacticRevision?.[currentSide] ? "援軍抵達，可重新定策一次" : battle.roundResolvedTurn === state.turn ? "本回合戰鬥已結算" : "沿用既定戰術；回合結束時自動交戰"}</small>` : `<div class="battle-result">${battle.status === "surrendered" ? `${battleSideLabel(battle, battle.surrenderedSide)}投降並被俘` : battle.result ? `勝方：${battle.result.winner === "A" ? battleSideLabel(battle, "A") : battle.result.winner === "B" ? battleSideLabel(battle, "B") : "雙方退卻"} · ${battle.result.rounds} 回合` : "部隊已撤出戰場"}<small>右鍵移除此情報</small></div>`}
   `;
 }
 
@@ -4353,6 +4169,31 @@ function selectTile(cell) {
   renderTileInfo();
 }
 
+// 列強租借地：不屬於任何省分，只標等級；也沒有中國勢力的產出可言。
+function foreignTileInfoMarkup(cell) {
+  const city = cell.foreignCity;
+  const powerName = POWER_NAME[city.power] || city.power;
+  const railroads = [...(cell.railroads || [])];
+  const railText = railroads.length
+    ? railroads.map((name) => (disabledRailways().has(name) ? `${name}（搶修中）` : name)).join("、")
+    : "無";
+  return `
+    <div class="tile-info-heading">
+      <b>${city.name}</b>
+      <span class="tile-owner">${flagMarkup(city.power, "flag-chip tile-owner-flag")}${powerName}</span>
+    </div>
+    <div class="tile-info-grid">
+      <span>地形<strong>陸地</strong></span>
+      <span>聚落<strong>${city.level} 級城市</strong></span>
+      <span>歸屬<strong>${powerName}</strong></span>
+      <span>鐵路<strong>${railText}</strong></span>
+    </div>
+    <div class="tile-concession">
+      <span class="tile-tag tile-tag-foreign">列強屬地</span>
+      <span class="tile-foreign-note">中國各勢力不得進入或通過</span>
+    </div>`;
+}
+
 function renderTileInfo() {
   const root = $("tileInfo");
   const cell = cells[selectedTileKey];
@@ -4363,6 +4204,11 @@ function renderTileInfo() {
     return;
   }
   $("tileInfoDock").hidden = false;
+  if (cell.foreignCity) {
+    root.hidden = false;
+    root.innerHTML = foreignTileInfoMarkup(cell);
+    return;
+  }
   const city = cell.city;
   const fortifications = [];
   if (completedFortresses.has(cell.key)) fortifications.push("要塞");
@@ -4372,25 +4218,31 @@ function renderTileInfo() {
   // 租界僅標明身分與租界國，不寫加成數字。港口同樣只標身分。
   const concessionPowers = Array.isArray(city?.concession) ? city.concession : [];
   const tags = [];
-  if (city?.port === "river" && !LAND_CITY_TILE_IDS.has(city.id)) tags.push('<span class="tile-tag tile-tag-port">河港</span>');
+  if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
   if (concessionPowers.length) {
-    tags.push(`<span class="tile-tag tile-tag-concession">租界城市</span>` + concessionPowers.map((key) => `
+    tags.push(`<span class="tile-tag tile-tag-concession">租界</span>` + concessionPowers.map((key) => `
       <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
     `).join(""));
   }
   const concessionRow = tags.length ? `<div class="tile-concession">${tags.join("")}</div>` : "";
+  const railText = railroads.length
+    ? railroads.map((name) => (disabledRailways().has(name) ? `${name}（搶修中）` : name)).join("、")
+    : "無";
   root.hidden = false;
   root.innerHTML = `
-    <div class="tile-info-heading"><b>${city?.name || "鄉野地格"}</b><span>${FACTIONS[cell.fac]?.shortName || "無控制"}</span></div>
+    <div class="tile-info-heading">
+      <b>${city?.name || "鄉野地格"}</b>
+      <span class="tile-owner">${factionFlagMarkup(cell.fac, "flag-chip tile-owner-flag")}${FACTIONS[cell.fac]?.shortName || "無控制"}</span>
+    </div>
     <div class="tile-info-grid">
       <span>地形<strong>${cell.river ? `水域 · ${cell.river}` : "陸地"}</strong></span>
       <span>聚落<strong>${city ? `${city.province} · ${city.level} 級城市` : `${strategicProvinceForCell(cell) || "未知省份"} · 鄉村`}</strong></span>
       <span>歸屬<strong>${FACTIONS[cell.fac]?.name || "無控制"}</strong></span>
       <span>工事<strong>${fortifications.join("、") || "無"}</strong></span>
+      <span>鐵路<strong>${railText}</strong></span>
       <span>產出<strong>$${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
     </div>
-    ${concessionRow}
-    ${railroads.length ? `<small>鐵路：${railroads.map((name) => (disabledRailways().has(name) ? `${name}（搶修中）` : name)).join("、")}</small>` : ""}`;
+    ${concessionRow}`;
 }
 
 function engineeringOperationsFor(army) {
@@ -4417,8 +4269,6 @@ function renderArmyDetail() {
   const traits = general?.traits || [];
   const portrait = PORTRAIT_BY_ID[army.generalId];
   const units = armyUnits(army);
-  const armyForce = forcePoints(units);
-  const armyForceCap = currentArmyForceCap();
   const showComposition = armyCompositionVisible(army);
   const city = cityForArmy(army);
   const fightingBattle = activeBattleForArmy(army);
@@ -4426,16 +4276,10 @@ function renderArmyDetail() {
   const canOrder = isOwnArmy && armyCanReceiveOrder(army);
   const canReinforce = canOrder && cityControlledBy(city, currentPlayer) && city.level >= 3 && cells[army.cellKey]?.fac === currentPlayer;
   const profile = state.players[currentPlayer];
-  const forcedMarchTurns = Number(army.forcedMarchTurns || 0);
-  const forcedMarchCooldown = Number(army.forcedMarchCooldown || 0);
-  const forcedMarchActive = forcedMarchTurns > 0;
-  const forcedMarchAffordable = Number(profile?.treasury || 0) >= FORCED_MARCH_COST.cash
-    && Number(profile?.factory_points || 0) >= FORCED_MARCH_COST.factory;
-  const canActivateForcedMarch = canOrder && !forcedMarchActive && forcedMarchCooldown <= 0 && forcedMarchAffordable;
   const engineering = isOwnArmy ? engineeringOperationsFor(army) : [];
   const joinableBattle = isOwnArmy ? joinableBattleForArmy(army) : null;
   const loyalty = general ? calculateGeneralLoyalty(general, army).value : null;
-  const defectionForce = armyForce;
+  const defectionForce = forcePoints(units);
   const loyaltyForDefection = Math.max(1, loyalty || 1);
   const defectionCost = Math.ceil((10 + defectionForce * 3 + loyaltyForDefection * 2) * 0.5);
   const defectionBaseChance = 0.45 - loyaltyForDefection * 0.04 - defectionForce * 0.003;
@@ -4465,7 +4309,6 @@ function renderArmyDetail() {
         ${Object.keys(UNIT_META).map((type) => `
           <div>${unitSymbol(type, units[type])}<span>${UNIT_META[type].name}<small>${formatUnitQuantity(type, units[type])}</small></span></div>
         `).join("")}
-        <div>${unitSymbol("infantry")}<span>戰力上限<small>${Math.round(armyForce)} / ${armyForceCap}</small></span></div>
       </div>
     ` : `<div class="enemy-hidden-composition"><b>兵力不明</b><span>敵軍編制需交戰或情報網揭露。</span></div>`}
     ${isOwnArmy ? absoluteTransferMarkup(army) : ""}
@@ -4473,26 +4316,23 @@ function renderArmyDetail() {
     ${fightingBattle ? `<div class="active-operation">交戰中：不可移動、休整或補充。請在戰鬥情報中定策。</div>` : ""}
     ${!fightingBattle && resolvedThisTurn ? `<div class="active-operation">本回合軍令已執行。</div>` : ""}
     ${army.specialOperation ? `<div class="active-operation">進行中：${army.specialOperation.label} · 尚需 ${army.specialOperation.turnsRemaining} 回合</div>` : ""}
-    ${forcedMarchActive ? `<div class="active-operation">急行軍：鄉野機動 2 格，剩餘 ${forcedMarchTurns} 回合</div>` : ""}
     ${isOwnArmy ? `
     <div class="army-operations">
       ${army.specialOperation || !canOrder ? `<button disabled>${army.specialOperation ? "工事進行中" : fightingBattle ? "交戰中" : "本回合已行動"}</button>` : `
       <button class="${moveMode ? "active" : ""}" data-army-operation="move">移動</button>
-      <button data-army-operation="forced_march" title="支付 $${FORCED_MARCH_COST.cash}、工業點 ${FORCED_MARCH_COST.factory}；3 回合內此軍鄉野移動可走 2 格；冷卻 ${FORCED_MARCH_COOLDOWN} 回合。${forcedMarchCooldown > 0 ? `剩餘冷卻 ${forcedMarchCooldown} 回合。` : ""}" ${canActivateForcedMarch ? "" : "disabled"}>${forcedMarchActive ? `急行軍 ${forcedMarchTurns}` : forcedMarchCooldown > 0 ? `急行軍 CD ${forcedMarchCooldown}` : "急行軍"}</button>
+      <button data-army-operation="rest">休整</button>
       ${joinableBattle ? `<button class="join-battle-command" data-join-battle="${joinableBattle.id}">加入戰鬥</button>` : ""}
       ${engineering.map((skill) => {
         const operation = ENGINEERING_OPERATIONS[skill];
-        const costText = operation.cost ? `；需工業點 ${operation.cost.factory || 0}` : "";
-        return `<button data-engineering-operation="${skill}" title="${operation.label}需 ${operation.turns} 回合${costText}">${operation.label} (${operation.turns} 回合)</button>`;
+        return `<button data-engineering-operation="${skill}">${operation.label} (${operation.turns} 回合)</button>`;
       }).join("")}`}
       ${canReinforce ? `<button data-army-operation="recruit">補充兵力</button>` : ""}
     </div>
     ${canReinforce && army.showRecruitment ? `
       <div class="army-reinforcement">
         <b>${city.name}預備隊</b>
-        <small>本軍戰力 ${Math.round(armyForce)} / ${armyForceCap}</small>
         ${Object.entries(UNIT_META).map(([type, unit]) => `
-          <button data-reinforce-unit="${type}" ${profile.unit_reserves?.[type] && armyForce + UNIT_FORCE_POINTS[type] <= armyForceCap ? "" : "disabled"}>
+          <button data-reinforce-unit="${type}" ${profile.unit_reserves?.[type] ? "" : "disabled"}>
             ${unitSymbol(type)}<span>${unit.name}</span><strong>${profile.unit_reserves?.[type] ?? 0}</strong>
           </button>
         `).join("")}
@@ -4533,28 +4373,6 @@ function joinBattle(army, battle) {
   uiNotice = `${armyCombatLabel(army)}已投入${battleSideLabel(battle, side)}的戰鬥，部隊仍顯示於支援地格。`;
   renderArmyMarkers(currentPlayer);
   renderPendingActions();
-  queueSharedPublish("援軍同步失敗");
-}
-
-function detachReinforcementFromBattle(army, reason = "") {
-  const battle = activeBattleForArmy(army);
-  const side = battleSideForArmy(battle, army);
-  if (!battle || !side || battle.attackerId === army.id || battle.defenderId === army.id) return false;
-  battle.reinforcementIds ||= { A: [], B: [] };
-  if (!battle.reinforcementIds[side]?.includes(army.id)) return false;
-  const initialUnits = battle.initialByArmy?.[army.id] || armyUnits(army);
-  battle.reinforcementIds[side] = battle.reinforcementIds[side].filter((armyId) => armyId !== army.id);
-  battle.initial[side] = Object.fromEntries(Object.keys(UNIT_META).map((type) => [
-    type,
-    Math.max(0, (battle.initial[side]?.[type] || 0) - (initialUnits[type] || 0)),
-  ]));
-  delete battle.initialByArmy?.[army.id];
-  battle.tacticRevision ||= { A: false, B: false };
-  battle.confirmed ||= { A: true, B: true };
-  battle.tacticRevision[side] = true;
-  battle.confirmed[side] = false;
-  uiNotice = reason || `${armyCombatLabel(army)}被迫脫離支援戰場。`;
-  return true;
 }
 
 function selectArmy(armyId) {
@@ -4652,10 +4470,6 @@ function undoLastArmyOrder() {
       delete battle.initialByArmy?.[army.id];
       battle.tacticRevision[action.joinedBattle.side] = false;
       battle.confirmed[action.joinedBattle.side] = true;
-      if (!["A", "B"].includes(action.joinedBattle.side)
-        && battleArmyIds(battle, action.joinedBattle.side).filter(Boolean).length === 0) {
-        removeBattleSide(battle, action.joinedBattle.side);
-      }
     }
   }
   if (action.territoryChange) {
@@ -4721,13 +4535,12 @@ function cellIsPlainWhileDowned(cell, downed = disabledRailways()) {
 
 // 一格能不能當成鄉村地格走：本來就沒鐵路，或鐵路正在搶修中。
 function cellUsableAsRural(cell, downed = disabledRailways()) {
-  if (!cell || cell.city) return false;
+  if (!cell || cell.city || cell.power) return false;
   if (!cell.railroads?.size) return true;
   return cellIsPlainWhileDowned(cell, downed);
 }
 
 function riverStepAllowed(from, to, railwayMovement = false) {
-  if (fixedBridgeBetween(from, to)) return true;
   const riverCells = [from, to].filter((cell) => cell.river);
   if (!riverCells.length) return true;
   // 河港開放陸軍自由通行，不需要浮橋。
@@ -4749,7 +4562,7 @@ function railwayPath(source, destination) {
     for (const key of cell.railNeighbors || []) {
       if (visited.has(key)) continue;
       const next = cells[key];
-      if (!next || !railLinkUsable(cell, next, downed)) continue;
+      if (!next || next.power || !railLinkUsable(cell, next, downed)) continue;
       if (!riverStepAllowed(cell, next, true)) continue;
       visited.add(key);
       queue.push({ cell: next, path: [...path, next] });
@@ -4760,39 +4573,29 @@ function railwayPath(source, destination) {
 
 function ruralMoveLimit(player = currentPlayer) {
   const active = state.players[player]?.timed_effects || [];
-  const factionLimit = active.reduce((limit, effect) => {
+  return active.reduce((limit, effect) => {
     if (effect.kind !== "rural_movement" || Number(effect.remaining_turns || 0) <= 0) return limit;
     return Math.max(limit, Number(effect.tiles || limit));
   }, 1);
-  const selected = selectedArmy();
-  if (selected && factionForArmy(selected) === player && Number(selected.forcedMarchTurns || 0) > 0) {
-    return Math.max(factionLimit, 2);
-  }
-  return factionLimit;
 }
 
 function ruralMovementPath(source, destination, player = currentPlayer) {
   const limit = ruralMoveLimit(player);
   if (limit <= 1) return null;
   const downed = disabledRailways();
-  const destinationAllowed = (cell) => cellUsableAsRural(cell, downed) || Boolean(cell.city);
-  if (!destinationAllowed(destination)) return null;
-  const queue = [{ cell: source, path: [source], ruralSteps: 0 }];
-  const visited = new Set([`${source.key}:0`]);
+  if (!cellUsableAsRural(destination, downed)) return null;
+  const queue = [{ cell: source, path: [source] }];
+  const visited = new Set([source.key]);
   while (queue.length) {
-    const { cell, path, ruralSteps } = queue.shift();
+    const { cell, path } = queue.shift();
     if (cell.key === destination.key) return path;
-    if (ruralSteps >= limit) continue;
-    for (const next of landNeighbors(cell)) {
-      const isDestination = next.key === destination.key;
-      const isRural = cellUsableAsRural(next, downed);
-      if (!isRural && !(isDestination && destinationAllowed(next))) continue;
+    if (path.length > limit) continue;
+    for (const next of cellNeighbors(cell)) {
+      if (visited.has(next.key)) continue;
+      if (!cellUsableAsRural(next, downed)) continue;
       if (!riverStepAllowed(cell, next, false)) continue;
-      const nextRuralSteps = ruralSteps + (isRural ? 1 : 0);
-      const visitKey = `${next.key}:${nextRuralSteps}`;
-      if (visited.has(visitKey)) continue;
-      visited.add(visitKey);
-      queue.push({ cell: next, path: [...path, next], ruralSteps: nextRuralSteps });
+      visited.add(next.key);
+      queue.push({ cell: next, path: [...path, next] });
     }
   }
   return null;
@@ -4814,36 +4617,6 @@ function advanceEngineering() {
     if (army.specialOperation.id === "pontoon_bridge") completedPontoons.add(army.specialOperation.targetCellKey);
     if (army.specialOperation.id === "fortress_builder") completedFortresses.add(army.specialOperation.targetCellKey);
     delete army.specialOperation;
-  }
-}
-
-function advanceArmyTimedActions() {
-  for (const army of Object.values(ARMY_POSITIONS).flat()) {
-    if (Number(army.forcedMarchTurns || 0) > 0) {
-      army.forcedMarchTurns = Math.max(0, Number(army.forcedMarchTurns || 0) - 1);
-      if (army.forcedMarchTurns <= 0) delete army.forcedMarchTurns;
-    }
-    if (Number(army.forcedMarchCooldown || 0) > 0) {
-      army.forcedMarchCooldown = Math.max(0, Number(army.forcedMarchCooldown || 0) - 1);
-      if (army.forcedMarchCooldown <= 0) delete army.forcedMarchCooldown;
-    }
-  }
-}
-
-function growIndependentNpcArmies(turn = state?.turn || 0) {
-  const currentTurn = Number(turn || 0);
-  if (currentTurn <= 0) return;
-  for (const faction of NPC_GROWTH_FACTIONS) {
-    for (const army of ARMY_POSITIONS[faction] || []) {
-      if (factionForArmy(army) !== faction) continue;
-      if (army.status === "jailed" || army.status === "killed") continue;
-      const units = army.units || (army.units = {});
-      if (currentTurn % 3 === 0) units.infantry = Number(units.infantry || 0) + 1;
-      if (currentTurn % 5 === 0 && army.id === `${faction}-1`) {
-        units.machine_gun = Number(units.machine_gun || 0) + 1;
-        units.cavalry = Number(units.cavalry || 0) + 1;
-      }
-    }
   }
 }
 
@@ -4978,11 +4751,16 @@ function timedCombatModifiers(faction, opponentFaction = null) {
   return (state.players[faction]?.timed_effects || []).flatMap((effect) => {
     if (effect.kind !== "combat_modifier" || Number(effect.remaining_turns || 0) <= 0) return [];
     if (effect.target_faction && opponentFaction && effect.target_faction !== opponentFaction) return [];
+    // 列強戰鬥 perk 只在關係還撐得住時生效；後端也會清，這裡再擋一次避免打到一半的殘留。
+    if (effect.expires_below_relation != null && effect.foreign_power_key) {
+      const relation = Number(state.players[faction]?.foreign_relations?.[effect.foreign_power_key] ?? 0);
+      if (relation < Number(effect.expires_below_relation)) return [];
+    }
     return (effect.modifiers || []).map((modifier) => ({ ...modifier, source_effect: effect.name }));
   });
 }
 
-function combatArmyPayload(army, tactic, defending = false, battle = null, opponentFaction = null, attackShare = 1) {
+function combatArmyPayload(army, tactic, defending = false, battle = null, opponentFaction = null) {
   const faction = factionForArmy(army);
   return {
     name: army.id,
@@ -4990,7 +4768,6 @@ function combatArmyPayload(army, tactic, defending = false, battle = null, oppon
     initial_units: battle?.initialByArmy?.[army.id] || armyUnits(army),
     tactic,
     modifiers: [
-      ...(attackShare === 1 ? [] : [{ stat: "attack", multiplier: Math.max(0, attackShare), source_effect: "混戰火力分配" }]),
       ...combatTraitModifiers(army, battle, opponentFaction),
       ...combatAuraModifiers(army, battle),
       ...timedCombatModifiers(faction, opponentFaction),
@@ -5063,7 +4840,7 @@ function retreatCellFor(army, preferredKey = null, awayFromKey = null) {
   const direction = awayFrom
     ? [hcx(source.c) - hcx(awayFrom.c), hcy(source.c, source.r) - hcy(awayFrom.c, awayFrom.r)]
     : [0, 0];
-  const candidates = landNeighbors(source).filter((cell) =>
+  const candidates = cellNeighbors(source).filter((cell) =>
     !allArmies().some((other) => other.id !== army.id && other.cellKey === cell.key)
     && riverStepAllowed(source, cell, Boolean(source.railNeighbors?.has(cell.key)))
   ).sort((a, b) => {
@@ -5103,115 +4880,6 @@ function overrunSurrenderSide(result, strengthA, strengthB) {
   return null;
 }
 
-function combatArmiesForSide(battle, side) {
-  return [...battleArmies(battle, side)]
-    .filter((army) => forcePoints(armyUnits(army)) > 0)
-    .sort((first, second) => forcePoints(armyUnits(second)) - forcePoints(armyUnits(first)));
-}
-
-function sideRemainingSnapshot(battle) {
-  return Object.fromEntries(battleSides(battle).map((side) => [side, {
-    units: battleSideUnits(battle, side),
-    armies: battleArmies(battle, side).map((army) => ({
-      name: army.id,
-      units: armyUnits(army),
-    })),
-  }]));
-}
-
-async function resolveMixedBattleRound(battle) {
-  ensureBattleSides(battle);
-  const sides = battleSides(battle);
-  const pairReports = [];
-  for (let first = 0; first < sides.length; first++) {
-    for (let second = first + 1; second < sides.length; second++) {
-      const firstSide = sides[first];
-      const secondSide = sides[second];
-      const firstFaction = battleFactionForSide(battle, firstSide);
-      const secondFaction = battleFactionForSide(battle, secondSide);
-      if (!factionsAtWar(firstFaction, secondFaction)) continue;
-      const shareFirst = attackShareAgainst(battle, firstSide, secondSide);
-      const shareSecond = attackShareAgainst(battle, secondSide, firstSide);
-      if (shareFirst <= 0 && shareSecond <= 0) continue;
-      const firstArmies = combatArmiesForSide(battle, firstSide);
-      const secondArmies = combatArmiesForSide(battle, secondSide);
-      if (!firstArmies.length || !secondArmies.length) continue;
-      const reinforcements = [
-        ...firstArmies.slice(1).map((army) => ({
-          round: 1,
-          side: "A",
-          army: combatArmyPayload(army, battle.tactics[firstSide], false, battle, secondFaction, shareFirst),
-        })),
-        ...secondArmies.slice(1).map((army) => ({
-          round: 1,
-          side: "B",
-          army: combatArmyPayload(army, battle.tactics[secondSide], true, battle, firstFaction, shareSecond),
-        })),
-      ];
-      const result = await api("/api/combat", {
-        army_a: combatArmyPayload(firstArmies[0], battle.tactics[firstSide], false, battle, secondFaction, shareFirst),
-        army_b: combatArmyPayload(secondArmies[0], battle.tactics[secondSide], true, battle, firstFaction, shareSecond),
-        reinforcements,
-        max_rounds: 1,
-      });
-      for (const [resultSide, battleSide] of [["A", firstSide], ["B", secondSide]]) {
-        const remainingById = new Map((result.remaining[resultSide].armies || []).map((army) => [army.name, army.units]));
-        for (const army of battleArmies(battle, battleSide)) {
-          setArmyTotalUnits(army, remainingById.get(army.id) || armyUnits(army));
-        }
-      }
-      pairReports.push({
-        sides: [firstSide, secondSide],
-        factions: [firstFaction, secondFaction],
-        attack_share: { [firstSide]: shareFirst, [secondSide]: shareSecond },
-        result,
-      });
-    }
-  }
-  battle.rounds = (battle.rounds || 0) + 1;
-  battle.roundResolvedTurn = state.turn;
-  battle.result = {
-    rounds: battle.rounds,
-    winner: "undecided",
-    mixed: true,
-    pairs: pairReports,
-    remaining: sideRemainingSnapshot(battle),
-    log: pairReports.flatMap((report) => report.result?.log || []),
-  };
-  for (const side of [...battleSides(battle)]) {
-    if (sideForce(battle, side) > 5) continue;
-    const hostileSurvivor = battleSides(battle).find((otherSide) =>
-      otherSide !== side
-      && sideForce(battle, otherSide) > 5
-      && factionsAtWar(battleFactionForSide(battle, side), battleFactionForSide(battle, otherSide))
-    );
-    if (!hostileSurvivor) continue;
-    const destination = cells[battle.origins?.[side]] || retreatCellFor(battleArmies(battle, side)[0], null, battle.attackerOrigin);
-    if (destination) {
-      for (const army of battleArmies(battle, side)) moveArmyToCell(army, destination);
-    }
-    removeBattleSide(battle, side);
-  }
-  const liveSides = battleSides(battle).filter((side) => sideForce(battle, side) > 5);
-  if (liveSides.length <= 1) {
-    const winnerSide = liveSides[0] || battleSides(battle).sort((a, b) => sideForce(battle, b) - sideForce(battle, a))[0];
-    battle.status = "resolved";
-    battle.result.winner = winnerSide || "draw";
-    if (winnerSide) occupyTile(cells[battle.cellKey], battleFactionForSide(battle, winnerSide));
-    uiNotice = winnerSide ? `混戰結束，${FACTIONS[battleFactionForSide(battle, winnerSide)]?.shortName || battleFactionForSide(battle, winnerSide)}控制戰場。` : "混戰結束，無明確勝方。";
-  } else {
-    battle.status = "ongoing";
-    for (const side of liveSides) {
-      battle.confirmed[side] = true;
-      battle.tacticRevision[side] = false;
-    }
-    uiNotice = `混戰第 ${battle.rounds} 輪結束；仍有 ${liveSides.length} 方在戰場。`;
-  }
-  for (const army of battleSides(battle).flatMap((side) => battleArmies(battle, side))) markArmyResolved(army);
-  initMap();
-  renderPendingActions();
-}
-
 function sideHasRetreatCell(battle, side) {
   const army = armyById(side === "A" ? battle.attackerId : battle.defenderId);
   if (!army) return false;
@@ -5223,10 +4891,6 @@ function sideHasRetreatCell(battle, side) {
 }
 
 async function resolveBattleRound(battle) {
-  if (battleSides(battle).length > 2) {
-    await resolveMixedBattleRound(battle);
-    return;
-  }
   const attacker = armyById(battle.attackerId);
   const defender = armyById(battle.defenderId);
   const combatArmies = {
@@ -5327,15 +4991,14 @@ async function resolveBattleRound(battle) {
 
 async function confirmBattleTactic(battle, side) {
   if (!battle || !battle.tacticRevision?.[side]) return;
-  ensureBattleSides(battle);
+  battle.confirmed ||= { A: false, B: false };
   battle.confirmed[side] = true;
   battle.tacticRevision[side] = false;
   applyNpcBattleDefaults(battle);
   renderPendingActions();
-  const waitingSide = battleSides(battle).find((item) => !battle.confirmed?.[item]);
-  if (waitingSide) {
-    const waitingFaction = battleFactionForSide(battle, waitingSide);
-    showNotice(`戰術已確認；請切換至${FACTIONS[waitingFaction]?.shortName || waitingFaction}決定下一方戰術。`);
+  if (!battle.confirmed.A || !battle.confirmed.B) {
+    const waitingFaction = side === "A" ? battle.defenderFaction : battle.attackerFaction;
+    showNotice(`戰術已確認；請切換至${FACTIONS[waitingFaction].shortName}決定另一方戰術。`);
     return;
   }
   if ((battle.rounds || 0) === 0 && battle.roundResolvedTurn !== state.turn) await resolveBattleRound(battle);
@@ -5343,34 +5006,23 @@ async function confirmBattleTactic(battle, side) {
 
 function retreatFromBattle(battle, side) {
   retreatConfirmations.delete(retreatConfirmationKey(battle, side));
-  ensureBattleSides(battle);
-  const sideArmies = battleArmies(battle, side);
-  const army = sideArmies[0];
-  const retreatingLabel = sideArmies.map(armyCombatLabel).join("、") || army?.designator || "部隊";
-  const origin = cells[battle.origins?.[side]] || (side === "A" ? cells[battle.attackerOrigin] : null);
-  const destination = origin || retreatCellFor(army, null, battle.attackerOrigin);
+  const army = armyById(side === "A" ? battle.attackerId : battle.defenderId);
+  const destination = side === "A"
+    ? cells[battle.attackerOrigin]
+    : retreatCellFor(army, null, battle.attackerOrigin);
   if (!destination) {
     showNotice("沒有可供撤退的己方相鄰地格。");
     return;
   }
-  for (const sideArmy of sideArmies) moveArmyToCell(sideArmy, destination);
-  if (battleSides(battle).length > 2) {
-    removeBattleSide(battle, side);
-    const liveSides = battleSides(battle).filter((item) => sideForce(battle, item) > 5);
-    if (liveSides.length <= 1) {
-      battle.status = "resolved";
-      if (liveSides[0]) occupyTile(cells[battle.cellKey], battleFactionForSide(battle, liveSides[0]));
-    }
-  } else {
-    battle.status = "retreated";
-  }
+  moveArmyToCell(army, destination);
+  battle.status = "retreated";
   battle.retreatingSide = side;
   if (side === "B") {
     const action = armyOrderHistory.find((item) => item.battleId === battle.id) || null;
     occupyTile(cells[battle.cellKey], battle.attackerFaction, action);
   }
-  for (const sideArmy of sideArmies) markArmyResolved(sideArmy);
-  uiNotice = `${retreatingLabel}已撤出戰鬥。`;
+  markArmyResolved(army);
+  uiNotice = `${army.designator}已撤出戰鬥。`;
   initMap();
   renderPendingActions();
 }
@@ -5405,7 +5057,7 @@ function setupPendingActions() {
     if (battleAction) {
       const battleId = Number(battleAction.dataset.resolveBattle || battleAction.dataset.retreatBattle);
       const battle = activeBattles.find((item) => item.id === battleId);
-      const side = battleSideForFaction(battle, currentPlayer);
+      const side = battle?.attackerFaction === currentPlayer ? "A" : "B";
       if (battleAction.dataset.retreatBattle) requestBattleRetreat(battle, side);
       else confirmBattleTactic(battle, side).catch((error) => showNotice(error.message));
       return;
@@ -5477,13 +5129,9 @@ function setupPendingActions() {
     }
   });
   $("battlePanel").addEventListener("change", (event) => {
-    const side = event.target.dataset.battleTactic || event.target.dataset.battleFocus;
+    const side = event.target.dataset.battleTactic;
     const battle = activeBattles.find((item) => item.id === Number(event.currentTarget.dataset.battleId));
-    if (battle && event.target.dataset.battleFocus && side) {
-      battle.focus ||= {};
-      battle.focus[side] = event.target.value;
-      renderPendingActions();
-    } else if (battle && side && battle.tacticRevision?.[side] && !battle.confirmed?.[side]) {
+    if (battle && side && battle.tacticRevision?.[side] && !battle.confirmed?.[side]) {
       battle.tactics[side] = event.target.value;
       renderPendingActions();
     }
@@ -5503,7 +5151,7 @@ function setupPendingActions() {
       resolveButton?.dataset.resolveBattle || retreatButton?.dataset.retreatBattle
     ));
     if (!battle) return;
-    const side = battleSideForFaction(battle, currentPlayer);
+    const side = battle.attackerFaction === currentPlayer ? "A" : "B";
     if (retreatButton) {
       requestBattleRetreat(battle, side);
       return;
@@ -5565,44 +5213,6 @@ function setupPendingActions() {
       showNotice(moveMode ? `選擇相鄰地格；急行軍可走鄉村 ${ruralMoveLimit(currentPlayer)} 格；鐵路最多 ${railwayMoveLimit(currentPlayer)} 格；跨河需要浮橋或鐵路橋。` : "已取消移動。");
       $("mapStage").classList.toggle("move-mode", moveMode);
       renderArmyDetail();
-    } else if (operation === "forced_march") {
-      if (!armyCanReceiveOrder(army)) {
-        showNotice(activeBattleForArmy(army) ? "交戰中的軍隊不能急行軍。" : "此軍本回合已行動。");
-        return;
-      }
-      if (Number(army.forcedMarchTurns || 0) > 0) {
-        showNotice("此軍已在急行軍狀態。");
-        return;
-      }
-      if (Number(army.forcedMarchCooldown || 0) > 0) {
-        showNotice(`急行軍尚在冷卻，剩餘 ${army.forcedMarchCooldown} 回合。`);
-        return;
-      }
-      if (Number(state.players[currentPlayer]?.treasury || 0) < FORCED_MARCH_COST.cash
-        || Number(state.players[currentPlayer]?.factory_points || 0) < FORCED_MARCH_COST.factory) {
-        showNotice(`急行軍需要 $${FORCED_MARCH_COST.cash}、工業點 ${FORCED_MARCH_COST.factory}。`);
-        return;
-      }
-      event.target.disabled = true;
-      try {
-        const result = await api("/api/pay-forced-march", {
-          player: currentPlayer,
-          cash: FORCED_MARCH_COST.cash,
-          factory: FORCED_MARCH_COST.factory,
-        });
-        state = result.state;
-        syncStrategicCitiesFromState();
-        army.forcedMarchTurns = FORCED_MARCH_DURATION;
-        army.forcedMarchCooldown = FORCED_MARCH_COOLDOWN;
-        uiNotice = `${army.designator}啟動急行軍：3 回合內鄉野移動 2 格。`;
-        updateTopBar();
-        renderArmyDetail();
-        renderPendingActions();
-        await publishSharedState(true);
-      } catch (error) {
-        event.target.disabled = false;
-        showNotice(error.message);
-      }
     } else if (operation === "rest") {
       if (!armyCanReceiveOrder(army)) {
         showNotice(activeBattleForArmy(army) ? "交戰中的軍隊不能休整。" : "此軍本回合已行動。");
@@ -5648,11 +5258,6 @@ function setupPendingActions() {
         return;
       }
       const city = cityForArmy(army);
-      const currentForce = forcePoints(armyUnits(army));
-      if (currentForce + UNIT_FORCE_POINTS[reinforcement] > currentArmyForceCap()) {
-        showNotice(`本軍戰力 ${Math.round(currentForce)} / ${currentArmyForceCap()}，補充後會超過上限。`);
-        return;
-      }
       try {
         const result = await api("/api/reinforce-army", {
           player: currentPlayer,
@@ -5660,7 +5265,6 @@ function setupPendingActions() {
           city_id: city.id,
           unit_type: reinforcement,
           count: 1,
-          current_force: currentForce,
         });
         state = result.state;
         syncStrategicCitiesFromState();
@@ -5714,7 +5318,7 @@ function handleMapDestination(destination) {
     }
 
     if (engineeringMode === "pontoon_bridge") {
-      const adjacent = landNeighbors(source).some((cell) => cell.key === destination.key);
+      const adjacent = cellNeighbors(source).some((cell) => cell.key === destination.key);
       if (!adjacent || !destination.river) {
         showNotice("浮橋只能架設在相鄰的河流地格。");
         return;
@@ -5733,7 +5337,11 @@ function handleMapDestination(destination) {
       return;
     }
 
-    const adjacent = landNeighbors(source).some((cell) => cell.key === destination.key);
+    if (destination.power) {
+      showNotice(`${POWER_NAME[destination.power] || destination.power}的租借地，中國各勢力不得進入或通過。`);
+      return;
+    }
+    const adjacent = cellNeighbors(source).some((cell) => cell.key === destination.key);
     const railPath = railwayPath(source, destination);
     const ruralPath = railPath ? null : ruralMovementPath(source, destination, currentPlayer);
     if (!adjacent && !railPath && !ruralPath) {
@@ -5757,14 +5365,12 @@ function handleMapDestination(destination) {
         return;
       }
     }
-    let enemyBattle = null;
     if (enemy) {
       const enemyFaction = factionForArmy(enemy);
       if (!factionsAtWar(currentPlayer, enemyFaction)) {
         showNotice(`目前與${FACTIONS[enemyFaction]?.shortName || enemyFaction}和平，不能攻擊其軍隊。`);
         return;
       }
-      enemyBattle = activeBattleForArmy(enemy);
       if (forcePoints(armyUnits(army)) <= 5) {
         showNotice("兵力需高於 5 戰力點才能主動攻擊。請先撤回或補充兵力。");
         return;
@@ -5775,10 +5381,7 @@ function handleMapDestination(destination) {
     army.cellKey = destination.key;
     army.lon = destination.lon;
     army.lat = destination.lat;
-    if (enemyBattle && enemyBattle.cellKey === destination.key) {
-      addArmyToExistingBattle(army, enemyBattle, source.key, action);
-    } else if (enemy) {
-      detachReinforcementFromBattle(enemy, `${armyCombatLabel(enemy)}遭敵軍接戰，已脫離原支援戰場。`);
+    if (enemy) {
       startBattle(army, enemy, destination, source.key, action);
     } else if (destination.fac !== currentPlayer) {
       occupyTile(destination, currentPlayer, action);
@@ -5788,7 +5391,6 @@ function handleMapDestination(destination) {
     resolveArmy(army.id);
     if (enemy && selectedBattleId) selectBattle(selectedBattleId);
     if (!enemy || activeBattles.at(-1)?.status === "surrendered") initMap();
-    queueSharedPublish("行軍同步失敗");
 }
 
 function notificationKey(player, index, item) {
@@ -5805,18 +5407,18 @@ function renderPendingActions() {
   const pending = pendingArmies();
   const fighting = activeBattles.filter((battle) =>
     (battle.status === "pending" || battle.status === "ongoing")
-    && battleSideForFaction(battle, currentPlayer)
+    && (battle.attackerFaction === currentPlayer || battle.defenderFaction === currentPlayer)
   );
   $("pendingCount").textContent = String(pending.length);
   $("pendingTitle").textContent = fighting.length ? "交戰軍令" : pending.length ? "待命軍隊" : "軍令完成";
   const fightingMarkup = fighting.map((battle) => {
-    const side = battleSideForFaction(battle, currentPlayer);
-    const army = battleArmies(battle, side)[0];
+    const side = battle.attackerFaction === currentPlayer ? "A" : "B";
+    const army = armyById(side === "A" ? battle.attackerId : battle.defenderId);
     const openingRound = (battle.rounds || 0) === 0;
     const canRevise = battle.tacticRevision?.[side] && !battle.confirmed?.[side];
     const locked = !canRevise;
     return `<div class="pending-battle">
-      <button class="pending-unit-main" data-focus-battle="${battle.id}"><span class="pending-unit-number">戰</span><span><b>${battleSideLabel(battle, side)}</b><small>${army?.general || "混戰部隊"} · 第 ${(battle.rounds || 0) + 1} 輪</small></span></button>
+      <button class="pending-unit-main" data-focus-battle="${battle.id}"><span class="pending-unit-number">戰</span><span><b>${battleSideLabel(battle, side)}</b><small>${army.general} · 第 ${(battle.rounds || 0) + 1} 輪</small></span></button>
       <select data-battle-tactic="${side}" data-battle-id="${battle.id}" ${locked ? "disabled" : ""}>${tacticOptionsMarkup(battle.tactics[side], side)}</select>
       <div class="pending-battle-actions ${openingRound ? "" : "continuing"}">${canRevise ? `<button data-resolve-battle="${battle.id}">定策</button>` : ""}${retreatButtonMarkup(battle, side)}</div>
       ${openingRound ? "" : `<small class="pending-battle-note">${canRevise ? "援軍抵達，可重新定策一次" : battle.roundResolvedTurn === state.turn ? "本回合已交戰" : "沿用戰術；回合結束時自動交戰"}</small>`}
@@ -5899,10 +5501,7 @@ function renderPendingActions() {
     const message = functionActionMessage(state.last_action, currentPlayer);
     notification.hidden = false;
     notification.innerHTML = `<b>功能卡效果</b><span>${message}</span>`;
-  } else if (bootstrap.features?.events && state.last_event) {
-    notification.hidden = false;
-    notification.innerHTML = `<b>${state.last_event.name}</b><span>${state.last_event.effect || "本回合事件已生效"}</span>`;
-  } else {
+    } else {
     notification.hidden = true;
     notification.innerHTML = "";
   }
@@ -5914,7 +5513,7 @@ function updateEndTurnButton() {
   const pending = pendingArmies();
   const pendingBattles = activeBattles.filter((battle) =>
     ["pending", "ongoing"].includes(battle.status)
-    && battleSides(battle).some((side) => !battle.confirmed?.[side])
+    && (!battle.confirmed?.A || !battle.confirmed?.B)
   );
   const btn = $("endTurnBtn");
   const readyPlayers = TURN_PLAYERS.filter((player) => turnReady[player] === state.turn);
@@ -5942,7 +5541,6 @@ async function resetGame() {
   sharedEngineHash = JSON.stringify(state);
   currentPlayer = $("playerSelect").value;
   currentPhase = "military";
-  eventHistory = [];
   selectedArmyId = null;
   selectedBattleId = null;
   uiNotice = null;
@@ -5957,6 +5555,7 @@ async function resetGame() {
   hiddenBattleReportIds.clear();
   retreatConfirmations.clear();
   completedPontoons.clear();
+  for (const key of PREBUILT_PONTOONS) completedPontoons.add(key);
   completedFortresses.clear();
   selectedTileKey = null;
   for (const cell of Object.values(cells)) cell.fac = INITIAL_CELL_FACTIONS[cell.key];
@@ -5974,18 +5573,14 @@ async function resetGame() {
     army.status = "active";
     army.faction = INITIAL_ARMY_FACTIONS[army.id];
     delete army.specialOperation;
-    delete army.forcedMarchTurns;
-    delete army.forcedMarchCooldown;
     delete army.showRecruitment;
     delete army.previousCellKey;
     delete army.resolvedTurn;
   }
   updateTopBar();
   updatePhaseBanner();
-  updateEventBadge();
   updateFeatureVisibility();
   renderArmyMarkers(currentPlayer);
-  renderHandDock();
   renderPendingActions();
   closeAllPanels();
   await publishSharedState(true);
@@ -6006,7 +5601,7 @@ async function advanceToNextTurn(force = false) {
   for (const battle of activeBattles) applyNpcBattleDefaults(battle);
   const pendingBattle = activeBattles.find((battle) =>
     ["pending", "ongoing"].includes(battle.status)
-    && battleSides(battle).some((side) => !battle.confirmed?.[side])
+    && (!battle.confirmed?.A || !battle.confirmed?.B)
   );
   if (!force && pendingBattle) {
     selectBattle(pendingBattle.id);
@@ -6051,8 +5646,6 @@ async function advanceToNextTurn(force = false) {
     syncStrategicCitiesFromState();
     uiNotice = null;
     advanceEngineering();
-    advanceArmyTimedActions();
-    growIndependentNpcArmies(state.turn);
     resolvedArmyIds.clear();
     replaceObject(turnReady, {});
     for (const army of allArmies()) {
@@ -6068,10 +5661,8 @@ async function advanceToNextTurn(force = false) {
     currentPhase = "military";
     updateTopBar();
     updatePhaseBanner();
-    showEventIfNeeded(state.turn);
     updateFeatureVisibility();
     initMap();
-    renderHandDock();
     renderPendingActions();
     await publishSharedState(true);
   } catch (error) {
@@ -6101,6 +5692,20 @@ window.__neDebug = {
   generalById,
   generalOwners,
   getState: () => state,
+  getBootstrap: () => bootstrap,
+  functionCardTargetMarkup,
+  gangRiotTargets,
+  riotTargets,
+  getCardIndex: () => cardIndex,
+  cells,
+  selectTile,
+  riverStepAllowed,
+  cellUsableAsRural,
+  cellNeighbors,
+  railwayPath,
+  ruralMovementPath,
+  railwayMoveLimit,
+  ruralMoveLimit,
 };
 
 boot().catch((error) => {

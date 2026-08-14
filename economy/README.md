@@ -8,16 +8,16 @@ City output, factory points, and the bank loan book.
 
 ## City output
 
-Output comes from the city's level and nothing else. Level 1 pays 1 cash and 1
+Output comes from the city's level and nothing else. Level 1 pays 2 cash and 1
 factory a turn; every level above that adds 1 to each, to a maximum of level 5.
 
 | Level | Cash | Factory |
 |---|---|---|
-| 1 | 1 | 1 |
-| 2 | 2 | 2 |
-| 3 | 3 | 3 |
-| 4 | 4 | 4 |
-| 5 | 5 | 5 |
+| 1 | 2 | 1 |
+| 2 | 3 | 2 |
+| 3 | 4 | 3 |
+| 4 | 5 | 4 |
+| 5 | 6 | 5 |
 
 The `cash` and `factory` figures still present in `scenario/data/strategic_map.json`
 are no longer read; `level` is the only input. Ports carry no economic effect at all —
@@ -45,7 +45,7 @@ A bank's terms come from the borrower's relation with that bank's power, on the 
 | 東方匯理銀行 | 法 | $23 | $42 |
 | 德華銀行 | 德（中立） | $20 | — |
 
-德華銀行 is neutral: Germany is not on the relation track, so it always lends $20 over 3 turns at 3%. 蘇聯 does not lend commercially and has no bank.
+德華銀行 is neutral: Germany is not on the relation track, so it always lends $20 over 3 turns at 5%. 蘇聯 does not lend commercially and has no bank.
 
 ## Turn order
 
