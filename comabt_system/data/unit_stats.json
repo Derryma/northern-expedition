@@ -2,10 +2,10 @@
   "version": "experimental-0.1",
   "units": {
     "infantry": {
-      "hp": 3.0,
+      "hp": 4.0,
       "force_points": 1.0,
       "section": "line",
-      "notes": "Cheap line troops. Shares line HP with machine guns."
+      "notes": "Cheap line troops. Shares line HP with machine guns, but has enough HP to hold a basic line."
     },
     "cavalry": {
       "hp": 3.0,

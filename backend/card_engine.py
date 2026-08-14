@@ -30,6 +30,13 @@ FUNCTION_CARD_DRAW_LIMIT = 2
 FOREIGN_RELATION_MIN, FOREIGN_RELATION_MAX = relation_bounds()
 WARLORD_CODES = ("F", "W", "S", "N", "Y", "G", "M", "H", "C", "D", "Q")
 UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
+UNIT_FORCE_POINTS = {
+    "infantry": 1,
+    "cavalry": 1,
+    "machine_gun": 2,
+    "artillery": 4,
+}
+ARMY_FORCE_CAP = 100
 RECRUIT_COSTS = {
     "infantry": {"cash": 4, "factory": 2},
     "cavalry": {"cash": 7, "factory": 2},
@@ -78,7 +85,6 @@ FUNCTION_CARD_COPIES = {
     "jiangzhe_financiers": 1,
     "free_china_educators": 2,
     "peking_university_movement": 2,
-    "forced_march": 8,
     "affiliation_slot_upgrade": 4,
     "foreign_relation_jp": 5,
     "foreign_relation_su": 5,
@@ -177,6 +183,7 @@ FEATURES = {
     "function_card_draw_factory_cost": FUNCTION_CARD_DRAW_FACTORY_COST,
     "function_card_purchase_limit": FUNCTION_CARD_DRAW_LIMIT,
     "function_card_max_hand_size": MAX_HAND_SIZE,
+    "army_force_cap": ARMY_FORCE_CAP,
 }
 NORTHEAST_PROVINCES = {"奉天", "吉林", "黑龍江"}
 POWER_NAMES = {"jp": "日", "su": "蘇", "uk": "英", "fr": "法", "us": "美", "de": "德"}
@@ -273,8 +280,8 @@ class GameEngine:
             profile["foreign_relations"] = starting_relations(player)
             profile["loans"] = []
             profile["next_loan_id"] = 1
-            # 軍閥公債留下的信用瑕疵；None 代表借款必成。
-            profile["bank_success_rate"] = None
+            # 軍閥公債留下的信用瑕疵；到指定回合前所有列強銀行拒絕新貸。
+            profile["loan_ban_until_turn"] = None
             # 孔祥熙從政之後新借款的期限加成。
             profile["loan_term_bonus"] = 0
             profile["loan_penalties"] = []
@@ -1022,10 +1029,11 @@ class GameEngine:
             loan = self._record_card_loan(player, card, debt_delta)
             player_state["treasury"] += cash_delta
             if mechanic == "warlord_bond":
-                # 發行公債後信用受損，之後向列強銀行借款只有一定成功率。
-                rate = float(card.get("bank_success_rate", 0.75))
-                current = player_state.get("bank_success_rate")
-                player_state["bank_success_rate"] = rate if current is None else min(float(current), rate)
+                # 發行公債後信用受損，列強銀行在鎖定期內拒絕任何新貸。
+                ban_turns = int(card.get("loan_ban_turns", 5))
+                unlock_turn = int(self.state["turn"]) + max(1, ban_turns)
+                current = player_state.get("loan_ban_until_turn")
+                player_state["loan_ban_until_turn"] = max(int(current or 0), unlock_turn)
             loan_effect = {
                 "owner": player,
                 "loan_id": loan["id"] if loan else None,
@@ -1033,7 +1041,7 @@ class GameEngine:
                 "debt": debt_delta,
                 "interest_per_turn": loan["interest_per_turn"] if loan else None,
                 "due_turn": loan["due_turn"] if loan else None,
-                "bank_success_rate": player_state.get("bank_success_rate"),
+                "loan_ban_until_turn": player_state.get("loan_ban_until_turn"),
             }
         elif mechanic == "concession_city_development":
             # 怡和洋行／美商投資：加成落在「你控制的、掛該國租界」的城市上。
@@ -1756,6 +1764,7 @@ class GameEngine:
         city_id: str,
         unit_type: str,
         count: int = 1,
+        current_force: Optional[float] = None,
     ) -> Dict[str, Any]:
         player_state = self._player(player)
         if unit_type not in RECRUIT_COSTS:
@@ -1770,6 +1779,10 @@ class GameEngine:
         owner = self.state.get("city_owners", {}).get(city_id, city["faction"] if city else None)
         if not city or owner != player or city["level"] < 3:
             raise ValueError("reinforcement requires a controlled major city")
+        if current_force is not None:
+            next_force = float(current_force) + UNIT_FORCE_POINTS[unit_type] * count
+            if next_force > ARMY_FORCE_CAP:
+                raise ValueError(f"army force cap is {ARMY_FORCE_CAP}")
         if player_state["unit_reserves"][unit_type] < count:
             raise ValueError("insufficient unit reserve")
         player_state["unit_reserves"][unit_type] -= count
@@ -1852,12 +1865,26 @@ class GameEngine:
     def loan_offers(self, player: str) -> Dict[str, Any]:
         payload = self._player(player)
         loans = payload.setdefault("loans", [])
+        turn = int(self.state["turn"])
+        ban_until = payload.get("loan_ban_until_turn")
+        ban_active = ban_until is not None and turn < int(ban_until)
+        offers = LOANS.offers(payload.get("foreign_relations", {}), loans, turn)
+        if ban_active:
+            for offer in offers:
+                if offer.get("bank") is None:
+                    continue
+                offer["can_borrow"] = False
+                offer["loan_ban_until_turn"] = int(ban_until)
+                offer["loan_ban_remaining_turns"] = int(ban_until) - turn
+                offer["tier_label"] = f"銀行拒貸至第 {int(ban_until)} 回合"
         return {
             "player": player,
-            "turn": int(self.state["turn"]),
+            "turn": turn,
             "treasury": int(payload.get("treasury", 0)),
             "debt": LOANS.total_outstanding(loans),
-            "offers": LOANS.offers(payload.get("foreign_relations", {}), loans, int(self.state["turn"])),
+            "loan_ban_until_turn": int(ban_until) if ban_until is not None else None,
+            "loan_ban_remaining_turns": int(ban_until) - turn if ban_active else 0,
+            "offers": offers,
             "loans": self._loan_rows(player),
         }
 
@@ -1878,14 +1905,11 @@ class GameEngine:
         payload = self._player(player)
         loans = payload.setdefault("loans", [])
         relations = payload.get("foreign_relations", {})
+        ban_until = payload.get("loan_ban_until_turn")
+        if ban_until is not None and int(self.state["turn"]) < int(ban_until):
+            raise ValueError(f"列強銀行因軍閥公債拒絕新貸，需等到第 {int(ban_until)} 回合")
         # Validate before consuming an id so a rejected request leaves no gap.
         LOANS.borrow(list(loans), str(bank_id), int(amount), relations, int(self.state["turn"]), 0)
-        # 軍閥公債的後遺症：申貸有機率被拒。擲骰在驗證之後，才不會白白拒絕一筆
-        # 本來就不合格的申請。
-        success_rate = payload.get("bank_success_rate")
-        if success_rate is not None and self.random.random() >= float(success_rate):
-            bank_name = LOANS.banks[str(bank_id)]["name"]
-            raise ValueError(f"{bank_name}以信用不良為由拒絕本次貸款（成功率 {int(float(success_rate) * 100)}%）")
         loan = LOANS.borrow(
             loans,
             str(bank_id),
@@ -1924,6 +1948,24 @@ class GameEngine:
             "cleared": result["cleared"],
         }
         return {"amount": result["paid"], "cleared": result["cleared"], "state": self.snapshot()}
+
+    def pay_forced_march(self, player: str, *, cash: int = 20, factory: int = 20) -> Dict[str, Any]:
+        player_state = self._player(player)
+        cash = max(0, int(cash))
+        factory = max(0, int(factory))
+        if int(player_state.get("treasury", 0)) < cash:
+            raise ValueError(f"急行軍需要 {cash} 現金")
+        if int(player_state.get("factory_points", 0)) < factory:
+            raise ValueError(f"急行軍需要 {factory} 工業點")
+        player_state["treasury"] = int(player_state.get("treasury", 0)) - cash
+        player_state["factory_points"] = int(player_state.get("factory_points", 0)) - factory
+        self.state["last_action"] = {
+            "type": "forced_march_order",
+            "player": player,
+            "cash": cash,
+            "factory": factory,
+        }
+        return {"cash": cash, "factory": factory, "state": self.snapshot()}
 
     def _add_reserve(self, player: str, unit_type: str, amount: int) -> None:
         if unit_type not in UNIT_TYPES:
@@ -2314,6 +2356,29 @@ class GameEngine:
 
     def faction_general_traits(self, player: str) -> list:
         return list(self.state.get("faction_general_traits", {}).get(player, []))
+
+    def _expire_relation_locked_effects(self, player: str) -> list:
+        """關係跌破門檻的列強戰鬥 perk 立即失效。"""
+
+        payload = self._player(player)
+        relations = payload.get("foreign_relations", {})
+        kept, expired = [], []
+        for effect in payload.get("timed_effects", []):
+            floor = effect.get("expires_below_relation")
+            power = effect.get("foreign_power_key")
+            if floor is not None and power and int(relations.get(str(power), 0)) < int(floor):
+                expired.append({
+                    "id": effect.get("id"),
+                    "name": effect.get("name"),
+                    "power": str(power),
+                    "relation": int(relations.get(str(power), 0)),
+                    "floor": int(floor),
+                })
+                continue
+            kept.append(effect)
+        if expired:
+            payload["timed_effects"] = kept
+        return expired
 
     def _faction_has_trait(self, player: str, trait: str) -> bool:
         return trait in self.state.get("faction_general_traits", {}).get(player, [])

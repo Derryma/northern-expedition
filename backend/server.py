@@ -118,6 +118,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/repay-debt": self._repay_debt,
             "/api/loan-offers": self._loan_offers,
             "/api/take-loan": self._take_loan,
+            "/api/pay-forced-march": self._pay_forced_march,
             "/api/capture-city": self._capture_city,
             "/api/recruit-captive-general": self._recruit_captive_general,
             "/api/attempt-defection": self._attempt_defection,
@@ -226,6 +227,13 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def _take_loan(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.take_loan(str(payload["player"]), str(payload["bank"]), int(payload["amount"]))
 
+    def _pay_forced_march(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.pay_forced_march(
+            str(payload["player"]),
+            cash=int(payload.get("cash", 20)),
+            factory=int(payload.get("factory", 20)),
+        )
+
     def _capture_city(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.capture_city(str(payload["city_id"]), str(payload["faction"]))
 
@@ -271,6 +279,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             str(payload["city_id"]),
             str(payload["unit_type"]),
             int(payload.get("count", 1)),
+            payload.get("current_force"),
         )
 
     def _repay_debt(self, payload: Dict[str, Any]) -> Dict[str, Any]:

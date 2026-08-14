@@ -89,7 +89,7 @@ ATTACK_PRIORITY = {
 # playtested before becoming final board-game values. Attack values live only
 # in ATTACK_MATRIX because each source unit hits each target unit differently.
 BASE_STATS = {
-    "infantry": {"hp": 3.0, "force_points": 1.0},
+    "infantry": {"hp": 4.0, "force_points": 1.0},
     "cavalry": {"hp": 3.0, "force_points": 1.0},
     "artillery": {"hp": 2.0, "force_points": 4.0},
     "machine_gun": {"hp": 3.0, "force_points": 2.0},
@@ -133,29 +133,29 @@ TACTICS = {
         "threshold": DEFAULT_BREAK_THRESHOLD,
     },
     "probing_attack": {
-        "attack_multiplier": 0.50,
-        "harm_taken_multiplier": 0.60,
-        "threshold": DEFAULT_BREAK_THRESHOLD,
+        "attack_multiplier": 0.35,
+        "harm_taken_multiplier": 0.45,
+        "threshold": 0.25,
     },
     "layered_delaying": {
-        "attack_multiplier": 0.70,
-        "harm_taken_multiplier": 0.75,
-        "threshold": 0.35,
+        "attack_multiplier": 0.55,
+        "harm_taken_multiplier": 0.55,
+        "threshold": 0.40,
     },
     "all_out_offense": {
-        "attack_multiplier": 1.40,
-        "harm_taken_multiplier": 1.25,
-        "threshold": DEFAULT_BREAK_THRESHOLD,
+        "attack_multiplier": 1.70,
+        "harm_taken_multiplier": 1.45,
+        "threshold": 0.25,
     },
     "last_stand": {
-        "attack_multiplier": 1.00,
-        "harm_taken_multiplier": 1.35,
-        "threshold": 0.65,
+        "attack_multiplier": 1.10,
+        "harm_taken_multiplier": 1.15,
+        "threshold": 0.90,
     },
     "pinning_attack": {
-        "attack_multiplier": 0.80,
-        "harm_taken_multiplier": 0.85,
-        "threshold": DEFAULT_BREAK_THRESHOLD,
+        "attack_multiplier": 0.90,
+        "harm_taken_multiplier": 0.70,
+        "threshold": 0.20,
     },
 }
 
@@ -790,6 +790,46 @@ def _apply_cavalry_pursuit(
     cavalry_count = _side_display_count(winner, "cavalry")
     loser_cavalry = _side_display_count(loser, "cavalry")
     before = _side_snapshot(loser)
+    damage_by_target: List[Dict[str, Any]] = []
+
+    def apply_unit_damage(unit: UnitName, planned_damage: float, source: str) -> float:
+        total_unit_hp = sum(army.current_hp[unit] for army in loser.armies)
+        if planned_damage <= 0 or total_unit_hp <= 0:
+            return 0.0
+        max_unit_damage = total_unit_hp * 0.50
+        capped_damage = min(planned_damage, max_unit_damage)
+        applied_total = 0.0
+        for army in loser.armies:
+            unit_hp = army.current_hp[unit]
+            if unit_hp <= 0:
+                continue
+            army_damage = min(unit_hp, capped_damage * (unit_hp / total_unit_hp))
+            army.current_hp[unit] = max(0.0, unit_hp - army_damage)
+            applied_total += army_damage
+            damage_by_target.append(
+                {
+                    "army": army.name,
+                    "unit": unit,
+                    "source": source,
+                    "attack": _base_attack("cavalry", unit),
+                    "planned_damage": round(planned_damage * (unit_hp / total_unit_hp), 4),
+                    "cap": round(max_unit_damage * (unit_hp / total_unit_hp), 4),
+                    "applied_damage": round(army_damage, 4),
+                }
+            )
+        return applied_total
+
+    def apply_spillover_damage(spillover_damage: float) -> float:
+        spillover_units = [unit for unit in UNITS if unit != "cavalry" and _side_display_count(loser, unit) > 0]
+        total_hp = sum(sum(army.current_hp[unit] for army in loser.armies) for unit in spillover_units)
+        if spillover_damage <= 0 or total_hp <= 0:
+            return 0.0
+        applied_total = 0.0
+        for unit in spillover_units:
+            unit_hp = sum(army.current_hp[unit] for army in loser.armies)
+            applied_total += apply_unit_damage(unit, spillover_damage * (unit_hp / total_hp), "cavalry_cover_spillover")
+        return applied_total
+
     if cavalry_count <= 0:
         return {
             "phase": "pursuit",
@@ -803,45 +843,17 @@ def _apply_cavalry_pursuit(
             "before": before,
             "after": deepcopy(before),
         }
+    spillover_damage = 0.0
     if loser_cavalry > 0:
-        return {
-            "phase": "pursuit",
-            "winner": winner_label,
-            "loser": loser_label,
-            "cavalry": cavalry_count,
-            "loser_cavalry": loser_cavalry,
-            "eligible": False,
-            "reason": "loser still has cavalry covering the retreat",
-            "damage_by_target": [],
-            "before": before,
-            "after": deepcopy(before),
-        }
-
-    damage_by_target = []
-    target_units = [unit for unit in UNITS if unit != "cavalry" and _side_display_count(loser, unit) > 0]
-    for unit in target_units:
-        planned_damage = cavalry_count * _base_attack("cavalry", unit)
-        total_unit_hp = sum(army.current_hp[unit] for army in loser.armies)
-        max_unit_damage = total_unit_hp * 0.50
-        capped_damage = min(planned_damage, max_unit_damage)
-        if planned_damage <= 0 or total_unit_hp <= 0:
-            continue
-        for army in loser.armies:
-            unit_hp = army.current_hp[unit]
-            if unit_hp <= 0:
-                continue
-            army_damage = min(unit_hp, capped_damage * (unit_hp / total_unit_hp))
-            army.current_hp[unit] = max(0.0, unit_hp - army_damage)
-            damage_by_target.append(
-                {
-                    "army": army.name,
-                    "unit": unit,
-                    "attack": _base_attack("cavalry", unit),
-                    "planned_damage": round(planned_damage * (unit_hp / total_unit_hp), 4),
-                    "cap": round(max_unit_damage * (unit_hp / total_unit_hp), 4),
-                    "applied_damage": round(army_damage, 4),
-                }
-            )
+        planned_damage = cavalry_count * _base_attack("cavalry", "cavalry")
+        applied_damage = apply_unit_damage("cavalry", planned_damage, "cavalry_cover")
+        spillover_damage = max(0.0, planned_damage - applied_damage)
+        apply_spillover_damage(spillover_damage)
+    else:
+        target_units = [unit for unit in UNITS if _side_display_count(loser, unit) > 0]
+        for unit in target_units:
+            planned_damage = cavalry_count * _base_attack("cavalry", unit)
+            apply_unit_damage(unit, planned_damage, "open_pursuit")
     _snap_side_to_integer_counts(loser)
 
     return {
@@ -851,6 +863,8 @@ def _apply_cavalry_pursuit(
         "cavalry": cavalry_count,
         "loser_cavalry": loser_cavalry,
         "eligible": True,
+        "covering_cavalry": loser_cavalry > 0,
+        "spillover_damage": round(spillover_damage, 4),
         "formula": "winner_cavalry_count * ATTACK_MATRIX['cavalry'][target_unit]",
         "cap": "50% of each loser unit type's remaining HP",
         "damage_by_target": damage_by_target,

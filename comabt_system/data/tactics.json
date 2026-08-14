@@ -8,34 +8,34 @@
       "notes": "Default balanced attack."
     },
     "probing_attack": {
-      "attack_multiplier": 0.5,
-      "harm_taken_multiplier": 0.6,
-      "threshold": 0.3,
-      "notes": "Lower damage output, but safer. Useful for testing enemy strength."
+      "attack_multiplier": 0.35,
+      "harm_taken_multiplier": 0.45,
+      "threshold": 0.25,
+      "notes": "Very cautious contact. Deals little damage, takes far less harm, and breaks early."
     },
     "layered_delaying": {
-      "attack_multiplier": 0.7,
-      "harm_taken_multiplier": 0.75,
-      "threshold": 0.35,
-      "notes": "Defensive delay. Takes less harm and holds slightly longer."
+      "attack_multiplier": 0.55,
+      "harm_taken_multiplier": 0.55,
+      "threshold": 0.4,
+      "notes": "Elastic defense. Gives ground slowly, takes much less harm, and buys time."
     },
     "all_out_offense": {
-      "attack_multiplier": 1.4,
-      "harm_taken_multiplier": 1.25,
-      "threshold": 0.3,
-      "notes": "Aggressive assault. More firepower, more casualties."
+      "attack_multiplier": 1.7,
+      "harm_taken_multiplier": 1.45,
+      "threshold": 0.25,
+      "notes": "Hard assault. Much more firepower, high exposure, and a lower break point."
     },
     "last_stand": {
-      "attack_multiplier": 1.0,
-      "harm_taken_multiplier": 1.35,
-      "threshold": 0.65,
-      "notes": "Holds the line the longest, but bleeds heavily."
+      "attack_multiplier": 1.1,
+      "harm_taken_multiplier": 1.15,
+      "threshold": 0.9,
+      "notes": "Refuses to yield. Holds longest by accepting extreme losses before breaking."
     },
     "pinning_attack": {
-      "attack_multiplier": 0.8,
-      "harm_taken_multiplier": 0.85,
-      "threshold": 0.3,
-      "notes": "Keeps pressure while reducing exposure."
+      "attack_multiplier": 0.9,
+      "harm_taken_multiplier": 0.7,
+      "threshold": 0.2,
+      "notes": "Fixes the enemy in place with moderate fire and lower exposure, but disengages early."
     }
   }
 }

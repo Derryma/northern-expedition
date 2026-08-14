@@ -59,8 +59,8 @@ class CombatSimulationTests(unittest.TestCase):
         probing_damage = probing["log"][0]["attacks"][0]["damage"]
         damage_taken_by_probe = probing["log"][0]["attacks"][1]["damage"]
 
-        self.assertEqual(probing_damage, normal_damage * 0.5)
-        self.assertEqual(damage_taken_by_probe, normal_damage * 0.6)
+        self.assertEqual(probing_damage, normal_damage * 0.35)
+        self.assertEqual(damage_taken_by_probe, normal_damage * 0.45)
 
     def test_reinforcements_join_as_separate_allied_armies(self):
         result = simulate_battle(
@@ -98,7 +98,7 @@ class CombatSimulationTests(unittest.TestCase):
             for attack in result["log"][1]["attacks"]
             if attack["attacker_army"] == "Allied MG Corps"
         ]
-        self.assertEqual(allied_attacks[0]["damage"], 5.6)
+        self.assertEqual(allied_attacks[0]["damage"], 6.8)
 
     def test_default_fire_spreads_evenly_across_enemy_armies(self):
         result = simulate_battle(
@@ -111,8 +111,8 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 57.0)
-        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 57.0)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 80.0)
+        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 80.0)
         artillery_attack = [
             attack
             for attack in result["log"][0]["attacks"]
@@ -136,8 +136,8 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 54.0)
-        self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 60.0)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 72.0)
+        self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 80.0)
 
         focused_attacks = [
             attack
@@ -239,7 +239,7 @@ class CombatSimulationTests(unittest.TestCase):
         self.assertEqual(pursuit["after"]["units"]["infantry"], 3)
         self.assertEqual(pursuit["after"]["units"]["machine_gun"], 0)
 
-    def test_loser_cavalry_blocks_pursuit_damage(self):
+    def test_loser_cavalry_cover_takes_pursuit_then_spills_damage(self):
         result = simulate_battle(
             {"units": {"infantry": 8, "cavalry": 3, "artillery": 3}},
             {"units": {"infantry": 7, "cavalry": 1, "machine_gun": 2}},
@@ -248,9 +248,12 @@ class CombatSimulationTests(unittest.TestCase):
 
         pursuit = result["log"][-1]
         self.assertEqual(pursuit["phase"], "pursuit")
-        self.assertFalse(pursuit["eligible"])
-        self.assertEqual(pursuit["reason"], "loser still has cavalry covering the retreat")
-        self.assertEqual(pursuit["before"], pursuit["after"])
+        self.assertTrue(pursuit["eligible"])
+        self.assertTrue(pursuit["covering_cavalry"])
+        damage = {(target["unit"], target["source"]): target["applied_damage"] for target in pursuit["damage_by_target"]}
+        self.assertEqual(damage[("cavalry", "cavalry_cover")], 1.5)
+        self.assertGreater(damage[("infantry", "cavalry_cover_spillover")], 0)
+        self.assertEqual(pursuit["after"]["units"]["cavalry"], 0)
 
     def test_initial_units_preserve_retreat_baseline_between_api_rounds(self):
         first = simulate_battle(
