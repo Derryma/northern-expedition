@@ -2872,7 +2872,9 @@ class GameEngine:
                 applied += self._apply_event_payload(extra_payload, players=[player], card=card)
         if view["needs_every_faction"]:
             # 各自表態的卡：四家都點過才算結束，每家的選擇只作用在自己身上。
-            remaining = [code for code in self.state["players"] if code not in entry["responses"]]
+            # 用 responders 的順序（抽到的那一家排第一），與前端顯示的隊伍一致。
+            queue = entry["responders"] or list(self.state["players"])
+            remaining = [code for code in queue if code not in entry["responses"]]
         elif resolution.get("scope") == "drawer":
             remaining = [code for code in entry["responders"] if code not in entry["responses"]]
         elif view["strict_order"]:
