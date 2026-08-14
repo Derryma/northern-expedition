@@ -52,7 +52,7 @@ ABSOLUTE_LOYAL_GENERAL_IDS = {
 }
 FUNCTION_CARD_COPIES = {
     "unit_promotion": 10,
-    "local_autonomy_agitation": 5,
+    "local_autonomy_agitation": 7,
     "reserve_gift_infantry": 4,
     "reserve_gift_cavalry": 2,
     "reserve_gift_machine_gun": 2,
@@ -109,9 +109,9 @@ FUNCTION_CARD_COPIES = {
 _RELATION_SCALE = relation_scale()
 FOREIGN_FRIENDLY_THRESHOLD = int(_RELATION_SCALE["friendly_at_or_above"])
 FOREIGN_HOSTILE_THRESHOLD = int(_RELATION_SCALE["hostile_at_or_below"])
-FOREIGN_PERK_CARD_COPIES = 1
-# 少數 perk 卡發兩份以上
-FOREIGN_PERK_CARD_COPIES_BY_ID = {"communist_riot": 2, "red_army_uprising": 2}
+FOREIGN_PERK_CARD_COPIES = 2
+# 共黨暴動與紅軍起義比其他 perk 卡多一張
+FOREIGN_PERK_CARD_COPIES_BY_ID = {"communist_riot": 3, "red_army_uprising": 3}
 FOREIGN_CONDEMNATION_COPIES = 3
 FOREIGN_PERK_CARDS = {
     "jp": [
@@ -178,9 +178,7 @@ FACTION_LEVEL_TRAITS = (
     set(COMPRADOR_TRAITS) | set(PROVINCE_OUTPUT_TRAITS) | set(FAST_UPRISING_SUPPRESSION_TRAITS)
 )
 FEATURES = {
-    "events": False,
     "function_cards": True,
-    "event_interval": 3,
     "function_card_draw_cost": FUNCTION_CARD_DRAW_COST,
     "function_card_draw_factory_cost": FUNCTION_CARD_DRAW_FACTORY_COST,
     "function_card_purchase_limit": FUNCTION_CARD_DRAW_LIMIT,
@@ -233,7 +231,6 @@ class GameEngine:
         if seed is not None:
             self.random.seed(seed)
         card_ids = {card["id"] for card in self.data["function_cards"]["cards"]}
-        event_ids = [card["id"] for card in self.data["event_cards"]["cards"] if card.get("status") == "active"]
         cities = self.data["strategic_map"]["cities"]
 
         def player_state(player: str) -> Dict[str, Any]:
@@ -317,11 +314,7 @@ class GameEngine:
                 for code in WARLORD_CODES
                 if code not in DEFAULT_PLAYERS
             },
-            "event_pool": list(event_ids),
-            "injected_event_pool": [],
-            "event_history": [],
             "turn_log": [],
-            "last_event": None,
             "last_action": None,
             "recurring_effects": [],
             "last_economy_log": {},
@@ -340,8 +333,6 @@ class GameEngine:
     def snapshot(self) -> Dict[str, Any]:
         state = deepcopy(self.state)
         state["counts"] = {
-            "event_pool": len(state["event_pool"]),
-            "injected_event_pool": len(state["injected_event_pool"]),
             "players": {
                 player: {
                     "deck": len(payload["function_deck"]),
@@ -383,9 +374,7 @@ class GameEngine:
             "recruit_costs": RECRUIT_COSTS,
             "features": FEATURES,
             "cards": {
-                "event": self.data["event_cards"]["cards"],
                 "function": self.data["function_cards"]["cards"],
-                "injected_event": self.data["injected_event_cards"]["cards"],
             },
         }
 
@@ -414,7 +403,6 @@ class GameEngine:
                 names = ", ".join(blocked_players)
                 raise ValueError(f"players must resolve pending card draws first: {names}")
         self.state["turn"] += 1
-        self.state["last_event"] = None
         self._update_qing_gang_riots(riot_garrisons or {})
         self._update_red_army_uprisings(city_garrisons or {})
         economy_log = self._apply_turn_economy()
@@ -426,12 +414,9 @@ class GameEngine:
             self._sync_conditional_deck_cards(player)
         turn_entry = {
             "turn": self.state["turn"],
-            "event": None,
             "function_purchase_offer": active_player if FEATURES["function_cards"] else None,
             "economy": economy_log,
         }
-        if FEATURES["events"] and self.state["turn"] % FEATURES["event_interval"] == 0:
-            turn_entry["event"] = self.draw_event()["card"]
         self.state["turn_log"].append(turn_entry)
         return {"turn": turn_entry, "state": self.snapshot()}
 
@@ -581,6 +566,8 @@ class GameEngine:
                     effect["remaining_turns"] = remaining
                     active_effects.append(effect)
             payload["timed_effects"] = active_effects
+        for player in self.state["players"]:
+            self._expire_relation_locked_effects(player)
         self._tick_railway_effects()
         active_city_effects = []
         for effect in self.state.get("city_output_effects", []):
@@ -744,14 +731,6 @@ class GameEngine:
             "state": self.snapshot(),
         }
 
-    def draw_event(self) -> Dict[str, Any]:
-        card_id = self._weighted_event_choice()
-        card = self._card_template(card_id)
-        entry = {"turn": self.state["turn"], "card": card}
-        self.state["event_history"].append(entry)
-        self.state["last_event"] = card
-        return {"card": card, "state": self.snapshot()}
-
     def draw_function(self, player: str) -> Dict[str, Any]:
         player_state = self._player(player)
         self._sync_foreign_deck_cards(player)
@@ -908,6 +887,11 @@ class GameEngine:
                 "target_faction": card.get("target_faction"),
                 "modifiers": deepcopy(card.get("modifiers", [])),
             }
+            # 列強戰鬥 perk 的效果綁在關係上：關係跌破門檻就立刻失效，不等回合數走完。
+            perk_power = card.get("foreign_power_key")
+            if perk_power and card.get("expires_below_relation") is not None:
+                timed_effect["foreign_power_key"] = str(perk_power)
+                timed_effect["expires_below_relation"] = int(card["expires_below_relation"])
             for owner in owners:
                 self._player(str(owner)).setdefault("timed_effects", []).append(deepcopy(timed_effect))
         elif mechanic == "recurring_cash_transfer":
@@ -1568,18 +1552,8 @@ class GameEngine:
             "loan_effect": loan_effect,
             "relation_side_effects": relation_side_effects,
         }
-        injected = []
-        for generated in card.get("generated_event_cards", []):
-            generated_id = str(generated["id"])
-            template = self._card_template(generated_id)
-            copies = int(generated.get("copies", 1))
-            for _ in range(max(copies, 1)):
-                self.state["event_pool"].append(generated_id)
-                self.state["injected_event_pool"].append(generated_id)
-            injected.append(template)
         return {
             "card": card,
-            "injected": injected,
             "target_general_id": target_general_id,
             "target_owner": target_owner,
             "loyalty_delta": loyalty_delta,
@@ -2369,6 +2343,29 @@ class GameEngine:
     def faction_general_traits(self, player: str) -> list:
         return list(self.state.get("faction_general_traits", {}).get(player, []))
 
+    def _expire_relation_locked_effects(self, player: str) -> list:
+        """關係跌破門檻的列強戰鬥 perk 立即失效。"""
+
+        payload = self._player(player)
+        relations = payload.get("foreign_relations", {})
+        kept, expired = [], []
+        for effect in payload.get("timed_effects", []):
+            floor = effect.get("expires_below_relation")
+            power = effect.get("foreign_power_key")
+            if floor is not None and power and int(relations.get(str(power), 0)) < int(floor):
+                expired.append({
+                    "id": effect.get("id"),
+                    "name": effect.get("name"),
+                    "power": str(power),
+                    "relation": int(relations.get(str(power), 0)),
+                    "floor": int(floor),
+                })
+                continue
+            kept.append(effect)
+        if expired:
+            payload["timed_effects"] = kept
+        return expired
+
     def _faction_has_trait(self, player: str, trait: str) -> bool:
         return trait in self.state.get("faction_general_traits", {}).get(player, [])
 
@@ -2431,6 +2428,7 @@ class GameEngine:
 
     def _sync_foreign_deck_cards(self, player: str) -> None:
         payload = self._player(player)
+        self._expire_relation_locked_effects(player)
         card_ids = {card["id"] for card in self.data["function_cards"]["cards"]}
         relations = payload.get("foreign_relations", {})
         for power, cards in FOREIGN_PERK_CARDS.items():
@@ -2618,26 +2616,8 @@ class GameEngine:
             raise ValueError(f"unknown player {player!r}")
         return self.state["players"][player]
 
-    def _weighted_event_choice(self) -> str:
-        if not self.state["event_pool"]:
-            raise ValueError("event pool is empty")
-        weighted = []
-        for card_id in self.state["event_pool"]:
-            card = self._card_template(card_id)
-            weight = float(card.get("base_weight") or 1)
-            weighted.append((card_id, max(weight, 1.0)))
-        total = sum(weight for _, weight in weighted)
-        pick = self.random.random() * total
-        cursor = 0.0
-        for card_id, weight in weighted:
-            cursor += weight
-            if pick <= cursor:
-                return card_id
-        return weighted[-1][0]
-
     def _card_template(self, card_id: str) -> Dict[str, Any]:
         indexes = self.data["indexes"]
-        for index_name in ("event_cards", "function_cards", "injected_event_cards"):
-            if card_id in indexes[index_name]:
-                return deepcopy(indexes[index_name][card_id])
+        if card_id in indexes["function_cards"]:
+            return deepcopy(indexes["function_cards"][card_id])
         raise ValueError(f"unknown card id: {card_id}")

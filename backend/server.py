@@ -107,7 +107,6 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         routes: Dict[str, Callable[[Dict[str, Any]], Any]] = {
             "/api/new-game": self._new_game,
             "/api/next-turn": self._next_turn,
-            "/api/draw-event": lambda _: ENGINE.draw_event(),
             "/api/draw-function": self._draw_function,
             "/api/use-function": self._use_function,
             "/api/discard-for-draw": self._discard_for_draw,
