@@ -4953,7 +4953,13 @@ function pendingEventState() {
     || eventCardIndex[entry.card_id];
   if (!card) return null;
   const answered = entry.responses || {};
-  const waiting = (entry.responders || []).find((code) => !(code in answered)) || null;
+  const strict = Boolean(bootstrap?.event_draw_rules?.strict_response_order);
+  const needsEveryone = (card.resolution || {}).type === "choice";
+  const factions = Object.keys(state?.players || {});
+  let waiting;
+  if (needsEveryone) waiting = factions.filter((code) => !(code in answered));
+  else if (strict) waiting = (entry.responders || []).filter((code) => !(code in answered));
+  else waiting = Object.keys(answered).length ? [] : factions;
   return {
     turn: pending.turn,
     index,
@@ -4962,7 +4968,11 @@ function pendingEventState() {
     drawer: entry.drawer,
     responders: entry.responders || [],
     responses: answered,
-    waitingFor: waiting,
+    strict,
+    needsEveryone,
+    pendingResponders: waiting,
+    // 寬鬆模式下這只用來顯示「還缺誰」，不再拿來鎖按鈕。
+    waitingFor: waiting[0] || null,
   };
 }
 
@@ -4987,8 +4997,10 @@ function newspaperMarkup(view) {
     .map((text) => `<p>${newspaperInline(text)}</p>`).join("");
   const notes = (card.apply?.notes || [])
     .map((note) => `<span class="newspaper-note">※ ${newspaperInline(note)}</span>`).join("");
-  const mine = view.waitingFor === currentPlayer;
   const resolution = card.resolution || {};
+  // 測試版不鎖順序：誰在看誰就能點。唯一擋下的情況是「這一家已經表過態了」。
+  const alreadyAnswered = currentPlayer in (view.responses || {});
+  const mine = view.strict ? view.waitingFor === currentPlayer : !alreadyAnswered;
   const buttons = resolution.type === "choice"
     ? (resolution.options || []).map((option) => `
         <button data-event-choice="${option.id}" ${mine ? "" : "disabled"}
@@ -5004,6 +5016,18 @@ function newspaperMarkup(view) {
       const label = (resolution.options || []).find((option) => option.id === value)?.label;
       return `${FACTIONS[code]?.shortName || code}：${label || "已閱"}`;
     }).join("　");
+  const pendingNames = (view.pendingResponders || [])
+    .map((code) => FACTIONS[code]?.shortName || code).join("、");
+  let waitingText;
+  if (view.strict) {
+    waitingText = mine ? "請閣下裁示" : `等待 ${FACTIONS[view.waitingFor]?.name || view.waitingFor} 回應`;
+  } else if (view.needsEveryone) {
+    waitingText = alreadyAnswered
+      ? `貴方已表態，尚待 ${pendingNames} 表態`
+      : `各勢力分別表態，尚待 ${pendingNames}`;
+  } else {
+    waitingText = "任一勢力點閱即可";
+  }
   return `
     <div class="newspaper-masthead">
       <h1 class="newspaper-title">民國報</h1>
@@ -5020,9 +5044,7 @@ function newspaperMarkup(view) {
     ${choiceHints}
     ${answered ? `<div class="newspaper-responses">已回應　${answered}</div>` : ""}
     <div class="newspaper-actions">
-      <span class="newspaper-waiting">${mine
-        ? "請閣下裁示"
-        : `等待 ${FACTIONS[view.waitingFor]?.name || view.waitingFor} 回應`}</span>
+      <span class="newspaper-waiting">${waitingText}</span>
       ${buttons}
     </div>
   `;
@@ -5038,7 +5060,7 @@ function renderNewspaper() {
     newspaperCardKey = null;
     return;
   }
-  const key = `${view.turn}:${view.index}:${view.waitingFor}:${Object.keys(view.responses).length}`;
+  const key = `${view.turn}:${view.index}:${currentPlayer}:${Object.keys(view.responses).length}`;
   backdrop.hidden = false;
   if (key === newspaperCardKey) return;
   newspaperCardKey = key;
@@ -5048,7 +5070,9 @@ function renderNewspaper() {
 
 async function respondToEvent(choice) {
   const view = pendingEventState();
-  if (!view || view.waitingFor !== currentPlayer) return;
+  if (!view) return;
+  if (view.strict && view.waitingFor !== currentPlayer) return;
+  if (!view.strict && currentPlayer in (view.responses || {})) return;
   for (const button of $("newspaper").querySelectorAll("[data-event-choice]")) button.disabled = true;
   try {
     const result = await api("/api/respond-event", { player: currentPlayer, choice: choice || null });

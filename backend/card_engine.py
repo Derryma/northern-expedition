@@ -2584,7 +2584,8 @@ class GameEngine:
             card = self._event_template(card_id)
             resolution = card.get("resolution") or {}
             if resolution.get("type") == "choice":
-                # 需要所有勢力表態：抽到的人先答，其餘照固定順序輪。
+                # 需要所有勢力表態：抽到的人排第一，其餘照固定順序接上。
+                # 這個順序在寬鬆模式下只用來顯示，不強制誰先誰後。
                 responders = [drawer] + [code for code in order if code != drawer]
             else:
                 responders = [drawer]
@@ -2603,36 +2604,57 @@ class GameEngine:
             return None
         entry = cards[index]
         answered = entry.get("responses") or {}
+        card = self._event_template(entry["card_id"])
+        strict = bool(self._event_rules().get("strict_response_order"))
+        needs_everyone = (card.get("resolution") or {}).get("type") == "choice"
         waiting = [code for code in entry["responders"] if code not in answered]
+        if not strict and not needs_everyone:
+            # 寬鬆模式下的單純事件：任何一家點閱就算數，不必等抽到的那一家。
+            waiting = [] if answered else list(self.state["players"])
         return {
             "turn": pending["turn"],
             "index": index,
             "total": len(cards),
-            "card": self._event_template(entry["card_id"]),
+            "card": card,
             "drawer": entry["drawer"],
             "responders": entry["responders"],
             "responses": answered,
             "waiting_for": waiting[0] if waiting else None,
+            "pending_responders": waiting,
+            "strict_order": strict,
+            "needs_every_faction": needs_everyone,
         }
 
     def respond_event(self, player: str, *, choice: Optional[str] = None) -> Dict[str, Any]:
         view = self.pending_event_view()
         if not view:
             raise ValueError("目前沒有待回應的事件卡")
-        if view["waiting_for"] != player:
-            raise ValueError(f"現在輪到 {view['waiting_for']} 回應這張事件卡")
         card = view["card"]
         resolution = card.get("resolution") or {}
         options = {item["id"]: item for item in (resolution.get("options") or [])}
-        if resolution.get("type") == "choice" and choice not in options:
-            raise ValueError("本卡需要選擇一個行動")
         pending = self.state["pending_events"]
         entry = pending["cards"][int(pending["index"])]
+        if view["strict_order"]:
+            # 正式版：嚴格照 奉 → 直 → 五 → 國 的順序，輪不到就不能點。
+            if view["waiting_for"] != player:
+                raise ValueError(f"現在輪到 {view['waiting_for']} 回應這張事件卡")
+        else:
+            # 測試版：誰都可以點，但同一家不能重複回應同一張卡。
+            if player in entry["responses"]:
+                raise ValueError("你已經回應過這張事件卡了")
+        if resolution.get("type") == "choice" and choice not in options:
+            raise ValueError("本卡需要選擇一個行動")
         entry["responses"][player] = choice or "acknowledged"
         applied = []
         if choice in options:
             applied = self._apply_event_payload(options[choice].get("apply") or {}, players=[player], card=card)
-        remaining = [code for code in entry["responders"] if code not in entry["responses"]]
+        if view["needs_every_faction"]:
+            # 各自表態的卡：四家都點過才算結束，每家的選擇只作用在自己身上。
+            remaining = [code for code in self.state["players"] if code not in entry["responses"]]
+        elif view["strict_order"]:
+            remaining = [code for code in entry["responders"] if code not in entry["responses"]]
+        else:
+            remaining = []
         card_done = not remaining
         if card_done:
             # 卡片本身的共同效果等所有人回應完才結算。
