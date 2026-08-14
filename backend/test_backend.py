@@ -1669,6 +1669,37 @@ class EventCardTests(unittest.TestCase):
         self.assertEqual(engine.state["event_history"][-1]["responses"],
                          {"F": "back_britain", "W": "back_soviets", "S": "back_britain", "N": "back_soviets"})
 
+    def test_choice_queue_starts_with_the_drawer_not_the_player_order(self):
+        """回應隊伍要照 responders（抽到的那一家排第一），不是 state.players 的鍵值順序。
+
+        前端曾經拿 Object.keys(players) 當隊伍，結果卡片由國民革命軍抽到時，
+        畫面卻指著奉系，點下去被後端擋回來，看起來就像卡住不動。
+        """
+        engine = GameEngine(seed=3)
+        engine.state["event_pool"] = ["arcos_raid"]
+        engine.state["turn"] = 3           # _start_event_cycle 只在回合數是 3 的倍數時發報
+        # 讓第四順位的國民革命軍抽到這張卡。
+        self.assertTrue(engine._start_event_cycle())
+        entry = engine.state["pending_events"]["cards"][0]
+        entry["drawer"] = "N"
+        entry["responders"] = ["N", "F", "W", "S"]
+
+        view = engine.pending_event_view()
+        self.assertEqual(view["waiting_for"], "N")
+        self.assertEqual(view["pending_responders"], ["N", "F", "W", "S"])
+        with self.assertRaisesRegex(ValueError, "現在輪到 N"):
+            engine.respond_event("F", choice="back_britain")
+
+        engine.respond_event("N", choice="back_britain")
+        self.assertEqual(engine.pending_event_view()["waiting_for"], "F")
+        for code in ("F", "W"):
+            engine.respond_event(code, choice="back_soviets")
+        self.assertEqual(engine.pending_event_view()["waiting_for"], "S")
+        engine.respond_event("S", choice="back_britain")
+        self.assertEqual(engine.state["event_history"][-1]["responses"],
+                         {"N": "back_britain", "F": "back_soviets",
+                          "W": "back_soviets", "S": "back_britain"})
+
     def test_plain_events_wait_for_the_faction_that_drew_them(self):
         """單純事件由抽到的那一家點閱；別家點會被擋下並說明輪到誰。"""
         engine = GameEngine(seed=3)

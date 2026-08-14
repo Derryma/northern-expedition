@@ -1496,7 +1496,8 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
   );
   const railways = (state.railway_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
   const economyFlags = Boolean(payload?.loan_penalties?.length || payload?.soong_patronage
-    || payload?.bank_success_rate || payload?.loan_interest_override);
+    || Number(payload?.loan_ban_until_turn || 0) > Number(state?.turn || 0)
+    || payload?.loan_interest_override);
   if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length && !economyFlags) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
@@ -1528,7 +1529,8 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     ${payload?.soong_patronage ? `<span>上海宋家支持：每三回合 +$${payload.soong_patronage.cash}、工廠 +${payload.soong_patronage.factory}</span>` : ""}
     ${payload?.loan_interest_override !== null && payload?.loan_interest_override !== undefined
       ? `<span>中央銀行：新借款利率 ${Math.round(payload.loan_interest_override * 100)}%、期限 +${payload.loan_term_bonus || 0}</span>` : ""}
-    ${payload?.bank_success_rate ? `<span>信用受損：列強銀行申貸成功率 ${Math.round(payload.bank_success_rate * 100)}%</span>` : ""}
+    ${Number(payload?.loan_ban_until_turn || 0) > Number(state?.turn || 0)
+      ? `<span>信用受損：列強銀行拒貸，至第 ${payload.loan_ban_until_turn} 回合</span>` : ""}
   </div>`;
 }
 
@@ -1618,7 +1620,9 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const loan = action.loan_effect;
     const rate = loan.interest_per_turn !== null ? `利率 ${Math.round(loan.interest_per_turn * 100)}%` : "";
     parts.push(`現金 +$${loan.cash}、負債 +${loan.debt}（${rate}，第 ${loan.due_turn} 回合到期）`);
-    if (loan.bank_success_rate) parts.push(`此後列強銀行申貸成功率 ${Math.round(loan.bank_success_rate * 100)}%`);
+    if (loan.loan_ban_until_turn) {
+      parts.push(`信用受損：列強銀行拒絕承作新貸款，至第 ${loan.loan_ban_until_turn} 回合`);
+    }
   }
   if (action.unlock_effect?.kind === "central_bank") {
     const bank = action.unlock_effect;
@@ -2439,7 +2443,15 @@ function renderLoansMarkup(data) {
       <span>負債總額 <b class="debt">$${total}</b></span>
       <span>回合 <b>${data.turn ?? 0}</b></span>
     </div>
-    ${banTurns > 0 ? `<p class="loan-ban-note">軍閥公債發行後信用受損：列強銀行拒絕承作新貸款，還要 <b>${banTurns}</b> 回合（至第 ${data.loan_ban_until_turn} 回合）才會恢復。本國公債與功能卡貸款不受影響。</p>` : ""}
+    ${banTurns > 0 ? `<p class="loan-ban-note">
+      <span class="loan-ban-title">信用受損：外國銀行全面拒貸</span>
+      你發行過〈軍閥公債〉，下面五家銀行（橫濱正金、匯豐、東方匯理、花旗、德華）
+      在解禁前<b>一律不受理新借款</b>，表格最右邊的「借款」鍵會是關閉的。
+      還要 <b>${banTurns}</b> 回合（到第 ${data.loan_ban_until_turn} 回合）才恢復正常。
+      不受影響的有兩種：<b>已經借出的舊債</b>照常計息、照常還款、逾期照樣被扣；
+      <b>功能卡貸款</b>（〈軍閥公債〉本身、〈橫濱正金短貸〉〈匯豐周轉授信〉〈花旗工業貸款〉）
+      也照樣打得出來，它們走的不是這張表格。
+    </p>` : ""}
 
     <h3 class="loan-heading">可借額度</h3>
     <table class="loan-table">
@@ -4992,9 +5004,16 @@ function pendingEventState() {
   const needsEveryone = resolutionMeta.type === "choice" && resolutionMeta.scope !== "drawer";
   const factions = Object.keys(state?.players || {});
   let waiting;
-  if (needsEveryone) waiting = factions.filter((code) => !(code in answered));
-  else if (strict) waiting = (entry.responders || []).filter((code) => !(code in answered));
-  else waiting = Object.keys(answered).length ? [] : factions;
+  if (needsEveryone) {
+    // 一定要照後端排好的 responders 順序（抽到的那一家排第一），
+    // 不能拿 state.players 的鍵值順序來當回應順序，否則畫面會指錯人。
+    const queue = (entry.responders || []).length ? entry.responders : factions;
+    waiting = queue.filter((code) => !(code in answered));
+  } else if (strict) {
+    waiting = (entry.responders || []).filter((code) => !(code in answered));
+  } else {
+    waiting = Object.keys(answered).length ? [] : factions;
+  }
   return {
     turn: pending.turn,
     index,
@@ -5142,6 +5161,10 @@ async function respondToEvent(choice, followUp = null) {
   if (!view) return;
   if (view.strict && view.waitingFor !== currentPlayer) return;
   if (!view.strict && currentPlayer in (view.responses || {})) return;
+  if (view.strict && view.waitingFor && view.waitingFor !== currentPlayer) {
+    showNotice(`現在輪到 ${FACTIONS[view.waitingFor]?.name || view.waitingFor} 回應這張事件卡。`);
+    return;
+  }
   const option = (view.card.resolution?.options || []).find((item) => item.id === choice);
   if (option?.follow_up && !followUp) {
     // 先把按鈕換成第二層，等玩家指定對象再送出。
@@ -6451,6 +6474,7 @@ window.__neDebug = {
   riverStepAllowed,
   cellUsableAsRural,
   cellUsableForForcedMarch,
+  renderLoansMarkup,
   applyFrontendEventEffects,
   ceasefireEffect,
   fieldHospitalWindowActive,
