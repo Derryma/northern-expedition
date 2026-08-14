@@ -1524,11 +1524,59 @@
       "mechanic": "mechanized_division",
       "cost": 30,
       "factory_cost": 30,
-      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈A 型車問世〉。花費 $30 與 30 工業點：指定一位己方將領，其部隊自此永久處於急行軍狀態，不需再付費、也沒有冷卻。",
+      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈A 型車問世〉。花費 $30 與 30 工業點：指定一位己方將領，其部隊自此永久處於急行軍狀態，不需再付費、也沒有冷卻。該效果隨將領本人走：他一旦轉投別的陣營（被策反、被招降），效果立即消失且不隨他過去。",
       "requires_city_level_min": 4,
       "requires_unlock": "event_model_a_car",
       "requires_unlock_name": "事件卡〈A 型車問世〉",
-      "story": "福特的卡車底盤配上自造的裝甲板，跑起來又吵又顛，兵們叫它鐵王八。可從前走三天的路，現在半天就到了。"
+      "story": "福特的卡車底盤配上自造的裝甲板，跑起來又吵又顛，兵們叫它鐵王八。可從前走三天的路，現在半天就到了。",
+      "lost_on_defection": true
+    },
+    {
+      "id": "government_scholars",
+      "name": "公費留學生",
+      "deck_type": "function",
+      "category": "technology",
+      "holdable": true,
+      "mechanic": "delayed_factory_bonus",
+      "cost": 15,
+      "effect": "已於事件卡池抽出〈官費留學生〉。花費 $15：5 回合之後起，每回合工廠額外 +2（先進科技加成），永久有效。",
+      "requires_unlock": "event_government_scholars",
+      "requires_unlock_name": "事件卡〈官費留學生〉",
+      "delay_turns": 5,
+      "factory": 2,
+      "story": "送學生出洋這筆帳，衙門裡的師爺算了三天也算不出回報。五年之後回來的那批人，帶回的是圖紙、規格與一整套算法。"
+    },
+    {
+      "id": "penicillin_import",
+      "name": "進口盤尼西林",
+      "deck_type": "function",
+      "category": "technology",
+      "holdable": true,
+      "mechanic": "field_hospital",
+      "cost": 20,
+      "effect": "已於事件卡池抽出〈黴菌與傷兵〉。花費 $20：指定一位己方將領，其部隊每次因作戰而損失兵力後，下一回合可免費復原隨機 1 個營（傷兵歸隊，兵種自該戰損失過的兵種中隨機擇一）。該效果隨將領本人走：他一旦轉投別的陣營，效果立即消失且不隨他過去。",
+      "requires_unlock": "event_penicillin",
+      "requires_unlock_name": "事件卡〈黴菌與傷兵〉",
+      "recover_battalions": 1,
+      "lost_on_defection": true,
+      "story": "從前中彈不死的，多半死在後頭的營房裡。如今一小瓶藥粉下去，燒退了，人也就撐過來了。"
+    },
+    {
+      "id": "zeppelin_recon",
+      "name": "德國飛艇偵查",
+      "deck_type": "function",
+      "category": "intelligence",
+      "holdable": true,
+      "mechanic": "aerial_recon",
+      "cost": 20,
+      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈齊柏林伯爵號〉。花費 $20：任選三個省份，本回合看見該三省的敵軍標記與兵力編制。飛艇在雲上照相，〈設立情報局〉擋不住這種偵查。",
+      "requires_city_level_min": 4,
+      "requires_unlock": "event_graf_zeppelin",
+      "requires_unlock_name": "事件卡〈齊柏林伯爵號〉",
+      "province_count": 3,
+      "duration_turns": 1,
+      "ignores_counter_intelligence": true,
+      "story": "飛艇浮在雲上，慢得像一朵不肯走的雲。艙裡的相機每隔十秒喀一聲，把底下的營盤、砲位與行軍縱隊一一收進膠捲。"
     }
   ]
 }

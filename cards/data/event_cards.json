@@ -1,6 +1,6 @@
 {
-  "version": "experimental-1.0",
-  "source": "事件卡工作日誌/1926-1928 全球大事事件卡設計稿_v2.md 第一至六區塊",
+  "version": "experimental-1.1",
+  "source": "事件卡工作日誌/1926-1928 全球大事事件卡設計稿_v3.md 第一至八區塊",
   "draw_rules": {
     "every_turns": 3,
     "cards_per_cycle": 4,
@@ -11,8 +11,8 @@
       "N"
     ],
     "reshuffle": false,
-    "strict_response_order": false,
-    "strict_response_order_note": "正式版要照 response_order 依序回應；測試版先放寬成任一陣營都可點，需要各自表態的卡則四家都要點過才算結束，效果各自套用在點擊的陣營身上。"
+    "strict_response_order": true,
+    "strict_response_order_note": "照 response_order 依序回應：一般事件由抽到該卡的玩家回應，需要各自表態的卡以抽到者為第一個回覆者、其餘依序輪流。報紙右上角自帶陣營選擇欄，玩家切到該回應的陣營才點得下去；四張結完報紙收起，陣營切換回歸主畫面上方的選單。"
   },
   "cards": [
     {
@@ -39,7 +39,7 @@
           "fr": -1
         },
         "notes": [
-          "大帥與嫡系（忠誠不變）將領旗下所有陸軍兵種各 +1 營：尚未自動化，請自行加兵。"
+          "大帥與嫡系（忠誠不變）將領旗下所有陸軍兵種各 +1 營：由前端在你按下「我知道了」之後自動加兵。"
         ]
       }
     },
@@ -71,8 +71,31 @@
           "label": "昭和國喪：日本兵員與戰鬥 perk 暫停"
         },
         "notes": [
-          "第四回合起對日關係兩極化（≥6 再 +1、≤−4 再 −1）：尚未自動化。",
-          "日本 [軍事] 事件移出事件卡池：事件分類標籤尚未建立，未自動化。"
+          "日本 [軍事] 事件暫時移出事件卡池：事件分類標籤尚未建立，未自動化。"
+        ],
+        "scheduled": [
+          {
+            "after_turns": 3,
+            "label": "昭和改元：日方態度轉硬",
+            "apply": {
+              "conditional_relations": [
+                {
+                  "power": "jp",
+                  "min": 6,
+                  "delta": {
+                    "jp": 1
+                  }
+                },
+                {
+                  "power": "jp",
+                  "max": -4,
+                  "delta": {
+                    "jp": -1
+                  }
+                }
+              ]
+            }
+          }
         ]
       }
     },
@@ -137,9 +160,18 @@
           "fr": -1,
           "su": -1
         },
-        "notes": [
-          "5 回合內〈鼓吹地方自治〉〈北京大學共運〉〈共黨暴動〉〈杜月笙的豪賭〉〈洪門起義〉無效、生效中的暴動立即平息：尚未自動化。"
-        ]
+        "perk_suspension": {
+          "cards": [
+            "local_autonomy_agitation",
+            "peking_university_movement",
+            "communist_riot",
+            "du_yuesheng_gamble",
+            "hongmen_uprising"
+          ],
+          "turns": 5,
+          "label": "一黨之國：五張政治／幫會卡暫時失效"
+        },
+        "clear_riots": true
       }
     },
     {
@@ -284,9 +316,10 @@
           "su_rifle_shipment": 2,
           "su_ruble_subsidy": 2
         },
-        "notes": [
-          "僅對「對蘇友好（關係 ≥6）」的玩家發卡。"
-        ]
+        "relation_gate": {
+          "power": "su",
+          "min": 6
+        }
       }
     },
     {
@@ -328,11 +361,9 @@
                 ],
                 "turns": 5,
                 "self_only": true,
-                "label": "亞克斯案：蘇聯 perk 暫離你的卡池"
-              },
-              "notes": [
-                "使用中的蘇聯 perk 立即失效：戰鬥類已由關係門檻自動失效，其餘尚未自動化。"
-              ]
+                "label": "亞克斯案：蘇聯 perk 暫離你的卡池",
+                "clear_active": true
+              }
             }
           },
           {
@@ -354,7 +385,8 @@
                 ],
                 "turns": 5,
                 "self_only": true,
-                "label": "亞克斯案：英國 perk 暫離你的卡池"
+                "label": "亞克斯案：英國 perk 暫離你的卡池",
+                "clear_active": true
               },
               "bank_ban": {
                 "bank": "hsbc",
@@ -445,12 +477,25 @@
                 "us": 1,
                 "fr": 1
               },
-              "delayed_cash": {
-                "amount": 10,
-                "turns": 3
-              },
               "notes": [
-                "3 回合停戰（不得主動攻擊、不得移入他方領地）：尚未自動化，請自行遵守。"
+                "停戰期間不得主動攻擊、不得移入他方領地——前端會擋下這兩種動作。"
+              ],
+              "scheduled": [
+                {
+                  "after_turns": 3,
+                  "label": "非戰公約：停戰期滿的資本湧入",
+                  "keep_targets": true,
+                  "apply": {
+                    "cash": 10
+                  }
+                }
+              ],
+              "timed_flags": [
+                {
+                  "kind": "ceasefire",
+                  "turns": 3,
+                  "label": "非戰公約停戰"
+                }
               ]
             }
           },
@@ -490,7 +535,7 @@
       },
       "apply": {
         "notes": [
-          "每位玩家隨機一位可變忠誠將領 +1：將領忠誠住在前端將領樹，尚未自動化。"
+          "每位玩家隨機一位可變忠誠將領 +1：由前端在回應後自動挑人並加忠誠。"
         ]
       }
     },
@@ -587,8 +632,24 @@
         "scope": "all_players"
       },
       "apply": {
+        "recruit_discount": {
+          "units": {
+            "infantry": {
+              "cash": -1
+            },
+            "cavalry": {
+              "cash": -1
+            }
+          },
+          "turns": 3,
+          "label": "火燒紅蓮寺：步騎徵募便宜 $1"
+        },
+        "suppression_turns_bonus": {
+          "amount": 1,
+          "turns": 3
+        },
         "notes": [
-          "3 回合內訓練步兵與騎兵費用 −1、幫會暴動需鎮壓三回合、[幫會] 事件持續 +1 回合：尚未自動化。"
+          "[幫會] 類事件持續時間 +1 回合：事件分類標籤尚未建立，未自動化。"
         ]
       }
     },
@@ -760,6 +821,13 @@
           "cash": 3,
           "factory": 0
         }
+      },
+      "condition": "控制上海或天津者此卡才會進入牌庫",
+      "entry_condition": {
+        "controls_cities_any": [
+          "shanghai",
+          "tianjin"
+        ]
       }
     },
     {
@@ -801,8 +869,12 @@
         "scope": "all_players"
       },
       "apply": {
-        "notes": [
-          "3 回合內每場戰鬥後免費復原隨機 1 個營：戰鬥結算在前端，尚未自動化。"
+        "timed_flags": [
+          {
+            "kind": "field_hospital_window",
+            "turns": 3,
+            "label": "女子救護隊：戰後傷兵歸隊"
+          }
         ]
       }
     },
@@ -858,9 +930,13 @@
           "factor": 0.5,
           "turns": 3
         },
-        "notes": [
-          "持有美債者利息 +2%：貸款加碼利率尚未自動化。"
-        ]
+        "loan_surcharge": {
+          "banks": [
+            "citibank"
+          ],
+          "amount": 0.02,
+          "turns": 3
+        }
       }
     },
     {
@@ -918,9 +994,13 @@
           "turns": 3,
           "label": "昭和金融恐慌：橫濱正金停止新放款"
         },
-        "notes": [
-          "已借日債利息 +2%：貸款加碼利率尚未自動化。"
-        ]
+        "loan_surcharge": {
+          "banks": [
+            "yokohama_specie"
+          ],
+          "amount": 0.02,
+          "turns": 3
+        }
       }
     },
     {
@@ -951,8 +1031,361 @@
           "factor": 1.5,
           "turns": 2
         },
+        "loan_interest_grace": {
+          "turns": 2
+        }
+      }
+    },
+    {
+      "id": "government_scholars_program",
+      "ref": "7.1",
+      "name": "官費留學生",
+      "category": "economic",
+      "power_note": "",
+      "effect": "中國人才濟濟, 當習八方之學以自強不息。抽到此卡後所有玩家解鎖 \"公費留學生\" 功能卡, 該卡進入功能卡池。該事件對所有玩家生效",
+      "newspaper": {
+        "headline": "歐洲物理學界又有新說　我國留學生亦與其會",
+        "paragraphs": [
+          "路透社布魯塞爾三十日電——索爾維會議本屆假布魯塞爾開會，與會者二十九人，物理學名家幾盡於此。會中爭論者為新興之量子之說。愛因斯坦氏謂造物不擲骰子，波耳氏答曰：君勿指示上帝當為何事。一時傳為佳話。",
+          "本報訪員記：教育部本年官費留學名額，理工科佔六成，較去歲增兩成。有自柏林歸國之工程師語訪員曰：我輩在彼所學，回國十年八年未必用得上；然若一國之中無此數十人，則他日人有而我無，欲買亦不知向誰買。",
+          "按此語似迂而實切。今日兵工廠所賴之技師，多為十年前之官費生也。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "unlock": [
+          "event_government_scholars"
+        ]
+      }
+    },
+    {
+      "id": "academia_sinica",
+      "ref": "7.2",
+      "name": "中央研究院",
+      "category": "economic",
+      "power_note": "",
+      "effect": "完全控制江蘇者可收編中央研究院（全場限一所）。控制江蘇期間每回合工業點永久 +5，且〈盜賣文物〉自你的卡池清空；一旦丟失江蘇，加成停止、〈盜賣文物〉回到卡池。但只要你在離開江蘇期間打出過〈盜賣文物〉，或在任何時候選過〈殷墟第一鏟〉的「售與洋商」，本卡對你**永久失效**，日後奪回江蘇也不會恢復。該事件對控制江蘇省的玩家生效",
+      "condition": "- 控制江蘇省者此卡才會進入牌庫。 - 若先前抽出〈殷墟第一鏟〉但選擇售予洋商者, 此卡不會進入該玩家牌庫 - 若於此卡生效中抽出〈殷墟第一鏟〉但選擇售予洋商者, 此卡也會立即對該玩家失效, 無論該玩家是否控制江蘇都將無法獲得加成 - 若於此卡生效中方才取得江蘇, 則〈盜賣文物〉不會立即消失, 但若你打出該卡, 則此卡立即對你失效, 無論是否控制江蘇都將無法獲得加成 - 若於此卡生效中被驅離江蘇, 則〈盜賣文物〉將回歸功能卡池, 但若你打出該卡, 則此卡立即對你失效, 無論日後是否奪回江蘇都將無法獲得加成",
+      "entry_condition": {
+        "controls_province": "江蘇"
+      },
+      "newspaper": {
+        "headline": "中央研究院成立於南京　蔡元培任院長",
+        "paragraphs": [
+          "本報南京九日訊——國立中央研究院昨日成立，蔡元培先生就院長職。院設理化實業、地質、社會科學、歷史語言各研究所，分駐京滬兩地。蔡氏就職演說謂：一國之學術，不能恃譯本與遊記，須自有人在此地此時，日日為之。",
+          "訪員按：近十年來我國古物出土者夥矣，而著錄考釋多出西人之手；器物既去，拓本亦不可得。今既設此院，若能自為發掘、自為著錄，則所存者不僅一器一物，乃一國之案卷也。至於經費之難，人才之寡，則非一院之力所能了。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "academia_grant": true
+      }
+    },
+    {
+      "id": "yinxu_first_spade",
+      "ref": "7.3",
+      "name": "殷墟第一鏟",
+      "category": "npc_or_other_force",
+      "power_note": "",
+      "effect": "控制河南者抽出，二擇一。該事件對控制河南省的玩家生效： - **科學發掘**：現金 +20（中外學術團體捐助），英 +1、美 +1； 此後該省城市免疫治安事件 3 回合（民心所繫）。 - **售與洋商**：現金 +60，指定一國關係 +1； 但你的功能卡牌庫立即洗入 4 張〈中國人之恥〉。",
+      "condition": "控制河南省者此卡才會進入牌庫",
+      "entry_condition": {
+        "controls_province": "河南"
+      },
+      "newspaper": {
+        "headline": "安陽小屯發掘有獲　甲骨出土千餘片",
+        "paragraphs": [
+          "本報安陽二十日訊——中央研究院派員在安陽小屯村發掘，自本月十三日開工，至今出土甲骨七百八十餘片，另有陶器、蚌器、獸骨甚夥。主其事者董作賓君謂：此為我國學者自行科學發掘之始，從前所見甲骨，皆由古董商輾轉而來，出土何處、同出何物，一概不明，故雖有其字而不知其世。",
+          "訪員按：小屯村民掘骨售於藥鋪為「龍骨」者已三十年，每斤數十文；經古董商之手至京師，每片售銀數兩；至於西人之博物館，則以金計。同一物也，而其價相去萬倍，其間所失者，非止銀錢而已。"
+        ]
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "drawer",
+        "prompt": "控制河南的玩家二擇一。",
+        "options": [
+          {
+            "id": "scientific_dig",
+            "label": "科學發掘",
+            "effect_text": "現金 +20，英 +1、美 +1；該省城市免疫治安事件 3 回合。",
+            "apply": {
+              "cash": 20,
+              "relations": {
+                "uk": 1,
+                "us": 1
+              },
+              "notes": [
+                "河南城市免疫治安事件 3 回合：尚未自動化。"
+              ]
+            }
+          },
+          {
+            "id": "sell_to_foreigners",
+            "label": "售與洋商",
+            "effect_text": "現金 +60，指定一國關係 +1；牌庫立即洗入 4 張〈中國人之恥〉。此後中央研究院對你永久失效。",
+            "apply": {
+              "cash": 60,
+              "card_copies": {
+                "national_shame": 4
+              },
+              "academia_disqualify": "選擇了〈殷墟第一鏟〉的售與洋商"
+            },
+            "follow_up": {
+              "prompt": "請指定買家：這一國關係 +1。",
+              "options": [
+                {
+                  "id": "jp",
+                  "label": "日本",
+                  "apply": {
+                    "relations": {
+                      "jp": 1
+                    }
+                  }
+                },
+                {
+                  "id": "su",
+                  "label": "蘇聯",
+                  "apply": {
+                    "relations": {
+                      "su": 1
+                    }
+                  }
+                },
+                {
+                  "id": "uk",
+                  "label": "英國",
+                  "apply": {
+                    "relations": {
+                      "uk": 1
+                    }
+                  }
+                },
+                {
+                  "id": "fr",
+                  "label": "法國",
+                  "apply": {
+                    "relations": {
+                      "fr": 1
+                    }
+                  }
+                },
+                {
+                  "id": "us",
+                  "label": "美國",
+                  "apply": {
+                    "relations": {
+                      "us": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "apply": {}
+    },
+    {
+      "id": "penicillin_discovery",
+      "ref": "7.4",
+      "name": "黴菌與傷兵",
+      "category": "security",
+      "power_note": "",
+      "effect": "醫學革命的新聞也可以振奮軍事革命家的心。抽到此卡後所有玩家解鎖 \"進口盤尼西林\" 功能卡, 該卡進入功能卡池。該事件對所有玩家生效",
+      "newspaper": {
+        "headline": "倫敦醫家發現黴菌能殺菌　軍中創傷或有新法",
+        "paragraphs": [
+          "路透社倫敦十日電——聖瑪利醫院細菌學家弗萊明氏，日前因培養皿偶受青黴污染，見黴之四周葡萄球菌盡溶，因製液試之，殺菌之力甚著。氏已具報醫學會，惟自言提煉不易，未可即用於人。",
+          "訪員按：軍中所患，創傷之外莫過於化膿。前次歐戰，死於創口潰爛者十之三四。此說若成，其功不在新砲之下。惟自實驗室至於藥瓶，動輒十年。今日我軍所急者，仍在紗布、碘酒與擔架夫之足額而已。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "unlock": [
+          "event_penicillin"
+        ]
+      }
+    },
+    {
+      "id": "baird_television",
+      "ref": "8.1",
+      "name": "貝爾德的影像",
+      "category": "economic",
+      "power_note": "",
+      "effect": "沒有效果，單純新聞播報。",
+      "newspaper": {
+        "headline": "英人以電傳影像　倫敦試演成功",
+        "paragraphs": [
+          "路透社倫敦二十七日電——英人貝爾德昨日在蘇荷區其寓所，當皇家研究院會員數十人之前，試演電傳影像之法。以旋盤穿孔掃描人面，經電線傳至別室，屏上現一模糊之像，眉目可辨而已。觀者稱奇，亦有笑其無用者。",
+          "訪員按：影像之傳，尚屬戲法。惟其間所用之光電管、放大器、短波發射諸器，皆可移之他用。我國沿海各埠日人所設之無線電台，近年增至數十處，名為商用，而其收發之頻，殊非商情所需。器之為用，正未可以其初試之粗陋而輕之。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {}
+    },
+    {
+      "id": "goddard_rocket",
+      "ref": "8.2",
+      "name": "戈達德的火箭",
+      "category": "economic",
+      "power_note": "",
+      "effect": "火箭尚不成軍，但彈道與推進的計算法隨之流傳。抽到此卡後所有玩家砲兵攻擊要塞或城市駐軍時傷害 +5%；且此後任何人打出的〈火砲撥補〉改為 +3 營。該事件對所有玩家生效",
+      "newspaper": {
+        "headline": "美人試放火箭　升四十一尺而墜",
+        "paragraphs": [
+          "紐約二十日電——美國克拉克大學教授戈達德氏，日前在麻州奧本鄉間試放液體燃料火箭一枚，升空四十一英尺，飛行二秒有半，落於百餘尺外之菜圃。氏自言此為以液體推進之始，他日或可及於高空。",
+          "按去歲各報載氏之月球旅行說，譏之者眾，有謂其不知真空中無物可推者。氏不與辯，惟日事試驗而已。",
+          "訪員按：其器雖小，而其中彈道、噴口、推力諸算法，與今日之砲學相通。我國各兵工廠之砲樣，多沿德日舊制，射表且有沿用清末者。此等新算，譯之亦不費幾何。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "card_overrides": [
+          {
+            "card_id": "reserve_gift_artillery",
+            "fields": {
+              "min_units": 3,
+              "max_units": 3
+            },
+            "duration_turns": null
+          }
+        ],
         "notes": [
-          "新借款首回合免息：尚未自動化。"
+          "砲兵攻擊要塞或城市駐軍 +5%：戰鬥修正尚未自動化。"
+        ]
+      }
+    },
+    {
+      "id": "lindbergh_flight",
+      "ref": "8.3",
+      "name": "林白飛越大西洋",
+      "category": "foreign_power",
+      "power_note": "國際",
+      "effect": "沒有效果，單純新聞播報。",
+      "newspaper": {
+        "headline": "林德柏格飛越大西洋　三十三小時抵巴黎",
+        "paragraphs": [
+          "路透社巴黎二十二日電——美國飛行家林德柏格駕單發動機「聖路易精神號」，二十日晨自紐約起飛，越大西洋不着陸，於二十一日夜十時二十二分降於巴黎布爾歇機場。歷三十三小時三十分。場外候者十萬人，衝破鐵柵擁至機旁，飛行家幾為所困。",
+          "訪員按：此舉之難，不在飛，而在孤身三十三小時不眠不食而航向不失。歐美各國自此議購飛機者驟增，我國各省亦有以航空為言者。惟飛機易得，飛行員難養；場站、油料、修護三事無一具備，徒購數架陳於場上，遇雨即朽，不足恃也。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {}
+    },
+    {
+      "id": "graf_zeppelin",
+      "ref": "8.4",
+      "name": "齊柏林伯爵號",
+      "category": "foreign_power",
+      "power_note": "德",
+      "effect": "以空中觀光之名向德國租借飛艇, 並行軍事偵察之實。抽到此卡後所有玩家解鎖 \"德國飛艇偵查\" 功能卡, 該卡進入功能卡池。該事件對所有玩家生效",
+      "newspaper": {
+        "headline": "德國新造飛艇試航成功　長七百七十六尺",
+        "paragraphs": [
+          "路透社腓特烈港十九日電——德國齊柏林公司新造飛艇「齊柏林伯爵號」，昨日試航成功。艇長七百七十六英尺，可載客二十人、郵件貨物數噸，續航逾萬公里。公司稱明月將試越大西洋。",
+          "訪員按：本年五月，義大利號飛艇於北極撞冰而墜，挪威探險家阿蒙森駕機往救，一去不返，至今無耗。飛艇之險如此，而歐人仍趨之若鶩者，以其能久浮不落，可俯瞰千里也。軍中偵察，向恃騎兵斥候，一日不過數十里，且多為地形所蔽。若得此物一艘，敵之全局可一覽而盡。惟其巨如山，亦最易為砲火所中，用之者當自知取捨。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "unlock": [
+          "event_graf_zeppelin"
+        ]
+      }
+    },
+    {
+      "id": "transatlantic_call",
+      "ref": "8.5",
+      "name": "跨洋長途電話",
+      "category": "foreign_power",
+      "power_note": "國際",
+      "effect": "國際電話接通上海。從此以後控制上海者，打出的〈對日／對蘇／對英／對法／對美交涉〉成功率由 80% 提高為 90%，但一旦上海易主該玩家的交涉便恢復正常成功率，效果轉移至新控制上海者。該事件對控制上海的玩家生效",
+      "condition": "控制上海者此卡才會進入牌庫",
+      "entry_condition": {
+        "controls_cities_any": [
+          "shanghai"
+        ]
+      },
+      "newspaper": {
+        "headline": "紐約倫敦通長途電話　三分鐘七十五金元",
+        "paragraphs": [
+          "路透社倫敦八日電——紐約與倫敦間之無線長途電話，昨日正式開放營業。首次通話者為美國電話電報公司總理與英國郵政總長。話音清晰，惟間有雜音如濤聲。每次通話以三分鐘為限，收費七十五金元，續談每分鐘二十五元。",
+          "本報訪員記：滬上電報局謂，遠東接線之議已在商洽，一二年內或可及於上海。有洋行大班語訪員曰：從前一函往返倫敦，快則四十日，慢則兩月，待覆電到時，事已無可為。今若三分鐘可決一事，則生意之做法將全然不同。",
+          "訪員按：外交亦然。從前公使在外，事急則便宜行事，功罪自負；今日一線通而萬里之外皆聽命於京師，使者之權輕，而中樞之責重矣。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "player_card_overrides": [
+          {
+            "card_id": "foreign_relation_jp",
+            "fields": {
+              "success_rate": 0.9
+            },
+            "requires_cities_any": [
+              "shanghai"
+            ]
+          },
+          {
+            "card_id": "foreign_relation_su",
+            "fields": {
+              "success_rate": 0.9
+            },
+            "requires_cities_any": [
+              "shanghai"
+            ]
+          },
+          {
+            "card_id": "foreign_relation_uk",
+            "fields": {
+              "success_rate": 0.9
+            },
+            "requires_cities_any": [
+              "shanghai"
+            ]
+          },
+          {
+            "card_id": "foreign_relation_fr",
+            "fields": {
+              "success_rate": 0.9
+            },
+            "requires_cities_any": [
+              "shanghai"
+            ]
+          },
+          {
+            "card_id": "foreign_relation_us",
+            "fields": {
+              "success_rate": 0.9
+            },
+            "requires_cities_any": [
+              "shanghai"
+            ]
+          }
         ]
       }
     }

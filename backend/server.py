@@ -208,12 +208,15 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_city_id=payload.get("target_city_id"),
             target_city_ids=payload.get("target_city_ids"),
             target_province=payload.get("target_province"),
+            target_provinces=payload.get("target_provinces"),
             target_railway=payload.get("target_railway"),
             target_power=payload.get("target_power"),
         )
 
     def _respond_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return ENGINE.respond_event(str(payload["player"]), choice=payload.get("choice"))
+        return ENGINE.respond_event(
+            str(payload["player"]), choice=payload.get("choice"), follow_up=payload.get("follow_up"),
+        )
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.discard_for_draw(str(payload["player"]), str(payload["card_id"]))
@@ -245,7 +248,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
 
     def _recruit_captive_general(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.recruit_captive_general(
-            str(payload["player"]), payload.get("traits"),
+            str(payload["player"]), payload.get("traits"), payload.get("general_id"),
         )
 
     def _attempt_defection(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -255,6 +258,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             float(payload.get("force", 1)),
             payload.get("traits"),
             float(payload.get("resistance", 0) or 0),
+            payload.get("general_id"),
         )
 
     def _deal(self, payload: Dict[str, Any]) -> Dict[str, Any]:

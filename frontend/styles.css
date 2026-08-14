@@ -877,11 +877,80 @@ button, select, input, textarea {
   width: fit-content;
 }
 
+/* 手牌卡面：與《民國報》同一套老紙色與標楷體，排版維持原樣。 */
 .card-item-full {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: #f2ead6;
+  border: 1px solid #6b5d44;
+  border-radius: 4px;
   padding: 16px;
+  color: #1c1712;
+  font-family: "標楷體", "DFKai-SB", "BiauKai", "TW-Kai", KaiTi, STKaiti, serif;
+}
+
+.card-item-full .card-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #1c1712;
+}
+
+.card-item-full .card-category {
+  color: #6b5d44;
+  letter-spacing: 1px;
+}
+
+.card-item-full .card-story {
+  border-left-color: #8a7a5c;
+  background: rgba(255, 255, 255, 0.38);
+  color: #3f3527;
+  font-style: normal;
+  font-size: 13.5px;
+  line-height: 1.8;
+}
+
+.card-item-full .card-effect {
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid #b4a482;
+  color: #1c1712;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.card-item-full .card-cost {
+  color: #6b4a2c;
+}
+
+.card-item-full .card-target {
+  color: #5a4b36;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.card-item-full .card-target select {
+  font-family: inherit;
+  background: #f7f1e2;
+  color: #1c1712;
+  border: 1px solid #8a7a5c;
+}
+
+.card-item-full .card-target-note {
+  color: #6b4a2c;
+}
+
+/* 打出／棄置的按鈕也換成報紙那種方框樣式，不要圓角膠囊。 */
+.card-item-full .card-use-btn {
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 2px;
+  border-radius: 2px;
+  background: #f7f1e2;
+  color: #1c1712;
+  border: 1px solid #2b2318;
+}
+
+.card-item-full .card-use-btn:hover {
+  background: #fffaf0;
+  transform: none;
 }
 
 .card-header-row {
@@ -2610,6 +2679,32 @@ button, select, input, textarea {
   font-weight: 700;
   margin: 0;
   text-indent: 14px;
+}
+.newspaper-masthead-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+/* 報紙自帶的陣營選擇欄：只在報紙開著時存在，收報後隨報紙一起消失。 */
+.newspaper-faction {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #5a4b36;
+}
+.newspaper-faction select {
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  background: #f7f1e2;
+  color: #1c1712;
+  border: 1px solid #6b5d44;
+  max-width: 230px;
 }
 .newspaper-cardname {
   font-size: 13px;
