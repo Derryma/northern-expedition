@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 DATA_PATHS = {
     "function_cards": "cards/data/function_cards.json",
+    "event_cards": "cards/data/event_cards.json",
     "card_pool_rules": "cards/data/card_pool_rules.json",
     "foreign_powers": "foreign_powers/data/foreign_powers.json",
     "npc_factions": "NPC/data/npc_factions.json",
@@ -48,6 +49,7 @@ def load_game_data() -> Dict[str, Any]:
     }
     data["metadata"] = {
         "function_cards": len(data["function_cards"]["cards"]),
+        "event_cards": len(data["event_cards"]["cards"]),
         "npc_factions": len(data["npc_factions"]["npc_factions"]),
         "foreign_powers": len(data["foreign_powers"]["powers"]),
     }
