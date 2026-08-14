@@ -107,6 +107,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         routes: Dict[str, Callable[[Dict[str, Any]], Any]] = {
             "/api/new-game": self._new_game,
             "/api/next-turn": self._next_turn,
+            "/api/respond-event": self._respond_event,
             "/api/draw-function": self._draw_function,
             "/api/use-function": self._use_function,
             "/api/discard-for-draw": self._discard_for_draw,
@@ -205,10 +206,14 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_general_id=payload.get("target_general_id"),
             target_owner=payload.get("target_owner"),
             target_city_id=payload.get("target_city_id"),
+            target_city_ids=payload.get("target_city_ids"),
             target_province=payload.get("target_province"),
             target_railway=payload.get("target_railway"),
             target_power=payload.get("target_power"),
         )
+
+    def _respond_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.respond_event(str(payload["player"]), choice=payload.get("choice"))
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.discard_for_draw(str(payload["player"]), str(payload["card_id"]))
@@ -230,8 +235,9 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def _pay_forced_march(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.pay_forced_march(
             str(payload["player"]),
-            cash=int(payload.get("cash", 20)),
-            factory=int(payload.get("factory", 20)),
+            cash=int(payload.get("cash", ENGINE.FORCED_MARCH_COST_CASH)),
+            factory=int(payload.get("factory", ENGINE.FORCED_MARCH_COST_FACTORY)),
+            army_id=str(payload.get("army_id") or ""),
         )
 
     def _capture_city(self, payload: Dict[str, Any]) -> Dict[str, Any]:

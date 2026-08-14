@@ -1,11 +1,11 @@
 {
   "version": "npc-qian-0.1",
-  "great_general_id": "qian_local_militia",
+  "great_general_id": null,
   "generals": {
     "qian_local_militia": {
       "id": "qian_local_militia",
       "name": "黔軍地方部隊",
-      "role": "great_general",
+      "role": "lieutenant_general",
       "faction": "黔軍",
       "core_faction": true,
       "loyalty": null,
@@ -23,9 +23,10 @@
         "machine_gun": 0
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 0,
       "subordinates": [],
       "status": "active"
     }
-  }
+  },
+  "flat_command": true
 }

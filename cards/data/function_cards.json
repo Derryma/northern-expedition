@@ -520,16 +520,16 @@
       "holdable": true,
       "source_event_card_id": "軍閥公債",
       "entry_requirement": null,
-      "effect": "發行：現金 +50、負債 +25，利率每回合 5%，須於 3 回合內還清；但此後你向任何列強銀行借款時，皆只有 75% 成功率，也就是說有可能遭到銀行拒貸。",
+      "effect": "發行：現金 +50、負債 +25，利率每回合 8%，須於 3 回合內還清；發行後 5 回合內所有列強銀行拒絕承作新貸款，本國公債不受影響。",
       "cost": 0,
       "mechanic": "warlord_bond",
       "cash": 50,
       "debt": 25,
-      "interest_per_turn": 0.05,
+      "interest_per_turn": 0.08,
       "term_turns": 3,
       "off_quota": true,
-      "bank_success_rate": 0.75,
-      "domestic_bond": true
+      "domestic_bond": true,
+      "loan_ban_turns": 5
     },
     {
       "id": "function_在野名將投效",
@@ -631,7 +631,8 @@
       "unit_reserves": {
         "infantry": 4,
         "machine_gun": 1
-      }
+      },
+      "story": "三井物產的代辦坐在督軍衙門的客廳裡，皮箱一開，是型錄與價目表。三十八式與大正十一年式，數量隨你開，只要帳結得清。"
     },
     {
       "id": "jp_yokohama_specie_loan",
@@ -643,10 +644,10 @@
       "foreign_power_key": "jp",
       "requires_relation_min": 8,
       "cost": 0,
-      "effect": "日本關係 8+：現金 +50、負債 +40，利率每回合 3%，3 回合到期，且不佔用橫濱正金的授信額度。逾期未清償者債務照還，另由日方接管你產出最高 2 座城市的全部現金與工廠產出，持續 5 回合。",
+      "effect": "日本關係 8+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用橫濱正金的授信額度。逾期未清償者債務照還，另由日方接管你產出最高 2 座城市的全部現金與工廠產出，持續 5 回合。",
       "cash": 50,
       "debt": 40,
-      "interest_per_turn": 0.03,
+      "interest_per_turn": 0.05,
       "term_turns": 3,
       "off_quota": true,
       "default_penalty": {
@@ -660,7 +661,8 @@
         "share": 1.0,
         "duration_turns": 5,
         "label": "橫濱正金違約：2 座大城產出遭接管"
-      }
+      },
+      "story": "橫濱正金的分行經理把契約推過桌面，笑著說期限很短、利息很輕。沒說出口的是後面那幾條：到期還不出來，鹽稅、路權、礦山，總有一樣得抵。"
     },
     {
       "id": "jp_infantry_drill_mission",
@@ -681,7 +683,8 @@
           "multiplier": 1.08
         }
       ],
-      "expires_below_relation": 6
+      "expires_below_relation": 6,
+      "story": "關東軍派來的教官在操場上一站就是一整天，口令是日語，翻譯官跟在後面喊。士兵們不懂那些詞，卻學會了刺刀該在哪個節拍上刺出去。"
     },
     {
       "id": "jp_south_manchuria_engineers",
@@ -722,7 +725,8 @@
       "unit_reserves": {
         "infantry": 6,
         "machine_gun": 1
-      }
+      },
+      "story": "貨箱上印著俄文，拆開是嶄新的莫辛納甘，油紙都還沒揭。押運的同志說這是國際主義的義務，不必付錢——但要記得誰給的。"
     },
     {
       "id": "su_ruble_subsidy",
@@ -735,7 +739,8 @@
       "requires_relation_min": 8,
       "cost": 0,
       "effect": "蘇聯關係 8+：現金 +25。",
-      "cash": 25
+      "cash": 25,
+      "story": "盧布不走銀行，走的是一只手提箱與一份沒有抬頭的收據。共產國際的代表只說一句：革命需要經費，將軍需要朋友。"
     },
     {
       "id": "su_galen_advisers",
@@ -761,7 +766,8 @@
           "multiplier": 1.06
         }
       ],
-      "expires_below_relation": 6
+      "expires_below_relation": 6,
+      "story": "加倫將軍把地圖攤在桌上，用鉛筆畫了三個箭頭，說這才叫進攻。中國軍官們第一次知道，原來打仗還有這樣一套講究法。"
     },
     {
       "id": "uk_vickers_contract",
@@ -776,7 +782,8 @@
       "effect": "英國關係 8+：預備隊機槍 +3。",
       "unit_reserves": {
         "machine_gun": 3
-      }
+      },
+      "story": "維克斯的合約用中英雙語寫成，交貨港註明香港。水冷式馬克沁一挺挺卸上碼頭，帆布罩下是這個時代最有效率的殺人機器。"
     },
     {
       "id": "uk_hsbc_credit",
@@ -788,10 +795,10 @@
       "foreign_power_key": "uk",
       "requires_relation_min": 8,
       "cost": 0,
-      "effect": "英國關係 8+：現金 +65、負債 +50，利率每回合 3%，3 回合到期，且不佔用匯豐的授信額度。逾期未清償者債務照還，另由英方永久抽取你產出最高 1 個省份 15% 的現金與工廠產出。",
+      "effect": "英國關係 8+：現金 +65、負債 +50，利率每回合 5%，3 回合到期，且不佔用匯豐的授信額度。逾期未清償者債務照還，另由英方永久抽取你產出最高 1 個省份 15% 的現金與工廠產出。",
       "cash": 65,
       "debt": 50,
-      "interest_per_turn": 0.03,
+      "interest_per_turn": 0.05,
       "term_turns": 3,
       "off_quota": true,
       "default_penalty": {
@@ -805,7 +812,8 @@
         "share": 0.15,
         "duration_turns": null,
         "label": "匯豐違約：最大省份產出永久遭抽成 15%"
-      }
+      },
+      "story": "匯豐大班在外灘的辦公室裡看著窗外的江面，說我們做的是三代人的生意。契約裡的違約條款寫得很細，細到讓人相信他們真的打算做三代。"
     },
     {
       "id": "uk_machine_gun_advisers",
@@ -826,7 +834,8 @@
           "multiplier": 1.14
         }
       ],
-      "expires_below_relation": 6
+      "expires_below_relation": 6,
+      "story": "英國教官不太看得起這批學員，直到有人把一挺卡了殼的馬克沁在兩分鐘內拆完裝好。他終於點了點頭，說明天教你們怎麼算射界。"
     },
     {
       "id": "uk_customs_advisers",
@@ -857,7 +866,8 @@
       "effect": "法國關係 8+：預備隊砲兵 +2。",
       "unit_reserves": {
         "artillery": 2
-      }
+      },
+      "story": "施耐德的山砲拆成幾馱，騾隊沿著滇緬的山路一路馱上來。法國軍官說這砲最適合中國的地形——言下之意是，你們的路實在太差。"
     },
     {
       "id": "fr_banque_indochine_credit",
@@ -871,7 +881,8 @@
       "cost": 0,
       "effect": "法國關係 8+：現金 +30、負債 +25。",
       "cash": 30,
-      "debt": 25
+      "debt": 25,
+      "story": "東方匯理的墊款批得很快，快到讓人不安。經理只說法蘭西相信閣下的前途，至於抵押品，日後再談也不遲。"
     },
     {
       "id": "fr_artillery_school",
@@ -892,7 +903,8 @@
           "multiplier": 1.12
         }
       ],
-      "expires_below_relation": 6
+      "expires_below_relation": 6,
+      "story": "法國砲校的講義譯成中文，滿紙都是射表與三角。學員們背不下那些公式，卻記住了教官的一句話：砲兵不是打得響，是打得準。"
     },
     {
       "id": "fr_concession_engineers",
@@ -930,7 +942,8 @@
         "machine_gun": 1,
         "artillery": 1,
         "infantry": 2
-      }
+      },
+      "story": "美國推銷員帶來的是樣品，不是軍援——他說得很清楚。白朗寧擺在桌上任人試打，槍聲一停，訂單就開始談。"
     },
     {
       "id": "us_commercial_credit",
@@ -942,10 +955,10 @@
       "foreign_power_key": "us",
       "requires_relation_min": 8,
       "cost": 0,
-      "effect": "美國關係 8+：現金 +50、負債 +40，利率每回合 3%，3 回合到期，且不佔用花旗的授信額度。逾期未清償者債務照還，另由美方接管你產出最高 3 座城市的全部工廠產出，持續 5 回合。",
+      "effect": "美國關係 8+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用花旗的授信額度。逾期未清償者債務照還，另由美方接管你產出最高 3 座城市的全部工廠產出，持續 5 回合。",
       "cash": 50,
       "debt": 40,
-      "interest_per_turn": 0.03,
+      "interest_per_turn": 0.05,
       "term_turns": 3,
       "off_quota": true,
       "default_penalty": {
@@ -958,7 +971,8 @@
         "share": 1.0,
         "duration_turns": 5,
         "label": "花旗違約：3 座大城工廠產出遭接管"
-      }
+      },
+      "story": "花旗的貸款掛的是工業名目：紗廠、電廠、鐵路。至於錢下來之後究竟買了什麼，合約裡沒有一個字提到。"
     },
     {
       "id": "us_firepower_doctrine",
@@ -984,7 +998,8 @@
           "multiplier": 1.07
         }
       ],
-      "expires_below_relation": 6
+      "expires_below_relation": 6,
+      "story": "美國顧問講的不是勇氣而是彈藥基數。他說一個師該有多少挺機槍、多少門砲、每分鐘打出多少發，把打仗算成了一道算術題。"
     },
     {
       "id": "us_industrial_engineers",
@@ -1143,18 +1158,6 @@
       "story": "吳佩孚深恐共產主義將使中國萬劫不復，故聯合孫傳芳通電全國呼籲剿共。"
     },
     {
-      "id": "forced_march",
-      "name": "急行軍",
-      "deck_type": "function",
-      "category": "maneuver",
-      "holdable": true,
-      "mechanic": "rural_movement",
-      "duration_turns": 3,
-      "tiles": 2,
-      "cost": 0,
-      "effect": "3 回合內，己方軍隊在非鐵路鄉村地格可移動 2 格；跨河仍需浮橋或鐵路橋。"
-    },
-    {
       "id": "affiliation_slot_upgrade",
       "name": "擴編直屬",
       "deck_type": "function",
@@ -1226,10 +1229,10 @@
       "holdable": true,
       "mechanic": "central_bank",
       "cost": 0,
-      "effect": "此後新借的每一筆款項利息一律 2%（覆蓋功能卡指定利息與列強銀行常規利息），且還款期限一律 +1 回合。需「結盟江浙財團」生效後才會進入卡池，每副牌僅 1 張。",
+      "effect": "此後新借的每一筆款項利息一律 3%（覆蓋功能卡指定利息與列強銀行常規利息），且還款期限一律 +1 回合。需「結盟江浙財團」生效後才會進入卡池，每副牌僅 1 張。",
       "requires_unlock": "jiangzhe_financiers",
       "requires_unlock_name": "結盟江浙財團",
-      "loan_interest_override": 0.02,
+      "loan_interest_override": 0.03,
       "loan_term_bonus": 1,
       "story": "孔祥熙入閣主政，組建中央銀行並穩定金融體系。"
     },
@@ -1416,6 +1419,116 @@
       },
       "effect": "需完全控制山東，且對蘇關係 5 以下：己方全體可變忠誠將領忠誠 +1。\n條件未達成時本卡不會出現在牌庫中。",
       "story": "梁漱溟受時任山東督軍聘用，以濟南為核心推展新儒學教育，並擴建曲阜大學。"
+    },
+    {
+      "id": "siemens_china_expansion",
+      "name": "西門子公司在華擴產",
+      "deck_type": "function",
+      "category": "german_industry",
+      "holdable": true,
+      "mechanic": "multi_city_development",
+      "cost": 0,
+      "effect": "任選兩座己方城市，每回合現金 +1、工廠 +2，永久有效。",
+      "city_count": 2,
+      "cash": 1,
+      "factory": 2,
+      "story": "過去十年是歐洲史上最悲慘的時代，帝國的臉面被打得稀爛，高尚的文明在索姆河畔的泥濘中與凡爾登的土坡上埋葬。如今是個新的時代，我們將在商業中重建文明，那才是德意志真正的榮耀"
+    },
+    {
+      "id": "krupp_mauser_return",
+      "name": "克虜伯公司與毛瑟兵工廠返華",
+      "deck_type": "function",
+      "category": "german_industry",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "cost": 0,
+      "effect": "獲得預備隊：步兵 +2、砲兵 +1。",
+      "unit_reserves": {
+        "infantry": 2,
+        "artillery": 1
+      },
+      "story": "上世紀的凡爾賽宮鏡廳裡，威廉一世在眾人簇擁下戴上了德意志的榮耀之冠；哪知短短數十載，鐵十字便已蒙塵。然而德國人並沒有在屈辱中臣服，他們仍然在巴黎和會的夾縫之間，繼續向世界宣傳著德意志的驕傲"
+    },
+    {
+      "id": "rheinmetall_arms_export",
+      "name": "萊茵金屬武器出口",
+      "deck_type": "function",
+      "category": "german_industry",
+      "holdable": true,
+      "mechanic": "reserve_bundle",
+      "cost": 0,
+      "effect": "獲得預備隊：機槍 +2。",
+      "unit_reserves": {
+        "machine_gun": 2
+      },
+      "story": "上世紀的凡爾賽宮鏡廳裡，威廉一世在眾人簇擁下戴上了德意志的榮耀之冠；哪知短短數十載，鐵十字便已蒙塵。然而德國人並沒有在屈辱中臣服，他們仍然在巴黎和會的夾縫之間，繼續向世界宣傳著德意志的驕傲"
+    },
+    {
+      "id": "sound_film_studio",
+      "name": "有聲電影製片廠",
+      "deck_type": "function",
+      "category": "propaganda",
+      "holdable": true,
+      "mechanic": "propaganda_studio",
+      "cost": 20,
+      "factory_cost": 20,
+      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈有聲影戲〉。花費 $20 與 20 工業點：此後敵方對你打出的〈反戰演講〉系列效果減半（去尾），你自己打出的〈反戰演講〉系列則額外多 2 營。永久有效。",
+      "requires_city_level_min": 4,
+      "requires_unlock": "event_sound_film",
+      "requires_unlock_name": "事件卡〈有聲影戲〉",
+      "incoming_multiplier": 0.5,
+      "outgoing_bonus": 2,
+      "story": "片廠的錄音棚裡掛滿了棉被，門一關就聽不見外頭的市聲。銀幕上的士兵開口說話那天，戲院裡沒有人再敢在底下嗑瓜子。"
+    },
+    {
+      "id": "state_radio_station",
+      "name": "成立官辦廣播電台",
+      "deck_type": "function",
+      "category": "propaganda",
+      "holdable": true,
+      "mechanic": "radio_station",
+      "cost": 30,
+      "factory_cost": 30,
+      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈無線電網〉。花費 $30 與 30 工業點：此後你打出的〈部隊晉升〉與〈復興儒學〉改為忠誠 +2，〈鼓吹地方自治〉改為忠誠 −2。永久有效。",
+      "requires_city_level_min": 4,
+      "requires_unlock": "event_radio_network",
+      "requires_unlock_name": "事件卡〈無線電網〉",
+      "loyalty_magnitude": 2,
+      "affects_cards": [
+        "unit_promotion",
+        "confucian_revival",
+        "local_autonomy_agitation"
+      ],
+      "story": "發射塔立在城牆邊上，比城樓還高出一截。從此督軍的話不必再靠專差傳遞，晚間七點，一個聲音同時到達全省每一台礦石機。"
+    },
+    {
+      "id": "us_socony_oil",
+      "name": "美孚石油供應",
+      "deck_type": "function",
+      "category": "foreign_money",
+      "holdable": true,
+      "mechanic": "oil_supply",
+      "foreign_power_key": "us",
+      "requires_relation_min": 6,
+      "cost": 0,
+      "effect": "美國關係 6+：獲穩定油源，未來 10 回合內免疫事件卡〈國際油價上漲〉的建軍加價。",
+      "duration_turns": 10,
+      "story": "美孚的油罐車沿著剛修好的公路開進兵站，車身上的飛馬標誌落了一層黃土。管油的參謀說，這年頭誰的油多，誰的卡車就跑得動。"
+    },
+    {
+      "id": "mechanized_division",
+      "name": "成立機械化步兵師",
+      "deck_type": "function",
+      "category": "command",
+      "holdable": true,
+      "mechanic": "mechanized_division",
+      "cost": 30,
+      "factory_cost": 30,
+      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈A 型車問世〉。花費 $30 與 30 工業點：指定一位己方將領，其部隊自此永久處於急行軍狀態，不需再付費、也沒有冷卻。",
+      "requires_city_level_min": 4,
+      "requires_unlock": "event_model_a_car",
+      "requires_unlock_name": "事件卡〈A 型車問世〉",
+      "story": "福特的卡車底盤配上自造的裝甲板，跑起來又吵又顛，兵們叫它鐵王八。可從前走三天的路，現在半天就到了。"
     }
   ]
 }

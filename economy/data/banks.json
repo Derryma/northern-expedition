@@ -14,14 +14,14 @@
       "relation_min": -3,
       "relation_max": 5,
       "term_turns": 3,
-      "interest_per_turn": 0.05
+      "interest_per_turn": 0.08
     },
     "preferred": {
       "label": "優惠借貸",
       "relation_min": 6,
       "relation_max": 10,
       "term_turns": 6,
-      "interest_per_turn": 0.03
+      "interest_per_turn": 0.05
     }
   },
   "banks": [
@@ -30,28 +30,40 @@
       "name": "香港上海匯豐銀行",
       "power": "britain",
       "relations_key": "uk",
-      "limits": {"standard": 30, "preferred": 65}
+      "limits": {
+        "standard": 30,
+        "preferred": 65
+      }
     },
     {
       "id": "banque_de_l_indochine",
       "name": "東方匯理銀行",
       "power": "france",
       "relations_key": "fr",
-      "limits": {"standard": 23, "preferred": 42}
+      "limits": {
+        "standard": 23,
+        "preferred": 42
+      }
     },
     {
       "id": "yokohama_specie",
       "name": "橫濱正金銀行",
       "power": "japan",
       "relations_key": "jp",
-      "limits": {"standard": 26, "preferred": 52}
+      "limits": {
+        "standard": 26,
+        "preferred": 52
+      }
     },
     {
       "id": "citibank",
       "name": "花旗（萬國寶通）銀行",
       "power": "united_states",
       "relations_key": "us",
-      "limits": {"standard": 30, "preferred": 58}
+      "limits": {
+        "standard": 30,
+        "preferred": 58
+      }
     },
     {
       "id": "deutsch_asiatische",
@@ -59,11 +71,20 @@
       "power": "germany",
       "relations_key": null,
       "neutral": true,
-      "fixed_terms": {"term_turns": 3, "interest_per_turn": 0.05},
-      "limits": {"standard": 20}
+      "fixed_terms": {
+        "term_turns": 3,
+        "interest_per_turn": 0.08
+      },
+      "limits": {
+        "standard": 20
+      }
     }
   ],
   "no_commercial_lending": [
-    {"power": "soviet_union", "relations_key": "su", "reason": "蘇聯不承作商業放款"}
+    {
+      "power": "soviet_union",
+      "relations_key": "su",
+      "reason": "蘇聯不承作商業放款"
+    }
   ]
 }

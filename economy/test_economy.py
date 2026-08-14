@@ -31,13 +31,13 @@ class TierTests(unittest.TestCase):
     def test_standard_terms(self) -> None:
         terms = self.book.terms_for_bank("hsbc", {"uk": 0})
         self.assertEqual(terms["term_turns"], 3)
-        self.assertAlmostEqual(terms["interest_per_turn"], 0.05)
+        self.assertAlmostEqual(terms["interest_per_turn"], 0.08)
         self.assertEqual(terms["limit"], 30)
 
     def test_preferred_terms(self) -> None:
         terms = self.book.terms_for_bank("hsbc", {"uk": 9})
         self.assertEqual(terms["term_turns"], 6)
-        self.assertAlmostEqual(terms["interest_per_turn"], 0.03)
+        self.assertAlmostEqual(terms["interest_per_turn"], 0.05)
         self.assertEqual(terms["limit"], 65)
 
     def test_blocked_bank_offers_no_terms(self) -> None:
@@ -47,7 +47,7 @@ class TierTests(unittest.TestCase):
         for relation in (-10, 0, 10):
             terms = self.book.terms_for_bank("deutsch_asiatische", {"de": relation})
             self.assertEqual(terms["term_turns"], 3)
-            self.assertAlmostEqual(terms["interest_per_turn"], 0.05)
+            self.assertAlmostEqual(terms["interest_per_turn"], 0.08)
             self.assertEqual(terms["limit"], 20)
 
     def test_soviet_union_has_no_bank(self) -> None:
@@ -95,18 +95,18 @@ class AccrualTests(unittest.TestCase):
         self.loans: list = []
 
     def test_interest_applies_every_turn(self) -> None:
-        # 匯豐 standard: limit 30, 5% a turn.
+        # 匯豐 standard: limit 30, 8% a turn.
         self.book.borrow(self.loans, "hsbc", 30, {"uk": 0}, turn=1, next_loan_id=1)
         self.book.accrue_interest(self.loans)
-        self.assertEqual(self.loans[0]["outstanding"], 32)  # 30 + round(1.5)
+        self.assertEqual(self.loans[0]["outstanding"], 32)  # 30 + round(2.4)
         self.book.accrue_interest(self.loans)
-        self.assertEqual(self.loans[0]["outstanding"], 34)  # 32 + round(1.6)
+        self.assertEqual(self.loans[0]["outstanding"], 35)  # 32 + round(2.56)
 
     def test_preferred_rate_is_lower(self) -> None:
-        # Same principal, preferred tier: 3% instead of 5%.
+        # Same principal, preferred tier: 5% instead of 8%.
         self.book.borrow(self.loans, "hsbc", 30, {"uk": 9}, turn=1, next_loan_id=1)
         self.book.accrue_interest(self.loans)
-        self.assertEqual(self.loans[0]["outstanding"], 31)  # 30 + round(0.9)
+        self.assertEqual(self.loans[0]["outstanding"], 32)  # 30 + round(1.5)
 
     def test_overdue_is_flagged_after_the_due_turn(self) -> None:
         self.book.borrow(self.loans, "hsbc", 10, {"uk": 0}, turn=1, next_loan_id=1)
