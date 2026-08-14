@@ -40,7 +40,7 @@ class BackendTests(unittest.TestCase):
 
         self.assertGreater(data["metadata"]["function_cards"], 50)
         # 事件卡與後果卡整套移除之後，卡池裡只剩功能卡。
-        self.assertEqual(data["metadata"]["event_cards"], 29)   # 設計稿一到六區塊
+        self.assertEqual(data["metadata"]["event_cards"], 38)   # 設計稿一到八區塊
         self.assertNotIn("injected_event_cards", data["metadata"])
         self.assertEqual(set(data["indexes"]), {"function_cards"})
 
@@ -1317,7 +1317,7 @@ class BackendTests(unittest.TestCase):
         for power in ("jp", "su", "uk", "fr", "us"):
             self.assertAlmostEqual(index["foreign_relation_" + power]["success_rate"], 0.80, msg=power)
 
-    def test_sixty_six_cards_carry_a_story(self):
+    def test_sixty_nine_cards_carry_a_story(self):
         # 17 → 18（在野名將投效）→ 27（設立情報局、盜賣文物、中國人之恥、
         # 警政單位、五張貿易出口卡）→ 28（僑胞匯款）→ 30（崩鐵玩家、復興儒學）。
         # 這批文案補寫再加 14 張：情報網、鼓吹地方自治、結盟江浙財團、滿州墾殖團、
@@ -1326,8 +1326,8 @@ class BackendTests(unittest.TestCase):
         cards = load_game_data()["function_cards"]["cards"]
         with_story = [card for card in cards if card.get("story")]
         # 再補 22 張：三張德商卡、四張技術／油源新卡，以及原本沒有文案的
-        # 十五張列強友好卡 → 66。
-        self.assertEqual(len(with_story), 66)
+        # 十五張列強友好卡 → 66；公費留學生、進口盤尼西林、德國飛艇偵查再 +3 → 69。
+        self.assertEqual(len(with_story), 69)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -1354,10 +1354,259 @@ if __name__ == "__main__":
 class EventCardTests(unittest.TestCase):
     """事件卡：每三回合發一份《民國報》，四張全部回應完才結算經濟。"""
 
-    def test_pool_holds_the_first_six_sections(self):
+    def test_pool_holds_the_first_eight_sections(self):
         engine = GameEngine(seed=3)
-        self.assertEqual(len(engine.state["event_pool"]), 29)
+        self.assertEqual(len(engine.state["event_pool"]), 38)
         self.assertIsNone(engine.pending_event_view())
+
+    def test_conditional_cards_only_reach_qualifying_players(self):
+        """有進入條件的卡只有符合的人抽得到，而且一定發給符合的那一家。"""
+        engine = GameEngine(seed=3)
+        self.assertEqual(engine._event_eligible_players(engine._event_template("academia_sinica")), ["S"])
+        self.assertEqual(engine._event_eligible_players(engine._event_template("yinxu_first_spade")), ["W"])
+        self.assertEqual(engine._event_eligible_players(engine._event_template("baird_television")),
+                         list(engine.state["players"]))
+
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["academia_sinica", "yinxu_first_spade"]
+        engine.next_turn(active_player="F")
+        drawers = {entry["card_id"]: entry["drawer"] for entry in engine.state["pending_events"]["cards"]}
+        self.assertEqual(drawers["academia_sinica"], "S")   # 排到奉系，但奉系不控江蘇
+        self.assertEqual(drawers["yinxu_first_spade"], "W")
+
+    def test_drawer_scoped_cards_only_pay_the_drawer(self):
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["academia_sinica"]
+        engine.next_turn(active_player="F")
+        view = engine.pending_event_view()
+        self.assertEqual(view["responders"], ["S"])
+        engine.respond_event("S")
+        self.assertTrue(engine.academia_active("S"))
+        for code in ("F", "W", "N"):
+            self.assertFalse(engine.academia_status(code)["holder"], code)
+
+    def test_yinxu_pays_cash_and_can_poison_your_own_deck(self):
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["yinxu_first_spade"]
+        engine.next_turn(active_player="F")
+        payload = engine.state["players"]["W"]
+        before = payload["treasury"]
+        engine.respond_event("W", choice="sell_to_foreigners", follow_up="jp")
+        # 這是本期最後一張，回應完後端會補跑本回合經濟，所以現金還會多一筆城市收入。
+        self.assertGreaterEqual(payload["treasury"], before + 60)
+        self.assertEqual(payload["function_deck"].count("national_shame"), 4)
+        for code in ("F", "S", "N"):
+            self.assertEqual(engine.state["players"][code]["function_deck"].count("national_shame"), 0)
+
+    def test_section_seven_and_eight_unlock_the_new_technology_cards(self):
+        engine = GameEngine(seed=3)
+        pairs = {
+            "government_scholars_program": ("event_government_scholars", "government_scholars"),
+            "penicillin_discovery": ("event_penicillin", "penicillin_import"),
+            "graf_zeppelin": ("event_graf_zeppelin", "zeppelin_recon"),
+        }
+        for event_id, (unlock, card_id) in pairs.items():
+            engine.state["turn"] = 2
+            engine.state["event_pool"] = [event_id]
+            engine.next_turn(active_player="F")
+            view = engine.pending_event_view()
+            engine.respond_event(view["waiting_for"])
+            for code in engine.state["players"]:
+                self.assertIn(unlock, engine.state["players"][code]["unlocks"], event_id)
+        # 解鎖之後這幾張技術卡就會被洗進牌庫。
+        for code in engine.state["players"]:
+            deck = engine.state["players"][code]["function_deck"]
+            self.assertGreater(deck.count("government_scholars"), 0, code)
+            self.assertGreater(deck.count("penicillin_import"), 0, code)
+
+    def test_one_party_state_freezes_five_cards_and_calms_the_riots(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["F"]["hand"].append("du_yuesheng_gamble")
+        engine.use_function("F", "du_yuesheng_gamble", target_owner="S", target_province="江蘇")
+        self.assertTrue(engine.state["city_output_effects"])
+
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["one_party_state"]
+        engine.next_turn(active_player="F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
+
+        self.assertEqual(engine.state["city_output_effects"], [])       # 暴動平息
+        payload = engine.state["players"]["F"]
+        payload["hand"].append("local_autonomy_agitation")
+        with self.assertRaisesRegex(ValueError, "一黨之國"):
+            engine.use_function("F", "local_autonomy_agitation",
+                                target_general_id="wu_peifu", target_owner="W")
+        for card_id in ("communist_riot", "hongmen_uprising", "peking_university_movement"):
+            self.assertEqual(payload["function_deck"].count(card_id), 0, card_id)
+
+    def test_showa_accession_hardens_tokyo_three_turns_later(self):
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["showa_accession"]
+        engine.next_turn(active_player="F")
+        friendly = engine.state["players"]["F"]
+        friendly["foreign_relations"]["jp"] = 8
+        hostile = engine.state["players"]["N"]
+        hostile["foreign_relations"]["jp"] = -6
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
+        self.assertEqual(friendly["foreign_relations"]["jp"], 8)        # 還沒到第四回合
+        self.assertTrue(engine.state["scheduled_event_effects"])
+        for _ in range(3):
+            advance_turn(engine, "F")
+        self.assertEqual(friendly["foreign_relations"]["jp"], 9)        # 兩極化：友好再 +1
+        self.assertEqual(hostile["foreign_relations"]["jp"], -7)        # 交惡再 −1
+        self.assertEqual(engine.state["scheduled_event_effects"], [])
+
+    def test_treaty_of_berlin_only_supplies_moscows_friends(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["N"]["foreign_relations"]["su"] = 9
+        engine.state["players"]["F"]["foreign_relations"]["su"] = -7
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["treaty_of_berlin"]
+        engine.next_turn(active_player="F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
+        self.assertEqual(engine.state["players"]["N"]["function_deck"].count("su_rifle_shipment"), 2)
+        self.assertEqual(engine.state["players"]["F"]["function_deck"].count("su_rifle_shipment"), 0)
+
+    def test_burning_red_lotus_cheapens_infantry_for_three_turns(self):
+        engine = GameEngine(seed=3)
+        before = engine._unit_cost_for("F", "infantry")[0]
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["burning_red_lotus"]
+        engine.next_turn(active_player="F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
+        self.assertEqual(engine._unit_cost_for("F", "infantry")[0], before - 1)
+        self.assertEqual(engine.suppression_turn_bonus(), 1)
+        for _ in range(3):
+            advance_turn(engine, "F")
+        self.assertEqual(engine._unit_cost_for("F", "infantry")[0], before)
+        self.assertEqual(engine.suppression_turn_bonus(), 0)
+
+    def test_panic_adds_two_points_to_the_matching_loans(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["F"]
+        payload["foreign_relations"]["jp"] = 4
+        loan = engine.take_loan("F", "yokohama_specie", 10)["loan"]
+        base = float(loan["interest_per_turn"])
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["showa_financial_panic"]
+        engine.next_turn(active_player="F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
+        self.assertAlmostEqual(float(payload["loans"][-1]["interest_per_turn"]), base + 0.02)
+        # 加碼到期就退回原利率（貸款本身三回合到期，所以直接把回合推過去驗證）。
+        engine.state["turn"] += 3
+        engine._apply_loan_surcharges("F")
+        self.assertAlmostEqual(float(payload["loans"][-1]["interest_per_turn"]), base)
+
+    def test_academia_sinica_follows_jiangsu_and_can_be_forfeited(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["S"]
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["academia_sinica"]
+        engine.next_turn(active_player="F")
+        base = payload["factory_income"]
+        engine.respond_event("S")
+
+        # 收編：工業點 +5、〈盜賣文物〉從卡池清空、打也打不出來。
+        self.assertEqual(payload["factory_income"], base + 5)
+        self.assertEqual(payload["function_deck"].count("artifact_smuggling"), 0)
+        payload["hand"].append("artifact_smuggling")
+        with self.assertRaisesRegex(ValueError, "中央研究院"):
+            engine.use_function("S", "artifact_smuggling", target_power="uk")
+
+        def set_jiangsu(owner):
+            for city in engine.data["strategic_map"]["cities"]:
+                if city.get("province") == "江蘇":
+                    engine.state["city_owners"][city["id"]] = owner
+            engine._refresh_city_income()
+            engine._sync_conditional_deck_cards("S")
+
+        # 丟掉江蘇：加成停掉，〈盜賣文物〉回到卡池（手上那張也算在總數裡）。
+        set_jiangsu("N")
+        self.assertLess(payload["factory_income"], base)
+        self.assertEqual(engine._card_count_in_player_zones(payload, "artifact_smuggling"), 3)
+
+        # 奪回江蘇：兩者都回來。
+        set_jiangsu("S")
+        self.assertEqual(payload["factory_income"], base + 5)
+        self.assertEqual(payload["function_deck"].count("artifact_smuggling"), 0)
+
+        # 離開江蘇期間打出〈盜賣文物〉→ 永久失效，奪回也不恢復。
+        set_jiangsu("N")
+        engine.use_function("S", "artifact_smuggling", target_power="uk")
+        self.assertTrue(payload["academia_sinica"]["disqualified"])
+        set_jiangsu("S")
+        self.assertEqual(payload["factory_income"], base)
+        self.assertFalse(engine.academia_active("S"))
+
+    def test_selling_the_oracle_bones_bars_you_from_academia_sinica(self):
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["yinxu_first_spade"]
+        engine.next_turn(active_player="F")
+        holder = engine.pending_event_view()["drawer"]
+        payload = engine.state["players"][holder]
+        before = payload["foreign_relations"]["jp"]
+
+        with self.assertRaisesRegex(ValueError, "指定買家"):
+            engine.respond_event(holder, choice="sell_to_foreigners")
+        with self.assertRaisesRegex(ValueError, "指定買家"):
+            engine.respond_event(holder, choice="sell_to_foreigners", follow_up="de")
+
+        engine.respond_event(holder, choice="sell_to_foreigners", follow_up="jp")
+        self.assertEqual(payload["foreign_relations"]["jp"], min(10, before + 1))
+        self.assertTrue(payload["academia_sinica"]["disqualified"])
+
+        # 之後就算抽到中央研究院也不會生效。
+        engine.state["turn"] = 5
+        engine.state["event_pool"] = ["academia_sinica"]
+        engine.next_turn(active_player="F")
+        view = engine.pending_event_view()
+        if view and view["drawer"] == holder:
+            engine.respond_event(holder)
+            self.assertFalse(engine.academia_active(holder))
+
+    def test_transatlantic_call_only_helps_whoever_holds_shanghai(self):
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["transatlantic_call"]
+        engine.next_turn(active_player="F")
+        holder = engine.pending_event_view()["drawer"]
+        engine.respond_event(holder)
+        self.assertAlmostEqual(engine._card_template("foreign_relation_jp", holder)["success_rate"], 0.9)
+        other = next(code for code in engine.state["players"] if code != holder)
+        self.assertAlmostEqual(engine._card_template("foreign_relation_jp", other)["success_rate"], 0.8)
+        # 上海易主，加成跟著走。
+        engine.state["city_owners"]["shanghai"] = other
+        self.assertAlmostEqual(engine._card_template("foreign_relation_jp", holder)["success_rate"], 0.8)
+
+    def test_kellogg_signatories_get_paid_three_turns_later(self):
+        engine = GameEngine(seed=3)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["kellogg_briand_pact"]
+        engine.next_turn(active_player="F")
+        for code in ("F", "W", "S", "N"):
+            engine.respond_event(code, choice="sign" if code == "F" else "ignore")
+        signer = engine.state["players"]["F"]
+        self.assertTrue(any(effect["kind"] == "ceasefire" for effect in signer["timed_effects"]))
+        self.assertFalse(any(effect["kind"] == "ceasefire"
+                             for effect in engine.state["players"]["W"]["timed_effects"]))
+        before = signer["treasury"]
+        for _ in range(3):
+            advance_turn(engine, "F")
+        self.assertGreaterEqual(signer["treasury"], before + 10)
+
+    def test_goddard_rocket_rewrites_the_artillery_gift(self):
+        engine = GameEngine(seed=3)
+        self.assertEqual(engine._card_template("reserve_gift_artillery")["max_units"], 2)
+        engine.state["turn"] = 2
+        engine.state["event_pool"] = ["goddard_rocket"]
+        engine.next_turn(active_player="F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
+        card = engine._card_template("reserve_gift_artillery")
+        self.assertEqual((card["min_units"], card["max_units"]), (3, 3))
 
     def test_cycle_fires_every_third_turn_and_holds_the_economy(self):
         engine = GameEngine(seed=3)
@@ -1386,10 +1635,10 @@ class EventCardTests(unittest.TestCase):
         # 四張結完，本回合的經濟才補跑。
         self.assertEqual(engine.state["turn_log"][-1]["turn"], 3)
         self.assertEqual(len(engine.state["event_history"]), 4)
-        self.assertEqual(len(engine.state["event_pool"]), 25)
+        self.assertEqual(len(engine.state["event_pool"]), 34)
 
-    def test_choice_cards_poll_every_faction_in_any_order(self):
-        """測試版不鎖順序：誰在看誰就能點，但每家只能表態一次，效果各歸各家。"""
+    def test_choice_cards_poll_every_faction_starting_with_the_drawer(self):
+        """嚴格順序：抽到的人先答，其餘照 奉 → 直 → 五 → 國 輪流，效果各歸各家。"""
         engine = GameEngine(seed=3)
         card = engine._event_template("arcos_raid")
         engine.state["turn"] = 2
@@ -1397,43 +1646,57 @@ class EventCardTests(unittest.TestCase):
         engine.next_turn(active_player="F")
         view = engine.pending_event_view()
         self.assertEqual(view["card"]["id"], "arcos_raid")
-        self.assertEqual(view["responders"], ["F", "W", "S", "N"])   # 顯示用的建議順序
+        self.assertEqual(view["responders"], ["F", "W", "S", "N"])
+        self.assertTrue(view["strict_order"])
         self.assertTrue(view["needs_every_faction"])
-        self.assertFalse(view["strict_order"])
         self.assertEqual(card["resolution"]["type"], "choice")
 
+        with self.assertRaisesRegex(ValueError, "現在輪到"):
+            engine.respond_event("W", choice="back_britain")
         with self.assertRaisesRegex(ValueError, "需要選擇"):
-            engine.respond_event("W")
+            engine.respond_event("F")
 
-        # 不是抽到的那一家也可以先答，效果只落在自己身上。
         uk_before = {code: engine.state["players"][code]["foreign_relations"]["uk"] for code in "FWSN"}
-        engine.respond_event("W", choice="back_britain")
-        self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["uk"], min(10, uk_before["W"] + 2))
-        self.assertEqual(engine.state["players"]["F"]["foreign_relations"]["uk"], uk_before["F"])
-        with self.assertRaisesRegex(ValueError, "已經回應過"):
-            engine.respond_event("W", choice="back_soviets")
+        engine.respond_event("F", choice="back_britain")
+        self.assertEqual(engine.state["players"]["F"]["foreign_relations"]["uk"], min(10, uk_before["F"] + 2))
+        # 每家的選擇只作用在自己身上。
+        self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["uk"], uk_before["W"])
+        self.assertEqual(engine.pending_event_view()["waiting_for"], "W")
 
-        # 四家都表態過才換下一張。
-        self.assertEqual(set(engine.pending_event_view()["pending_responders"]), {"F", "S", "N"})
-        for code, pick in (("F", "back_britain"), ("S", "back_soviets"), ("N", "back_soviets")):
+        for code, pick in (("W", "back_soviets"), ("S", "back_britain"), ("N", "back_soviets")):
             engine.respond_event(code, choice=pick)
         self.assertIsNone(engine.state["pending_events"])
-        self.assertEqual(engine.state["players"]["S"]["foreign_relations"]["su"], min(10, 
-            engine.state["players"]["S"]["foreign_relations"]["su"]))
+        self.assertEqual(engine.state["event_history"][-1]["responses"],
+                         {"F": "back_britain", "W": "back_soviets", "S": "back_britain", "N": "back_soviets"})
 
-    def test_plain_events_take_any_single_click(self):
-        """單純事件不必等抽到的那一家：任何人點閱都算數，不會卡住回合。"""
+    def test_plain_events_wait_for_the_faction_that_drew_them(self):
+        """單純事件由抽到的那一家點閱；別家點會被擋下並說明輪到誰。"""
         engine = GameEngine(seed=3)
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["amsterdam_olympics"]
         engine.next_turn(active_player="F")
         view = engine.pending_event_view()
         self.assertEqual(view["drawer"], "F")
-        self.assertFalse(view["needs_every_faction"])
-        # 抽到的是奉系，但由國民革命軍點閱一樣結得掉。
-        engine.respond_event("N")
+        self.assertEqual(view["waiting_for"], "F")
+        with self.assertRaisesRegex(ValueError, "現在輪到 F"):
+            engine.respond_event("N")
+        engine.respond_event("F")
         self.assertIsNone(engine.state["pending_events"])
-        self.assertEqual(engine.state["event_history"][-1]["responses"], {"N": "acknowledged"})
+        self.assertEqual(engine.state["event_history"][-1]["responses"], {"F": "acknowledged"})
+
+    def test_relaxed_mode_still_available_behind_the_flag(self):
+        """把旗標關掉就回到寬鬆模式：單純事件任何一家點閱都算數。"""
+        engine = GameEngine(seed=3)
+        engine.data["event_cards"]["draw_rules"]["strict_response_order"] = False
+        try:
+            engine.state["turn"] = 2
+            engine.state["event_pool"] = ["amsterdam_olympics"]
+            engine.next_turn(active_player="F")
+            self.assertFalse(engine.pending_event_view()["strict_order"])
+            engine.respond_event("N")
+            self.assertIsNone(engine.state["pending_events"])
+        finally:
+            engine.data["event_cards"]["draw_rules"]["strict_response_order"] = True
 
     def test_acknowledge_card_applies_its_payload_once(self):
         engine = GameEngine(seed=3)
@@ -1477,7 +1740,7 @@ class EventCardTests(unittest.TestCase):
             advance_turn(engine, "F")
         seen = [entry["card_id"] for entry in engine.state["event_history"]]
         self.assertEqual(len(seen), len(set(seen)))
-        self.assertEqual(len(seen) + len(engine.state["event_pool"]), 29)
+        self.assertEqual(len(seen) + len(engine.state["event_pool"]), 38)
 
 
 class ExileGeneralTests(unittest.TestCase):
@@ -1838,6 +2101,70 @@ class CardBatchTests(unittest.TestCase):
         payload["hand"].append("mechanized_division")
         with self.assertRaisesRegex(ValueError, "已經是機械化步兵師"):
             engine.use_function("F", "mechanized_division", target_general_id="zhang_zongchang")
+
+    def test_new_technology_cards_wait_for_their_event_cards(self):
+        engine = GameEngine(seed=5)
+        for card_id in ("government_scholars", "penicillin_import", "zeppelin_recon"):
+            for code in engine.state["players"]:
+                self.assertEqual(engine.state["players"][code]["function_deck"].count(card_id), 0, card_id)
+            engine.state["players"]["F"]["hand"].append(card_id)
+            with self.assertRaisesRegex(ValueError, "事件卡"):
+                engine.use_function("F", card_id)
+
+    def test_government_scholars_pays_off_five_turns_later(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["treasury"] = 100
+        payload.setdefault("unlocks", []).append("event_government_scholars")
+        payload["hand"].append("government_scholars")
+        before = payload["factory_income"]
+        engine.use_function("F", "government_scholars")
+        self.assertEqual(payload["treasury"], 85)
+        self.assertEqual(payload["factory_income"], before)   # 還沒到時候
+        for _ in range(4):
+            advance_turn(engine, "F")
+            self.assertEqual(payload["factory_income"], before)
+        advance_turn(engine, "F")                              # 第五回合起生效
+        self.assertEqual(payload["factory_income"], before + 2)
+
+    def test_penicillin_and_mechanized_division_follow_the_general(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["treasury"], payload["factory_points"] = 200, 200
+        payload.setdefault("unlocks", []).extend(["event_penicillin", "event_model_a_car"])
+        payload["hand"].extend(["penicillin_import", "mechanized_division"])
+        engine.use_function("F", "penicillin_import", target_general_id="zhang_zongchang")
+        engine.use_function("F", "mechanized_division", target_general_id="zhang_zongchang")
+        self.assertEqual(payload["field_hospital_generals"], ["zhang_zongchang"])
+        self.assertEqual(payload["permanent_forced_march_generals"], ["zhang_zongchang"])
+
+        payload["hand"].append("penicillin_import")
+        with self.assertRaisesRegex(ValueError, "已經配有野戰醫院"):
+            engine.use_function("F", "penicillin_import", target_general_id="zhang_zongchang")
+
+        # 張宗昌被別家招降：兩張卡買來的效果一起消失，也不隨他過去。
+        engine.state["players"]["W"]["unit_reserves"]["infantry"] = 10
+        engine.recruit_captive_general("W", [], "zhang_zongchang")
+        self.assertEqual(payload["field_hospital_generals"], [])
+        self.assertEqual(payload["permanent_forced_march_generals"], [])
+        self.assertEqual(engine.state["players"]["W"].get("field_hospital_generals"), [])
+
+    def test_zeppelin_recon_needs_three_distinct_provinces(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["treasury"] = 100
+        payload.setdefault("unlocks", []).append("event_graf_zeppelin")
+        payload["hand"].append("zeppelin_recon")
+        with self.assertRaisesRegex(ValueError, "需要指定 3 個省份"):
+            engine.use_function("F", "zeppelin_recon", target_provinces=["直隸", "山東"])
+        payload["hand"].append("zeppelin_recon")
+        with self.assertRaisesRegex(ValueError, "不能重複"):
+            engine.use_function("F", "zeppelin_recon", target_provinces=["直隸", "直隸", "山東"])
+        engine.use_function("F", "zeppelin_recon", target_provinces=["直隸", "山東", "河南"])
+        effect = next(item for item in payload["timed_effects"] if item["kind"] == "aerial_recon")
+        self.assertEqual(effect["target_provinces"], ["直隸", "山東", "河南"])
+        self.assertTrue(effect["ignores_counter_intelligence"])
+        self.assertEqual(payload["treasury"], 80)
 
     def test_socony_oil_is_an_american_money_perk(self):
         engine = GameEngine(seed=5)

@@ -777,6 +777,7 @@ function tacticalSnapshot() {
       specialOperation: army.specialOperation ? { ...army.specialOperation } : null,
       showRecruitment: Boolean(army.showRecruitment),
       npcGrowthEnded: Boolean(army.npcGrowthEnded),
+      fieldHospitalPending: army.fieldHospitalPending || null,
       forcedMarchUntilTurn: army.forcedMarchUntilTurn ?? null,
       forcedMarchReadyTurn: army.forcedMarchReadyTurn ?? null,
     }])),
@@ -1472,8 +1473,13 @@ function provinceForArmy(army) {
 
 function armyRevealedByIntel(army, observer = currentPlayer) {
   const armyFaction = factionForArmy(army);
-  if (!army || armyFaction === observer || factionHasPoliceProtection(armyFaction)) return false;
+  if (!army || armyFaction === observer) return false;
   const province = provinceForArmy(army);
+  // 飛艇在雲上照相，情報局的反情報擋不住；一般情報網照舊會被擋。
+  const byAir = activeTimedEffects(observer, "aerial_recon")
+    .some((effect) => (effect.target_provinces || []).includes(province));
+  if (byAir) return true;
+  if (factionHasPoliceProtection(armyFaction)) return false;
   return activeTimedEffects(observer, "intel_network")
     .some((effect) => effect.target_province === province);
 }
@@ -1496,7 +1502,9 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     ${effects.map((effect) => {
       const label = effect.kind === "police_system"
         ? `警政保護剩餘 ${effect.remaining_turns} 回合`
-        : effect.kind === "intel_network"
+        : effect.kind === "aerial_recon"
+          ? `飛艇偵查：${(effect.target_provinces || []).join("、")}，剩餘 ${effect.remaining_turns} 回合`
+          : effect.kind === "intel_network"
           ? `情報網：${effect.target_province}，剩餘 ${effect.remaining_turns} 回合`
           : effect.kind === "ideology_shield"
             ? `${effect.name || "自由中國教育家"}：免疫共黨暴動與紅軍起義，剩餘 ${effect.remaining_turns} 回合`
@@ -1918,6 +1926,7 @@ function attachGeneralHandlers(root) {
         const result = await api("/api/recruit-captive-general", {
           player: currentPlayer,
           traits: transferringTraits(generalTrees[record.originFaction], record.general),
+          general_id: record.general?.id,
         });
         state = result.state;
         syncStrategicCitiesFromState();
@@ -2137,6 +2146,7 @@ async function attemptArmyDefection(army, superiorId) {
     loyalty,
     force: forcePoints(armyUnits(army)),
     traits: transferringTraits(generalTrees[factionForArmy(army)], general),
+    general_id: general?.id,
     resistance: defectionResistance(general),
   });
   state = result.state;
@@ -2737,6 +2747,8 @@ function attachCardHandlers(root = document) {
           target_city_ids: [...root.querySelectorAll(`[data-card-target-cities="${button.dataset.use}"]`)]
             .map((select) => select.value).filter(Boolean),
           target_province: root.querySelector(`[data-card-target-province="${button.dataset.use}"]`)?.value,
+          target_provinces: [...root.querySelectorAll(`[data-card-target-provinces="${button.dataset.use}"]`)]
+            .map((select) => select.value).filter(Boolean),
           target_railway: root.querySelector(`[data-card-target-railway="${button.dataset.use}"]`)?.value,
           target_power: root.querySelector(`[data-card-target-power="${button.dataset.use}"]`)?.value,
         });
@@ -3065,7 +3077,16 @@ function functionCardTargetMarkup(card) {
       `<label class="card-target">第 ${index + 1} 座城市<select data-card-target-cities="${card.id}">${options(index)}</select></label>`
     ).join("");
   }
-  if (card.mechanic === "mechanized_division") {
+  if (card.mechanic === "aerial_recon") {
+    const provinces = provinceOptions();
+    const wanted = Number(card.province_count || 3);
+    return Array.from({ length: wanted }, (unused, index) =>
+      `<label class="card-target">第 ${index + 1} 省<select data-card-target-provinces="${card.id}">${provinces
+        .map((province, order) => `<option value="${province}"${order === index ? " selected" : ""}>${province}</option>`)
+        .join("")}</select></label>`
+    ).join("");
+  }
+  if (["mechanized_division", "field_hospital"].includes(card.mechanic)) {
     const targets = ownGeneralOptions();
     if (!targets.length) return `<div class="card-target-note">目前沒有可指定的己方將領</div>`;
     return `<label class="card-target">指定將領<select data-card-target="${card.id}">${targets
@@ -3116,33 +3137,7 @@ async function boot() {
   // Load general tree data for selected faction
   await loadGeneralTreeForFaction(currentPlayer);
 
-  $("playerSelect").addEventListener("change", async (e) => {
-    currentPlayer = e.target.value;
-    selectedArmyId = null;
-    selectedBattleId = null;
-    moveMode = false;
-    uiNotice = null;
-
-    // Reload general tree for new faction
-    await loadGeneralTreeForFaction(currentPlayer);
-
-    // Re-render army markers for new faction
-    renderArmyMarkers(currentPlayer);
-    updateTopBar();
-    renderPendingActions();
-    newspaperCardKey = null;
-    renderNewspaper();
-
-    // Refresh all open panels when faction changes
-    const openPanel = document.querySelector('.overlay-panel.active');
-    if (openPanel) {
-      const panelId = openPanel.id.replace('panel', '').toLowerCase();
-      const firstChar = panelId.charAt(0).toLowerCase();
-      const rest = panelId.slice(1);
-      const panelName = firstChar + rest;
-      renderPanel(panelName);
-    }
-  });
+  $("playerSelect").addEventListener("change", (event) => switchFaction(event.target.value));
 
   setupPanels();
   setupPendingActions();
@@ -3972,6 +3967,42 @@ function forcedMarchRules() {
 }
 
 // 〈成立機械化步兵師〉買下來的將領，部隊永久維持急行軍，不必再付費也沒有冷卻。
+// ── 進口盤尼西林：野戰醫院 ────────────────────────────────────────────
+// 有配野戰醫院的將領，其部隊在作戰中損兵之後，下一回合可免費歸隊一個營，
+// 兵種從這一戰真的損失過的兵種裡隨機挑。效果跟著將領本人走。
+function hasFieldHospital(army) {
+  if (!army?.generalId) return false;
+  const faction = factionForArmy(army);
+  if (fieldHospitalWindowActive(faction)) return true;   // 泳渡海峽的女子：全軍適用
+  return (state?.players?.[faction]?.field_hospital_generals || []).includes(army.generalId);
+}
+
+function recordCombatLosses(army, unitsBefore) {
+  if (!hasFieldHospital(army)) return;
+  const after = armyUnits(army);
+  const lost = Object.keys(UNIT_META).filter((type) =>
+    Number(unitsBefore[type] || 0) > Number(after[type] || 0));
+  if (!lost.length) return;
+  // 只留最近一戰的損失清單，下一回合結算時用掉就清掉。
+  army.fieldHospitalPending = { turn: Number(state?.turn || 0), units: lost };
+}
+
+function applyFieldHospitalRecovery() {
+  const healed = [];
+  const turn = Number(state?.turn || 0);
+  for (const army of allArmies()) {
+    const pending = army.fieldHospitalPending;
+    if (!pending || !pending.units?.length) continue;
+    if (turn <= Number(pending.turn || 0)) continue;   // 要等到「下一回合」
+    if (!hasFieldHospital(army)) { delete army.fieldHospitalPending; continue; }
+    const pick = pending.units[Math.floor(Math.random() * pending.units.length)];
+    army.units[pick] = Number(army.units[pick] || 0) + 1;
+    delete army.fieldHospitalPending;
+    healed.push(`${army.designator}：${UNIT_META[pick]?.name || pick} +1 營`);
+  }
+  return healed;
+}
+
 function hasPermanentForcedMarch(army) {
   if (!army?.generalId) return false;
   const faction = factionForArmy(army);
@@ -4942,6 +4973,8 @@ function applyNpcReinforcements(turn = Number(state?.turn || 0)) {
 // 每三回合後端會抽四張事件卡，抽到的順序是奉 → 直 → 五 → 國。畫面上不做「抽卡」
 // 動作，而是直接跳出一張民國老報紙；玩家回應完四張，本回合的經濟才會結算。
 let newspaperCardKey = null;
+// 正在等第二層選擇的那個選項 id（例如售與洋商在等你挑買家）。
+let newspaperFollowUp = null;
 
 function pendingEventState() {
   const pending = state?.pending_events;
@@ -4954,7 +4987,9 @@ function pendingEventState() {
   if (!card) return null;
   const answered = entry.responses || {};
   const strict = Boolean(bootstrap?.event_draw_rules?.strict_response_order);
-  const needsEveryone = (card.resolution || {}).type === "choice";
+  // scope 是 drawer 的卡（有進入條件的那幾張）只有抽到的那一家要回應。
+  const resolutionMeta = card.resolution || {};
+  const needsEveryone = resolutionMeta.type === "choice" && resolutionMeta.scope !== "drawer";
   const factions = Object.keys(state?.players || {});
   let waiting;
   if (needsEveryone) waiting = factions.filter((code) => !(code in answered));
@@ -5001,14 +5036,23 @@ function newspaperMarkup(view) {
   // 測試版不鎖順序：誰在看誰就能點。唯一擋下的情況是「這一家已經表過態了」。
   const alreadyAnswered = currentPlayer in (view.responses || {});
   const mine = view.strict ? view.waitingFor === currentPlayer : !alreadyAnswered;
-  const buttons = resolution.type === "choice"
-    ? (resolution.options || []).map((option) => `
-        <button data-event-choice="${option.id}" ${mine ? "" : "disabled"}
-          title="${option.effect_text || ""}">${option.label}</button>`).join("")
-    : `<button data-event-choice="" ${mine ? "" : "disabled"}>我知道了</button>`;
+  // 有些選項還要再指定一個對象（〈殷墟第一鏟〉的售與洋商要選買家），
+  // 點下去之後這一排按鈕會換成第二層。
+  const pendingFollowUp = newspaperFollowUp
+    && (resolution.options || []).find((option) => option.id === newspaperFollowUp);
+  const buttons = pendingFollowUp
+    ? `${(pendingFollowUp.follow_up.options || []).map((item) => `
+        <button data-event-follow-up="${item.id}" ${mine ? "" : "disabled"}>${item.label}</button>`).join("")}
+       <button data-event-follow-cancel>改選</button>`
+    : resolution.type === "choice"
+      ? (resolution.options || []).map((option) => `
+          <button data-event-choice="${option.id}" ${mine ? "" : "disabled"}
+            title="${option.effect_text || ""}">${option.label}</button>`).join("")
+      : `<button data-event-choice="" ${mine ? "" : "disabled"}>我知道了</button>`;
   const choiceHints = resolution.type === "choice"
     ? `<div class="newspaper-effect"><b>行 動 選 項</b>${(resolution.options || [])
-        .map((option) => `<div>${option.label}：${newspaperInline(option.effect_text)}</div>`).join("")}
+        .map((option) => `<div>${option.label}：${newspaperInline(option.effect_text)}${
+          option.follow_up ? `<i>（${newspaperInline(option.follow_up.prompt)}）</i>` : ""}</div>`).join("")}
         ${resolution.prompt ? `<span class="newspaper-note">${newspaperInline(resolution.prompt)}</span>` : ""}</div>`
     : "";
   const answered = Object.entries(view.responses || {})
@@ -5016,10 +5060,17 @@ function newspaperMarkup(view) {
       const label = (resolution.options || []).find((option) => option.id === value)?.label;
       return `${FACTIONS[code]?.shortName || code}：${label || "已閱"}`;
     }).join("　");
+  // 設計稿的效果欄有些是條列式（「- 通電支持：⋯」），抽出來時被併成一行，這裡拆回去。
+  const effectLines = String(card.effect || "")
+    .split(/\s+-\s+(?=\*\*)/)
+    .map((line, index) => `<div>${index ? "・" : ""}${newspaperInline(line)}</div>`)
+    .join("");
   const pendingNames = (view.pendingResponders || [])
     .map((code) => FACTIONS[code]?.shortName || code).join("、");
   let waitingText;
-  if (view.strict) {
+  if (pendingFollowUp) {
+    waitingText = newspaperInline(pendingFollowUp.follow_up.prompt || "請再指定一個對象");
+  } else if (view.strict) {
     waitingText = mine ? "請閣下裁示" : `等待 ${FACTIONS[view.waitingFor]?.name || view.waitingFor} 回應`;
   } else if (view.needsEveryone) {
     waitingText = alreadyAnswered
@@ -5028,10 +5079,25 @@ function newspaperMarkup(view) {
   } else {
     waitingText = "任一勢力點閱即可";
   }
+  // 報紙自帶的陣營選擇欄：嚴格順序下玩家得先切到該回應的陣營才點得動按鈕，
+  // 不必回主畫面找選單。四張結完報紙一收，這個選單也跟著消失。
+  const factionPicker = `
+    <label class="newspaper-faction">
+      <span>閱報者</span>
+      <select data-newspaper-faction>
+        ${Object.keys(state?.players || {}).map((code) => `
+          <option value="${code}" ${code === currentPlayer ? "selected" : ""}>
+            ${FACTIONS[code]?.name || code}${code === view.waitingFor ? "　←應由此家回應" : ""}
+          </option>`).join("")}
+      </select>
+    </label>`;
   return `
     <div class="newspaper-masthead">
       <h1 class="newspaper-title">民國報</h1>
-      <div class="newspaper-cardname">${card.name}</div>
+      <div class="newspaper-masthead-right">
+        ${factionPicker}
+        <div class="newspaper-cardname">${card.name}</div>
+      </div>
     </div>
     <div class="newspaper-dateline">
       <span>民國十五年　第 ${view.turn} 回合</span>
@@ -5040,7 +5106,7 @@ function newspaperMarkup(view) {
     <div class="newspaper-figure" data-event-figure="${card.id}"><span>［ 圖 片 待 補 ］${card.id}</span></div>
     <div class="newspaper-headline">${newspaperInline(card.newspaper?.headline || card.name)}</div>
     <div class="newspaper-body">${paragraphs}</div>
-    <div class="newspaper-effect"><b>本 報 附 誌</b>${newspaperInline(card.effect)}${notes}</div>
+    <div class="newspaper-effect"><b>本 報 附 誌</b>${effectLines}${notes}</div>
     ${choiceHints}
     ${answered ? `<div class="newspaper-responses">已回應　${answered}</div>` : ""}
     <div class="newspaper-actions">
@@ -5056,11 +5122,14 @@ function renderNewspaper() {
   if (!backdrop || !sheet) return;
   const view = pendingEventState();
   if (!view) {
+    // 四張都結完就把報紙整份清掉，連帶那個陣營選擇欄一起消失，
+    // 換陣營回歸主畫面上方的選單，直到下次發報。
     backdrop.hidden = true;
+    sheet.innerHTML = "";
     newspaperCardKey = null;
     return;
   }
-  const key = `${view.turn}:${view.index}:${currentPlayer}:${Object.keys(view.responses).length}`;
+  const key = `${view.turn}:${view.index}:${currentPlayer}:${Object.keys(view.responses).length}:${newspaperFollowUp || ""}`;
   backdrop.hidden = false;
   if (key === newspaperCardKey) return;
   newspaperCardKey = key;
@@ -5068,20 +5137,38 @@ function renderNewspaper() {
   sheet.scrollTop = 0;
 }
 
-async function respondToEvent(choice) {
+async function respondToEvent(choice, followUp = null) {
   const view = pendingEventState();
   if (!view) return;
   if (view.strict && view.waitingFor !== currentPlayer) return;
   if (!view.strict && currentPlayer in (view.responses || {})) return;
+  const option = (view.card.resolution?.options || []).find((item) => item.id === choice);
+  if (option?.follow_up && !followUp) {
+    // 先把按鈕換成第二層，等玩家指定對象再送出。
+    newspaperFollowUp = choice;
+    newspaperCardKey = null;
+    renderNewspaper();
+    return;
+  }
   for (const button of $("newspaper").querySelectorAll("[data-event-choice]")) button.disabled = true;
   try {
-    const result = await api("/api/respond-event", { player: currentPlayer, choice: choice || null });
+    const cardId = view.card?.id;
+    const result = await api("/api/respond-event", {
+      player: currentPlayer, choice: choice || null, follow_up: followUp || null,
+    });
     state = result.state;
+    newspaperFollowUp = null;
     newspaperCardKey = null;
+    if (result.card_finished) {
+      const notes = applyFrontendEventEffects(cardId);
+      if (notes.length) showNotice(`${view.card.name}：${notes.join("；")}`);
+    }
     if (result.cycle_finished) {
       // 四張都結完了，後端才會把本回合的經濟結算跑完。
       syncStrategicCitiesFromState();
       advanceEngineering();
+      const healed = applyFieldHospitalRecovery();
+      if (healed.length) showNotice(`傷兵歸隊：${healed.join("；")}`);
       const npcGrowth = applyNpcReinforcements();
       if (npcGrowth.length) showNotice(`NPC 補充兵源：${npcGrowth.join("；")}`);
       resolvedArmyIds.clear();
@@ -5102,18 +5189,109 @@ async function respondToEvent(choice) {
     await publishSharedState(true);
   } catch (error) {
     showNotice(error.message);
+    newspaperFollowUp = null;
     newspaperCardKey = null;
     renderNewspaper();
   }
+}
+
+// 換陣營視角。主畫面上方的選單與報紙右上角的選單共用這一套。
+async function switchFaction(code) {
+  if (!code || code === currentPlayer) return;
+  currentPlayer = code;
+  if ($("playerSelect").value !== code) $("playerSelect").value = code;
+  selectedArmyId = null;
+  selectedBattleId = null;
+  moveMode = false;
+  uiNotice = null;
+
+  await loadGeneralTreeForFaction(currentPlayer);
+  renderArmyMarkers(currentPlayer);
+  updateTopBar();
+  renderPendingActions();
+  newspaperCardKey = null;
+  renderNewspaper();
+
+  const openPanel = document.querySelector(".overlay-panel.active");
+  if (openPanel) {
+    const panelId = openPanel.id.replace("panel", "").toLowerCase();
+    renderPanel(panelId.charAt(0).toLowerCase() + panelId.slice(1));
+  }
+}
+
+// 少數事件卡的效果住在前端（部隊兵力、將領忠誠），後端結完之後由這裡補上。
+function applyFrontendEventEffects(cardId) {
+  const notes = [];
+  if (cardId === "may_coup_wave") {
+    // 大帥與嫡系（忠誠不變）將領旗下所有陸軍兵種各 +1 營，受 100 戰力上限限制。
+    const points = bootstrap?.features?.unit_force_points
+      || { infantry: 1, cavalry: 1, machine_gun: 2, artillery: 4 };
+    for (const army of allArmies()) {
+      const faction = factionForArmy(army);
+      if (!TURN_PLAYERS.includes(faction)) continue;
+      const general = generalTrees[faction]?.generals?.[army.generalId];
+      const core = general && (general.role === "great_general" || general.loyalty_exempt
+        || general.loyalty === null || general.absolute_loyalty);
+      if (!core) continue;
+      const gained = [];
+      for (const unit of Object.keys(UNIT_META)) {
+        if (!Number(army.units[unit] || 0)) continue;
+        if (forcePoints(armyUnits(army)) + Number(points[unit] || 1) > armyForceCap()) continue;
+        army.units[unit] = Number(army.units[unit] || 0) + 1;
+        gained.push(UNIT_META[unit]?.name || unit);
+      }
+      if (gained.length) notes.push(`${army.designator}：${gained.join("、")}各 +1 營`);
+    }
+  }
+  if (cardId === "balfour_declaration") {
+    // 每位玩家隨機一位可變忠誠將領 +1。
+    for (const faction of TURN_PLAYERS) {
+      const pool = Object.values(generalTrees[faction]?.generals || {}).filter((general) =>
+        general.loyalty !== null && general.loyalty !== undefined
+        && !general.absolute_loyalty && !general.loyalty_exempt
+        && generalOwners[general.id] === faction);
+      if (!pool.length) continue;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      adjustGeneralLoyalty(pick.id, 1);
+      notes.push(`${FACTIONS[faction]?.shortName || faction} ${pick.name} 忠誠 +1`);
+    }
+  }
+  return notes;
+}
+
+// 非戰公約的停戰：簽了的人三回合內不得主動攻擊、也不得移入他方領地。
+function ceasefireEffect(faction = currentPlayer) {
+  return activeTimedEffects(faction, "ceasefire")[0] || null;
+}
+
+// 女子救護隊：三回合內所有部隊都吃戰後傷兵歸隊，不必買盤尼西林。
+function fieldHospitalWindowActive(faction) {
+  return activeTimedEffects(faction, "field_hospital_window").length > 0;
 }
 
 function setupNewspaper() {
   const sheet = $("newspaper");
   if (!sheet) return;
   sheet.addEventListener("click", (event) => {
+    const cancel = event.target.closest("[data-event-follow-cancel]");
+    if (cancel) {
+      newspaperFollowUp = null;
+      newspaperCardKey = null;
+      renderNewspaper();
+      return;
+    }
+    const followUp = event.target.closest("[data-event-follow-up]");
+    if (followUp && !followUp.disabled) {
+      respondToEvent(newspaperFollowUp, followUp.dataset.eventFollowUp);
+      return;
+    }
     const button = event.target.closest("[data-event-choice]");
     if (!button || button.disabled) return;
     respondToEvent(button.dataset.eventChoice || null);
+  });
+  sheet.addEventListener("change", (event) => {
+    const picker = event.target.closest("[data-newspaper-faction]");
+    if (picker) switchFaction(picker.value);
   });
 }
 
@@ -5467,7 +5645,9 @@ async function resolveBattleRound(battle) {
   for (const side of ["A", "B"]) {
     const remainingById = new Map((result.remaining[side].armies || []).map((army) => [army.name, army.units]));
     for (const army of battleArmies(battle, side)) {
+      const before = { ...armyUnits(army) };
       setArmyTotalUnits(army, remainingById.get(army.id) || armyUnits(army));
+      recordCombatLosses(army, before);
     }
   }
   const action = armyOrderHistory.find((item) => item.battleId === battle.id) || null;
@@ -5885,6 +6065,16 @@ function handleMapDestination(destination) {
       showNotice(`${POWER_NAME[destination.power] || destination.power}的租借地，中國各勢力不得進入或通過。`);
       return;
     }
+    const ceasefire = ceasefireEffect(currentPlayer);
+    if (ceasefire) {
+      const occupant = allArmies().find((other) => other.cellKey === destination.key
+        && factionForArmy(other) !== currentPlayer);
+      const foreignGround = destination.fac && destination.fac !== currentPlayer;
+      if (occupant || foreignGround) {
+        showNotice(`${ceasefire.name || "停戰"}期間（剩餘 ${ceasefire.remaining_turns} 回合）不得主動攻擊、也不得移入他方領地。`);
+        return;
+      }
+    }
     const adjacent = cellNeighbors(source).some((cell) => cell.key === destination.key);
     const railPath = railwayPath(source, destination);
     const marchPath = railPath ? null : forcedMarchPath(source, destination, army);
@@ -6200,6 +6390,8 @@ async function advanceToNextTurn(force = false) {
       return;
     }
     advanceEngineering();
+    const healed = applyFieldHospitalRecovery();
+    if (healed.length) showNotice(`傷兵歸隊：${healed.join("；")}`);
     const npcGrowth = applyNpcReinforcements();
     resolvedArmyIds.clear();
     replaceObject(turnReady, {});
@@ -6259,6 +6451,14 @@ window.__neDebug = {
   riverStepAllowed,
   cellUsableAsRural,
   cellUsableForForcedMarch,
+  applyFrontendEventEffects,
+  ceasefireEffect,
+  fieldHospitalWindowActive,
+  armyRevealedByIntel,
+  provinceForArmy,
+  hasFieldHospital,
+  applyFieldHospitalRecovery,
+  switchFaction,
   pendingEventState,
   renderNewspaper,
   respondToEvent,
