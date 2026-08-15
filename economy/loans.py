@@ -97,13 +97,29 @@ class LoanBook:
             if loan["bank"] == bank_id and not loan.get("off_quota")
         )
 
-    def available_credit(self, bank_id: str, relations: Dict[str, int], loans: List[Dict[str, Any]]) -> int:
+    def adjusted_limit(self, bank_id: str, base_limit: int,
+                       limit_adjustments: Optional[Dict[str, Any]] = None) -> int:
+        """事件卡對授信額度的加減。
+
+        `bonus` 是永久的固定加值（德意志入盟給德華 +15），
+        `factor` 是限時的倍率（佛州地產崩讓花旗打對折、華爾街多頭放大一半）。
+        先加固定值再乘倍率，結果不會低於 0。
+        """
+        adjustments = limit_adjustments or {}
+        limit = int(base_limit) + int((adjustments.get("bonus") or {}).get(bank_id, 0))
+        factor = float((adjustments.get("factor") or {}).get(bank_id, 1))
+        return max(0, int(round(limit * factor)))
+
+    def available_credit(self, bank_id: str, relations: Dict[str, int], loans: List[Dict[str, Any]],
+                         limit_adjustments: Optional[Dict[str, Any]] = None) -> int:
         terms = self.terms_for_bank(bank_id, relations)
         if terms is None:
             return 0
-        return max(0, terms["limit"] - self.owed_to(loans, bank_id))
+        limit = self.adjusted_limit(bank_id, terms["limit"], limit_adjustments)
+        return max(0, limit - self.owed_to(loans, bank_id))
 
-    def offers(self, relations: Dict[str, int], loans: List[Dict[str, Any]], turn: int) -> List[Dict[str, Any]]:
+    def offers(self, relations: Dict[str, int], loans: List[Dict[str, Any]], turn: int,
+               limit_adjustments: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """One row per bank, ready for the borrowing panel."""
         rows = []
         for bank in self.data["banks"]:
@@ -119,12 +135,14 @@ class LoanBook:
                 "relation": relation,
                 "tier": tier,
                 "tier_label": self.tiers[tier]["label"] if tier == TIER_BLOCKED else self.tiers[tier]["label"],
-                "limit": int(bank["limits"].get(tier, 0)) if terms else 0,
+                "limit": self.adjusted_limit(bank_id, bank["limits"].get(tier, 0),
+                                             limit_adjustments) if terms else 0,
                 "outstanding": self.owed_to(loans, bank_id),
-                "available": self.available_credit(bank_id, relations, loans),
+                "available": self.available_credit(bank_id, relations, loans, limit_adjustments),
                 "interest_per_turn": terms["interest_per_turn"] if terms else None,
                 "term_turns": terms["term_turns"] if terms else None,
-                "can_borrow": bool(terms) and self.available_credit(bank_id, relations, loans) > 0,
+                "can_borrow": bool(terms)
+                and self.available_credit(bank_id, relations, loans, limit_adjustments) > 0,
             })
         for blocked in self.data.get("no_commercial_lending", []):
             rows.append({
