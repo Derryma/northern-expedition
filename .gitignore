@@ -19,3 +19,8 @@ out/
 tmp/
 temp/
 state_snapshots/
+
+# 頭像原圖（2048px q100，約 74MB）留在本機，不進版控。
+# 遊戲讀的是 portraits/ 底下壓好的版本。
+frontend/assets/portraits/_source/
+frontend/assets/portraits/to delete/

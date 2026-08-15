@@ -1237,46 +1237,6 @@
       "story": "孔祥熙入閣主政，組建中央銀行並穩定金融體系。"
     },
     {
-      "id": "free_china_educators",
-      "name": "自由中國教育家",
-      "deck_type": "function",
-      "category": "political",
-      "holdable": true,
-      "mechanic": "ideology_shield",
-      "cost": 0,
-      "effect": "全陣營免疫「紅軍起義」與「共黨暴動」10 回合。若同回合已有對手對你打出這兩張牌，該次效果立即失效。使用後對蘇關係 −2，對英、對日關係各 +1。需對蘇關係 5 以下。",
-      "requires_relation_max": {
-        "power": "su",
-        "value": 5
-      },
-      "duration_turns": 10,
-      "shields_cards": [
-        "red_army_uprising",
-        "communist_riot"
-      ],
-      "anti_communist": true,
-      "relation_effects": {
-        "su": -2,
-        "uk": 1,
-        "jp": 1
-      },
-      "story": "蔡元培組織學術界反共人士於北京大學通電譴責中國共產黨。"
-    },
-    {
-      "id": "peking_university_movement",
-      "name": "北京大學共運",
-      "deck_type": "function",
-      "category": "political",
-      "holdable": true,
-      "mechanic": "ideology_counter",
-      "cost": 0,
-      "effect": "場上若有生效中的「自由中國教育家」，使用本牌立即使其失效。需對蘇關係 6 以上。",
-      "requires_relation_min": 6,
-      "foreign_power_key": "su",
-      "cancels_effect_kind": "ideology_shield",
-      "story": "李大釗、陳獨秀、魯迅發動社會主義學潮，壓制蔡元培陣營的自由中國思潮。"
-    },
-    {
       "id": "artifact_smuggling",
       "name": "盜賣文物",
       "deck_type": "function",
@@ -1402,25 +1362,6 @@
       "relation_gain": 1
     },
     {
-      "id": "confucian_revival",
-      "name": "復興儒學",
-      "deck_type": "function",
-      "category": "nationalist",
-      "holdable": true,
-      "cost": 0,
-      "mechanic": "loyalty_all",
-      "loyalty_delta": 1,
-      "requires_provinces": [
-        "山東"
-      ],
-      "requires_relation_max": {
-        "power": "su",
-        "value": 5
-      },
-      "effect": "需完全控制山東，且對蘇關係 5 以下：己方全體可變忠誠將領忠誠 +1。\n條件未達成時本卡不會出現在牌庫中。",
-      "story": "梁漱溟受時任山東督軍聘用，以濟南為核心推展新儒學教育，並擴建曲阜大學。"
-    },
-    {
       "id": "siemens_china_expansion",
       "name": "西門子公司在華擴產",
       "deck_type": "function",
@@ -1489,7 +1430,7 @@
       "mechanic": "radio_station",
       "cost": 30,
       "factory_cost": 30,
-      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈無線電網〉。花費 $30 與 30 工業點：此後你打出的〈部隊晉升〉與〈復興儒學〉改為忠誠 +2，〈鼓吹地方自治〉改為忠誠 −2。永久有效。",
+      "effect": "需控制至少一座 4 級或 5 級城市，並已於事件卡池抽出〈無線電網〉。花費 $30 與 30 工業點：此後你打出的〈部隊晉升〉改為忠誠 +2、〈鼓吹地方自治〉改為忠誠 −2，事件卡〈復興儒學〉落在你身上時亦改為忠誠 +2。永久有效。",
       "requires_city_level_min": 4,
       "requires_unlock": "event_radio_network",
       "requires_unlock_name": "事件卡〈無線電網〉",

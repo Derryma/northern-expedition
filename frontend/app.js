@@ -1606,9 +1606,7 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
           ? `飛艇偵查：${(effect.target_provinces || []).join("、")}，剩餘 ${effect.remaining_turns} 回合`
           : effect.kind === "intel_network"
           ? `情報網：${effect.target_province}，剩餘 ${effect.remaining_turns} 回合`
-          : effect.kind === "ideology_shield"
-            ? `${effect.name || "自由中國教育家"}：免疫共黨暴動與紅軍起義，剩餘 ${effect.remaining_turns} 回合`
-            : `${effect.name || "持續效果"}剩餘 ${effect.remaining_turns} 回合`;
+          : `${effect.name || "持續效果"}剩餘 ${effect.remaining_turns} 回合`;
       return `<span>${label}</span>`;
     }).join("")}
     ${cityEffects.map((effect) => {
@@ -1631,6 +1629,26 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     ${Number(payload?.loan_ban_until_turn || 0) > Number(state?.turn || 0)
       ? `<span>信用受損：列強銀行拒貸，至第 ${payload.loan_ban_until_turn} 回合</span>` : ""}
   </div>`;
+}
+
+// 11.1 江浙財團的墊款：回報「現在有部隊處於交戰中」的省份。
+//
+// 判定三步走，用的都是既有資料：
+//   1. allArmies() 每支部隊的 cellKey 決定它在哪一省（provinceForArmy）
+//   2. activeBattleForArmy() 查 activeBattles 裡 status 為 pending／ongoing 的場次
+//   3. 有任一支部隊在該省且交戰中 → 該省列入清單，後端據此扣產出
+//
+// 後端沒有部隊資料，所以這份清單隨 next_turn 一起送過去
+// （與 riot_garrisons、city_garrisons 同一條通道）。
+function contestedProvinces() {
+  const provinces = new Set();
+  for (const army of allArmies()) {
+    if (army?.status === "jailed") continue;
+    if (!activeBattleForArmy(army)) continue;
+    const province = provinceForArmy(army);
+    if (province) provinces.add(province);
+  }
+  return [...provinces];
 }
 
 function qingGangRiotGarrisons() {
@@ -1726,15 +1744,6 @@ function functionActionMessage(action, viewer = currentPlayer) {
   if (action.unlock_effect?.kind === "central_bank") {
     const bank = action.unlock_effect;
     parts.push(`此後新借款利率一律 ${Math.round(bank.interest_per_turn * 100)}%、期限 +${bank.loan_term_bonus} 回合`);
-  }
-  if (action.unlock_effect?.kind === "ideology_counter") {
-    const cleared = [...new Set(action.unlock_effect.cleared || [])].map((code) => factionLabel(code, code === viewer));
-    parts.push(`壓制了 ${cleared.join("、")} 的自由中國教育家`);
-  }
-  if (action.timed_effect?.kind === "ideology_shield") {
-    const cancelled = action.timed_effect.cancelled_effects || [];
-    parts.push(`免疫紅軍起義與共黨暴動 ${action.timed_effect.remaining_turns} 回合`
-      + (cancelled.length ? `，並使本回合的${cancelled.join("、")}失效` : ""));
   }
   if (action.body_guard) {
     const guard = action.body_guard;
@@ -3148,13 +3157,6 @@ function gangRiotShielded(owner, province, mechanic) {
     && (effect.blocked_mechanics || []).includes(mechanic));
 }
 
-function ideologyShielded(owner, cardId) {
-  return (state?.players?.[owner]?.timed_effects || []).some((effect) =>
-    effect.kind === "ideology_shield"
-    && Number(effect.remaining_turns || 0) > 0
-    && (effect.shields_cards || []).includes(cardId));
-}
-
 function gangRiotTargets(card) {
   const allowed = card.provinces?.length ? new Set(card.provinces) : null;
   return TURN_PLAYERS
@@ -3172,12 +3174,12 @@ function gangRiotTargets(card) {
     .filter((entry) => entry.provinces.length);
 }
 
-// 共黨暴動與紅軍起義：對方要有城市可癱瘓，而且沒有「自由中國教育家」護持。
+// 共黨暴動與紅軍起義：對方要有城市可癱瘓就行。
+// （〈自由中國教育家〉已改制成事件卡 10.6，改走事件卡池封鎖，不再是打牌時的護盾。）
 function riotTargets(card) {
   return TURN_PLAYERS
     .filter((player) => player !== currentPlayer)
-    .filter((owner) => (state?.players?.[owner]?.city_economy || []).length)
-    .filter((owner) => !ideologyShielded(owner, card.id));
+    .filter((owner) => (state?.players?.[owner]?.city_economy || []).length);
 }
 
 function provinceOptionMarkup(provinces) {
@@ -3205,7 +3207,7 @@ function functionCardTargetMarkup(card) {
   }
   if (["communist_riot", "red_army_uprising"].includes(card.mechanic)) {
     const targets = riotTargets(card);
-    if (!targets.length) return `<div class="card-target-note">目前沒有可癱瘓的對手：對方沒有城市，或已有「自由中國教育家」護持</div>`;
+    if (!targets.length) return `<div class="card-target-note">目前沒有可癱瘓的對手：對方沒有城市</div>`;
     return `<label class="card-target">指定勢力<select data-card-target-owner="${card.id}">${targets.map((player) => `<option value="${player}">${FACTIONS[player]?.name || player}</option>`).join("")}</select></label>`;
   }
   if (card.mechanic === "reserve_loss") {
@@ -7850,6 +7852,7 @@ async function advanceToNextTurn(force = false) {
       force,
       riot_garrisons: qingGangRiotGarrisons(),
       city_garrisons: uprisingCityGarrisons(),
+      contested_provinces: contestedProvinces(),
     });
     state = result.state;
     syncStrategicCitiesFromState();

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import math
+import re
 from copy import deepcopy
 from typing import Any, Dict, Iterable, Optional
 
@@ -87,8 +88,6 @@ FUNCTION_CARD_COPIES = {
     "body_guard_squad": 5,
     "function_軍閥公債": 4,
     "jiangzhe_financiers": 1,
-    "free_china_educators": 2,
-    "peking_university_movement": 2,
     "affiliation_slot_upgrade": 4,
     "foreign_relation_jp": 5,
     "foreign_relation_su": 5,
@@ -104,7 +103,6 @@ FUNCTION_CARD_COPIES = {
     "trade_export_fr": 5,
     "trade_export_us": 5,
     # 中國人之恥開局 0 張，只靠〈盜賣文物〉塞進牌庫，全場上限 9 張。
-    "confucian_revival": 2,
     # 德商三張：德國不玩列強政治、只做生意，所以不綁關係，開局就在牌庫裡。
     "siemens_china_expansion": 2,
     "krupp_mauser_return": 1,
@@ -314,6 +312,10 @@ class GameEngine:
             profile["delayed_output_bonuses"] = []
             # 火燒紅蓮寺這類限時的徵兵折抵。
             profile["timed_recruit_discounts"] = []
+            profile["relation_drop_amplifiers"] = []
+            profile["loan_rate_overrides"] = []
+            profile["province_card_immunities"] = []
+            profile["pending_frontend_effects"] = []
             # 中央研究院：holder 表示收編過，disqualified 是永久除名。
             profile["academia_sinica"] = {"holder": False, "disqualified": False}
             profile["loan_interest_grace_until"] = None
@@ -339,6 +341,19 @@ class GameEngine:
             "event_history": [],
             "pending_events": None,
             # 事件卡造成的暫時性限制。
+            # event_locks：被封鎖的事件卡。封鎖 ≠ 移除——卡片仍留在 event_pool 裡，
+            # 封鎖期間抽不到；到期後不必洗回，自然又抽得到。
+            "event_locks": [],
+            "concession_overrides": [],
+            # 11.1：省內有部隊「交戰中」時扣產出的規則，以及前端每回合回報的交戰省份。
+            # 後端沒有部隊資料，交戰與否由前端算好後隨 next_turn 傳進來
+            # （與 riot_garrisons / city_garrisons 同一條通道）。
+            "province_combat_penalties": [],
+            "contested_provinces": [],
+            "bond_underwriting": [],
+            # 學潮（9.3、10.7）造成的城市產出減半走 city_output_effects；
+            # 《新月》月刊（9.5）一旦抽出，此後學潮的減幅由 1/2 收斂為 1/4。
+            "student_unrest_relief": False,
             "perk_suspensions": [],
             "bank_bans": [],
             "bank_limit_multipliers": [],
@@ -444,6 +459,7 @@ class GameEngine:
         force: bool = False,
         riot_garrisons: Optional[Dict[str, bool]] = None,
         city_garrisons: Optional[Dict[str, int]] = None,
+        contested_provinces: Optional[Iterable[str]] = None,
     ) -> Dict[str, Any]:
         if active_player is not None:
             self._player(active_player)
@@ -462,6 +478,8 @@ class GameEngine:
                 names = ", ".join(blocked_players)
                 raise ValueError(f"players must resolve pending card draws first: {names}")
         self.state["turn"] += 1
+        if contested_provinces is not None:
+            self.set_contested_provinces(contested_provinces)
         self._update_qing_gang_riots(riot_garrisons or {})
         self._update_red_army_uprisings(city_garrisons or {})
         # 事件卡週期：先把本回合唯一一則報紙發出去，等指定勢力回應後才結算經濟。
@@ -529,15 +547,26 @@ class GameEngine:
         return self._player(player).setdefault(
             "academia_sinica", {"holder": False, "disqualified": False})
 
+    def academia_founded(self) -> bool:
+        """中央研究院是否已經成立（全場限一所，成立與否是全域狀態）。"""
+        return bool(self.state.get("academia_sinica", {}).get("founded"))
+
     def academia_active(self, player: str) -> bool:
-        status = self.academia_status(player)
-        if not status.get("holder") or status.get("disqualified"):
+        """v4 7.2：研究院一旦成立，**任何**控制江蘇的玩家都吃這個加成。
+
+        舊版要求你自己抽到並回應過（holder 旗標）才算數；v4 把那道門檻拿掉了，
+        改成「加成跟著江蘇跑」。失格（賣過殷墟甲骨／離開江蘇期間打過盜賣文物）
+        仍然是逐玩家的永久狀態，失格者就算控制江蘇也拿不到。
+        """
+        if not self.academia_founded():
+            return False
+        if self.academia_status(player).get("disqualified"):
             return False
         return bool(self._controlled_provinces(player, [self.ACADEMIA_PROVINCE]))
 
     def disqualify_academia(self, player: str, reason: str) -> Optional[Dict[str, Any]]:
         status = self.academia_status(player)
-        if not status.get("holder") or status.get("disqualified"):
+        if not self.academia_founded() or status.get("disqualified"):
             return None
         status["disqualified"] = True
         status["reason"] = reason
@@ -726,6 +755,10 @@ class GameEngine:
         for payload in self.state["players"].values():
             active_effects = []
             for effect in payload.get("timed_effects", []):
+                # 無期限旗標（remaining_turns 為 None）永遠留著，不參與倒數。
+                if effect.get("permanent") or effect.get("remaining_turns") is None:
+                    active_effects.append(effect)
+                    continue
                 remaining = int(effect.get("remaining_turns", 0)) - 1
                 if remaining > 0:
                     effect["remaining_turns"] = remaining
@@ -761,14 +794,32 @@ class GameEngine:
             city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["faction"])
         return strategic_map
 
+    def concession_override(self) -> Optional[Dict[str, Any]]:
+        """11.2 南洋兄弟與英美煙草：期間內租界加成停發，改成每回合固定值。"""
+        turn = int(self.state["turn"])
+        for entry in self.state.get("concession_overrides", []):
+            if turn < int(entry.get("until_turn", 0)):
+                return entry
+        return None
+
     def _concession_bonuses(self) -> Dict[str, Dict[str, Any]]:
-        """租界加成，結算週期見 economy/output.py。港口無經濟效果。"""
-        if not is_settlement_turn(int(self.state["turn"])):
+        """租界加成，結算週期見 economy/output.py。港口無經濟效果。
+
+        11.2 生效期間走另一套：不再每三回合結算一次原本的加成，
+        改成每回合對每座租界城市固定發放（override 裡的 cash／factory）。
+        """
+        override = self.concession_override()
+        if not override and not is_settlement_turn(int(self.state["turn"])):
             return {}
         bonuses: Dict[str, Dict[str, Any]] = {}
         for city in self.data["strategic_map"]["cities"]:
-            bonus = treaty_port_bonus(city)
-            cash, factory = bonus["cash"], bonus["factory"]
+            if override:
+                if not city.get("concession"):
+                    continue
+                cash, factory = int(override.get("cash", 0)), int(override.get("factory", 0))
+            else:
+                bonus = treaty_port_bonus(city)
+                cash, factory = bonus["cash"], bonus["factory"]
             if not cash and not factory:
                 continue
             owner = self.state["city_owners"].get(city["id"], city["faction"])
@@ -793,6 +844,55 @@ class GameEngine:
             entry["factory"] += int(rule["factory"])
         return bonus
 
+    # ------------------------------------------------------------------
+    # 省份交戰判定（11.1 江浙財團的墊款）
+    #
+    # 部隊的位置與「交戰中」狀態都住在前端：army.cellKey 決定它在哪一省
+    # （provinceForArmy），activeBattles 裡 status 為 pending／ongoing 的那幾場
+    # 決定誰在交戰（activeBattleForArmy）。前端把「現在有部隊交戰中的省份」
+    # 算成一個清單，隨 next_turn 傳進來，後端只負責據此扣產出。
+    # ------------------------------------------------------------------
+
+    def bond_underwriting_for(self, player: str) -> Optional[Dict[str, Any]]:
+        """11.1：這位玩家現在有沒有江浙財團的承銷特權。
+
+        紅利跟著省份跑——條件是「完全控制清單上的每一省」且「對指定列強不友好」，
+        兩省易主或倒向莫斯科都會立刻失去，奪回則恢復。
+        """
+        relations = self._player(player).get("foreign_relations", {})
+        for entry in self.state.get("bond_underwriting", []):
+            provinces = entry.get("provinces") or []
+            if provinces and not all(self._controlled_provinces(player, [name])
+                                     for name in provinces):
+                continue
+            if any(int(relations.get(power, 0)) > int(ceiling)
+                   for power, ceiling in (entry.get("relation_max") or {}).items()):
+                continue
+            return entry
+        return None
+
+    def set_contested_provinces(self, provinces: Iterable[str]) -> list:
+        """前端回報：這些省份現在有部隊處於交戰中。"""
+        names = sorted({str(name) for name in (provinces or []) if str(name).strip()})
+        self.state["contested_provinces"] = names
+        self._refresh_city_income()
+        return names
+
+    def province_is_contested(self, province: str) -> bool:
+        return str(province) in (self.state.get("contested_provinces") or [])
+
+    def _province_combat_penalty(self, province: str) -> Dict[str, int]:
+        """這一省現在因為交戰而要扣多少產出。沒在打就是 0。"""
+        total = {"cash": 0, "factory": 0}
+        if not self.province_is_contested(province):
+            return total
+        for rule in self.state.get("province_combat_penalties", []):
+            if str(province) not in (rule.get("provinces") or []):
+                continue
+            total["cash"] += int(rule.get("cash", 0))
+            total["factory"] += int(rule.get("factory", 0))
+        return total
+
     def _city_economy_for(self, player: str) -> list[Dict[str, Any]]:
         development = self.state.get("city_development", {})
         province_bonus = self._province_output_bonus(player)
@@ -801,14 +901,16 @@ class GameEngine:
             if self.state["city_owners"].get(city["id"], city["faction"]) != player:
                 continue
             general_bonus = province_bonus.get(city["province"], {"cash": 0, "factory": 0})
+            # 11.1：該省正在交戰時，境內每座城市的金錢與工廠各扣一份（商界視戰事為害）。
+            war = self._province_combat_penalty(city["province"])
             cash, factory = self._adjusted_city_output(
                 city["id"],
                 scaled_city_value(city, "cash")
                 + int(development.get(city["id"], {}).get("cash", 0))
-                + int(general_bonus["cash"]),
+                + int(general_bonus["cash"]) + war["cash"],
                 scaled_city_value(city, "factory")
                 + int(development.get(city["id"], {}).get("factory", 0))
-                + int(general_bonus["factory"]),
+                + int(general_bonus["factory"]) + war["factory"],
             )
             economy.append({
                 "id": city["id"],
@@ -1010,6 +1112,11 @@ class GameEngine:
                 raise ValueError("unit promotion must target your own general")
             if card_id == "local_autonomy_agitation" and target_owner == player:
                 raise ValueError("local autonomy agitation must target an opposing general")
+            # 復興儒學：禮教既立，聯省自治之說難行——目標只要還控制山東就免疫。
+            immunity = self.province_card_immunity(str(target_owner), card_id)
+            if immunity:
+                raise ValueError(
+                    f"{immunity.get('label', '事件影響')}：目標仍控制{immunity['province']}，本牌對其無效")
             magnitude = int((player_state.get("radio_station") or {}).get("loyalty_magnitude", 1)) \
                 if card_id in ((player_state.get("radio_station") or {}).get("affects_cards") or []) else 1
             loyalty_delta = magnitude if card_id == "unit_promotion" else -magnitude
@@ -1263,48 +1370,24 @@ class GameEngine:
                 "interest_per_turn": player_state["loan_interest_override"],
                 "loan_term_bonus": player_state["loan_term_bonus"],
             }
-        elif mechanic == "ideology_shield":
-            # 自由中國教育家：10 回合免疫，並取消本回合已經落在自己頭上的那兩張牌。
-            timed_effect = {
-                "id": card_id,
-                "name": card.get("name", card_id),
-                "kind": "ideology_shield",
-                "remaining_turns": int(card.get("duration_turns", 10)),
-                "owners": [player],
-                "shields_cards": list(card.get("shields_cards") or []),
-            }
-            player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
-            cancelled = self._cancel_same_turn_disruptions(player, timed_effect["shields_cards"])
-            timed_effect["cancelled_effects"] = cancelled
-        elif mechanic == "ideology_counter":
-            # 北京大學共運：把場上生效中的自由中國教育家全部打掉。
-            kind = str(card.get("cancels_effect_kind", "ideology_shield"))
-            cleared = []
-            for code, other in self.state["players"].items():
-                keep = []
-                for effect in other.get("timed_effects", []):
-                    if effect.get("kind") == kind and int(effect.get("remaining_turns", 0)) > 0:
-                        cleared.append(code)
-                        continue
-                    keep.append(effect)
-                other["timed_effects"] = keep
-            if not cleared:
-                raise ValueError("場上沒有生效中的「自由中國教育家」可以壓制")
-            for code in set(cleared):
-                self._notify(code, f"{card.get('name', card_id)}：你的自由中國教育家效果被壓制失效。")
-            unlock_effect = {"owner": player, "name": card.get("name", card_id), "kind": "ideology_counter", "cleared": cleared}
         elif mechanic in ("project_loan", "warlord_bond"):
             # 專案貸款：卡片自帶利率與到期日，不佔用該行授信額度。
+            bond_privilege = None
             cash_delta = int(card.get("cash", 0))
             debt_delta = int(card.get("debt", 0))
             loan = self._record_card_loan(player, card, debt_delta)
             player_state["treasury"] += cash_delta
             if mechanic == "warlord_bond":
                 # 發行公債後信用受損，列強銀行在鎖定期內拒絕任何新貸。
-                ban_turns = int(card.get("loan_ban_turns", 5))
-                unlock_turn = int(self.state["turn"]) + max(1, ban_turns)
-                current = player_state.get("loan_ban_until_turn")
-                player_state["loan_ban_until_turn"] = max(int(current or 0), unlock_turn)
+                # 但拿到江浙財團承銷特權的人不受這個懲罰（11.1）。
+                underwriting = self.bond_underwriting_for(player)
+                if underwriting and underwriting.get("no_credit_damage"):
+                    bond_privilege = underwriting.get("label")
+                else:
+                    ban_turns = int(card.get("loan_ban_turns", 5))
+                    unlock_turn = int(self.state["turn"]) + max(1, ban_turns)
+                    current = player_state.get("loan_ban_until_turn")
+                    player_state["loan_ban_until_turn"] = max(int(current or 0), unlock_turn)
             loan_effect = {
                 "owner": player,
                 "loan_id": loan["id"] if loan else None,
@@ -1313,6 +1396,7 @@ class GameEngine:
                 "interest_per_turn": loan["interest_per_turn"] if loan else None,
                 "due_turn": loan["due_turn"] if loan else None,
                 "loan_ban_until_turn": player_state.get("loan_ban_until_turn"),
+                "bond_privilege": bond_privilege,
             }
         elif mechanic == "concession_city_development":
             # 怡和洋行／美商投資：加成落在「你控制的、掛該國租界」的城市上。
@@ -1427,7 +1511,6 @@ class GameEngine:
         elif mechanic == "communist_riot":
             if not target_owner or target_owner == player or target_owner not in self.state["players"]:
                 raise ValueError("communist riot must target another playable faction")
-            self._require_no_ideology_shield(target_owner, card_id)
             target_cities = list(self._player(target_owner).get("city_economy", []))
             if not target_cities:
                 raise ValueError("target faction has no cities to disrupt")
@@ -1492,7 +1575,6 @@ class GameEngine:
             # 紅軍起義：兩座隨機城市產出歸零，無期限，直到目標自己派一個旅（5 營）進駐。
             if not target_owner or target_owner == player or target_owner not in self.state["players"]:
                 raise ValueError("red army uprising must target another playable faction")
-            self._require_no_ideology_shield(target_owner, card_id)
             target_cities = list(self._player(target_owner).get("city_economy", []))
             if not target_cities:
                 raise ValueError("target faction has no cities to disrupt")
@@ -2102,6 +2184,8 @@ class GameEngine:
         owner = self.state.get("city_owners", {}).get(city_id, city["faction"] if city else None)
         if not city or owner != player or city["level"] < 3:
             raise ValueError("reinforcement requires a controlled major city")
+        if self.city_in_student_unrest(city_id):
+            raise ValueError(f"{city['name']}正值學潮，本地不可補充兵力")
         if current_force is not None:
             next_force = float(current_force) + UNIT_FORCE_POINTS[unit_type] * count
             if next_force > ARMY_FORCE_CAP:
@@ -2157,6 +2241,10 @@ class GameEngine:
         turn = int(self.state["turn"])
         # 專案貸款自帶利率與期限，蓋過該行的常規條件。
         interest = float(card.get("interest_per_turn", terms["interest_per_turn"]))
+        # 事件卡可以永久改寫某張卡的利率（11.3 不裁兵 → 軍閥公債 12%）。
+        for override in payload.get("loan_rate_overrides") or []:
+            if str(override.get("card_id")) == str(card.get("id")):
+                interest = float(override["interest_per_turn"])
         term_turns = int(card.get("term_turns", terms["term_turns"])) + int(payload.get("loan_term_bonus", 0))
         loan = {
             "id": f"L{self._next_loan_id(player)}",
@@ -2194,13 +2282,34 @@ class GameEngine:
     def loan_data_for_snapshot(self, player: str) -> Dict[str, Any]:
         return {"offers": self.loan_offers(player)["offers"], "loans": self._loan_rows(player)}
 
+    def bank_limit_adjustments(self, player: str) -> Dict[str, Any]:
+        """事件卡對這位玩家授信額度的加減，交給 LoanBook 套用。
+
+        `bonus` 永久固定加值（2.1 德意志入盟給德華 +15）；
+        `factor` 限時倍率（6.1 佛州地產崩讓花旗打對折、6.4 華爾街多頭全面 ×1.5）。
+        """
+        turn = int(self.state["turn"])
+        bonus = dict(self._player(player).get("bank_limit_bonus") or {})
+        factor: Dict[str, float] = {}
+        for entry in self.state.get("bank_limit_multipliers", []):
+            if turn >= int(entry.get("until_turn", 0)):
+                continue
+            players = entry.get("players")
+            if players and player not in players:
+                continue
+            banks = entry.get("banks") or ([entry["bank"]] if entry.get("bank") else [])
+            for bank_id in banks:
+                factor[bank_id] = factor.get(bank_id, 1.0) * float(entry.get("factor", 1))
+        return {"bonus": bonus, "factor": factor}
+
     def loan_offers(self, player: str) -> Dict[str, Any]:
         payload = self._player(player)
         loans = payload.setdefault("loans", [])
         turn = int(self.state["turn"])
         ban_until = payload.get("loan_ban_until_turn")
         ban_active = ban_until is not None and turn < int(ban_until)
-        offers = LOANS.offers(payload.get("foreign_relations", {}), loans, turn)
+        offers = LOANS.offers(payload.get("foreign_relations", {}), loans, turn,
+                              self.bank_limit_adjustments(player))
         if ban_active:
             for offer in offers:
                 if offer.get("bank") is None:
@@ -2443,42 +2552,6 @@ class GameEngine:
             # 關係一動，友好卡與譴責卡的進出也要跟著重算。
             self._sync_foreign_deck_cards(player)
         return changes
-
-    # ---- 自由中國教育家的免疫 --------------------------------------------
-
-    def _ideology_shield(self, player: str, card_id: str) -> Optional[Dict[str, Any]]:
-        for effect in self._player(player).get("timed_effects", []):
-            if effect.get("kind") != "ideology_shield" or int(effect.get("remaining_turns", 0)) <= 0:
-                continue
-            if card_id in (effect.get("shields_cards") or []):
-                return effect
-        return None
-
-    def _require_no_ideology_shield(self, target_owner: str, card_id: str) -> None:
-        shield = self._ideology_shield(target_owner, card_id)
-        if shield:
-            raise ValueError(
-                f"{target_owner} 有「{shield.get('name', '自由中國教育家')}」護持"
-                f"（剩餘 {shield['remaining_turns']} 回合），本牌對其無效"
-            )
-
-    def _cancel_same_turn_disruptions(self, player: str, card_ids: Iterable[str]) -> list:
-        """同回合已經打在自己頭上的紅軍起義／共黨暴動立即失效。"""
-        wanted = set(card_ids)
-        turn = int(self.state["turn"])
-        cancelled = []
-        keep = []
-        for effect in self.state.get("city_output_effects", []):
-            same_target = effect.get("target_owner") == player
-            same_turn = int(effect.get("created_turn", -1)) == turn
-            if same_target and same_turn and str(effect.get("card_id") or effect.get("id")) in wanted:
-                cancelled.append(effect.get("name", effect.get("id")))
-                continue
-            keep.append(effect)
-        if cancelled:
-            self.state["city_output_effects"] = keep
-            self._refresh_city_income()
-        return cancelled
 
     def _apply_loan_policy(self, player: str, loan: Dict[str, Any]) -> Dict[str, Any]:
         """孔祥熙從政的中央銀行政策，只套用在之後新借的每一筆上。"""
@@ -2850,17 +2923,23 @@ class GameEngine:
             return False
         order = list(rules.get("response_order") or self.EVENT_RESPONSE_ORDER)
         drawn = []
+        already = set()
         for index in range(count):
             # 有進入條件的卡（要控制某省、某城）只有符合的人抽得到；沒人符合就先跳過，
             # 留在池子裡等局勢變了再說。
+            # 被 event_locks 封鎖的卡同樣抽不到，但**不會**離開 pool——這是封鎖與移除的差別。
+            # already 擋掉同一輪重複抽到同一張（池子裡可以有同名多張，用來加抽中機會）。
             eligible = [
                 card_id for card_id in pool
-                if self._event_eligible_players(self._event_template(card_id))
+                if card_id not in already
+                and not self._event_locked(card_id)
+                and self._event_eligible_players(self._event_template(card_id))
             ]
             if not eligible:
                 break
             card_id = eligible[self.random.randrange(len(eligible))]
             pool.remove(card_id)
+            already.add(card_id)
             card = self._event_template(card_id)
             qualified = self._event_eligible_players(card)
             drawer = qualified[self.random.randrange(len(qualified))]
@@ -2869,6 +2948,107 @@ class GameEngine:
                           "responders": responders, "responses": {}})
         self.state["pending_events"] = {"turn": int(self.state["turn"]), "cards": drawn, "index": 0}
         return True
+
+    # ------------------------------------------------------------------
+    # 事件卡封鎖（event_locks）
+    #
+    # 封鎖與移除是兩回事：
+    #   封鎖 = 卡片留在 event_pool 裡，封鎖期間抽不到，到期自動又抽得到。
+    #   移除 = 從 event_pool 拿掉，不會再回來。
+    # 一條封鎖可以指名卡片（cards），也可以指定標籤＋列強（tags/powers），
+    # 例如「日本相關的 [軍事] 事件封鎖三回合」就是 tags=["軍事"], powers=["日"]。
+    # ------------------------------------------------------------------
+
+    def _event_tags(self, card_id: str) -> list:
+        return list(self._event_template(card_id).get("tags") or [])
+
+    def _event_powers(self, card_id: str) -> list:
+        """卡片的列強歸屬。power_note 允許寫成「蘇／德」這種複數。"""
+        note = str(self._event_template(card_id).get("power_note") or "")
+        return [part for part in re.split(r"[／/、,]", note) if part]
+
+    def _event_lock_matches(self, entry: Dict[str, Any], card_id: str) -> bool:
+        if card_id in (entry.get("cards") or []):
+            return True
+        tags = entry.get("tags") or []
+        if not tags:
+            return False
+        if not set(tags) & set(self._event_tags(card_id)):
+            return False
+        powers = entry.get("powers") or []
+        # 沒指定列強 = 該標籤全部封鎖；指定了就只封鎖該國的。
+        return not powers or bool(set(powers) & set(self._event_powers(card_id)))
+
+    def _event_locked(self, card_id: str) -> bool:
+        turn = int(self.state["turn"])
+        for entry in self.state.get("event_locks", []):
+            until = entry.get("until_turn")
+            if until is not None and turn >= int(until):
+                continue
+            if self._event_lock_matches(entry, card_id):
+                return True
+        return False
+
+    def event_lock_entry(self, card_id: str) -> Optional[Dict[str, Any]]:
+        """給前端／測試看的：這張卡現在被哪一條封鎖壓著。"""
+        turn = int(self.state["turn"])
+        for entry in self.state.get("event_locks", []):
+            until = entry.get("until_turn")
+            if until is not None and turn >= int(until):
+                continue
+            if self._event_lock_matches(entry, card_id):
+                return entry
+        return None
+
+    def _event_cards_matching(self, tags: list, powers: list) -> list:
+        """資料檔裡符合標籤＋列強的所有事件卡 id（不管現在在不在池子裡）。"""
+        out = []
+        for card in (self.data.get("event_cards") or {}).get("cards", []):
+            card_id = card["id"]
+            if tags and not set(tags) & set(self._event_tags(card_id)):
+                continue
+            if powers and not set(powers) & set(self._event_powers(card_id)):
+                continue
+            out.append(card_id)
+        return out
+
+    # ------------------------------------------------------------------
+    # 學潮（student_unrest）
+    #
+    # 走既有的 city_output_effects：挑該玩家幾座大城，限時把金錢與工廠產出乘上
+    # 一個係數。預設減半；《新月》月刊（9.5）抽出後全場改為只減 1/4。
+    # 另外學潮期間那幾座城不可補充兵力，由 reinforce_army 擋下。
+    # ------------------------------------------------------------------
+
+    STUDENT_UNREST_MULTIPLIER = 0.5
+    STUDENT_UNREST_RELIEVED_MULTIPLIER = 0.75
+
+    def student_unrest_multiplier(self) -> float:
+        """學潮現在把產出乘上多少。0.5 是減半，0.75 是只減 1/4。"""
+        if self.state.get("student_unrest_relief"):
+            return self.STUDENT_UNREST_RELIEVED_MULTIPLIER
+        return self.STUDENT_UNREST_MULTIPLIER
+
+    def _student_unrest_candidates(self, player: str, min_level: int) -> list:
+        """該玩家控制的、等級夠高的城市（9.3／10.7 指定四級或五級大城）。"""
+        out = []
+        for city in self.data["strategic_map"]["cities"]:
+            if self.state["city_owners"].get(city["id"], city["faction"]) != player:
+                continue
+            if int(city.get("level", 0)) < int(min_level):
+                continue
+            out.append(city)
+        return out
+
+    def city_in_student_unrest(self, city_id: str) -> bool:
+        for effect in self.state.get("city_output_effects", []):
+            if effect.get("kind") != "student_unrest":
+                continue
+            if int(effect.get("remaining_turns", 0)) <= 0:
+                continue
+            if city_id in (effect.get("city_ids") or []):
+                return True
+        return False
 
     def _event_eligible_players(self, card: Dict[str, Any]) -> list:
         """這張事件卡現在有哪些玩家可以抽到。沒有進入條件就是全部。"""
@@ -3004,6 +3184,20 @@ class GameEngine:
             power, floor = str(gate["power"]), int(gate.get("min", FOREIGN_FRIENDLY_THRESHOLD))
             targets = [code for code in targets
                        if int(self._player(code).get("foreign_relations", {}).get(power, 0)) >= floor]
+        # 反向門檻：只發給對某國關係「低於」門檻的玩家（9.3、10.7、10.8 的對蘇 ≤5）。
+        gate_max = payload.get("relation_gate_max")
+        if gate_max:
+            power, ceiling = str(gate_max["power"]), int(gate_max.get("max", 5))
+            targets = [code for code in targets
+                       if int(self._player(code).get("foreign_relations", {}).get(power, 0)) <= ceiling]
+        # 任一達標即可（10.5 庚款興學：對美 ≥3 或對英 ≥3）。
+        gate_any = payload.get("relation_gate_any")
+        if gate_any:
+            def _qualifies(code):
+                relations = self._player(code).get("foreign_relations", {})
+                return any(int(relations.get(str(rule["power"]), 0)) >= int(rule.get("min", 0))
+                           for rule in gate_any)
+            targets = [code for code in targets if _qualifies(code)]
         label = card.get("name", card.get("id"))
         turn = int(self.state["turn"])
 
@@ -3022,7 +3216,16 @@ class GameEngine:
                 if power not in relations:
                     continue
                 before = int(relations[power])
-                relations[power] = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX, before + int(amount)))
+                amount = int(amount)
+                # 庚款興學：受人之惠，動輒得咎——下一次因你的行動而下降時多降 N 點。
+                # 只咬「下降」，加分不受影響；用掉一次就消耗。
+                if amount < 0:
+                    extra = self._consume_relation_drop_amplifier(code, power)
+                    if extra:
+                        amount -= extra
+                        applied.append({"kind": "relation_drop_amplified", "player": code,
+                                        "power": power, "extra": extra})
+                relations[power] = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX, before + amount))
                 if relations[power] != before:
                     applied.append({"kind": "relation", "player": code, "power": power,
                                     "before": before, "after": relations[power]})
@@ -3057,6 +3260,359 @@ class GameEngine:
                 applied.append({"kind": "bank_limit_bonus", "player": code,
                                 "bank": bank, "amount": int(bonus)})
 
+        # 封鎖事件卡：卡片留在 event_pool 裡，封鎖期間抽不到，到期自動解封。
+        # 可以指名卡片，也可以用「標籤＋列強」整批封鎖（日本 [軍事] 事件封鎖三回合）。
+        for lock in (payload.get("event_lock") or []):
+            span = lock.get("turns", 1)
+            entry = {
+                "cards": list(lock.get("cards") or []),
+                "tags": list(lock.get("tags") or []),
+                "powers": list(lock.get("powers") or []),
+                "until_turn": (turn + int(span)) if span is not None else None,
+                "label": lock.get("label", label),
+                "source_card": card.get("id"),
+            }
+            self.state.setdefault("event_locks", []).append(entry)
+            # 現在池子裡實際被這條壓住的張數，寫進回報方便前端說明與測試斷言。
+            hit = sorted({card_id for card_id in self.state.get("event_pool", [])
+                          if self._event_lock_matches(entry, card_id)})
+            applied.append({"kind": "event_lock", "matched_in_pool": hit, **entry})
+
+        # 解除封鎖：把指定卡片／標籤的封鎖條提前撤掉（10.7 北京大學共運解掉 10.6 的封鎖）。
+        for release in (payload.get("event_unlock") or []):
+            kept, removed = [], 0
+            for entry in self.state.get("event_locks", []):
+                if release.get("labels") and entry.get("label") in release["labels"]:
+                    removed += 1
+                    continue
+                if release.get("cards") and set(release["cards"]) & set(entry.get("cards") or []):
+                    removed += 1
+                    continue
+                kept.append(entry)
+            self.state["event_locks"] = kept
+            if removed:
+                applied.append({"kind": "event_unlock", "released": removed, **release})
+
+        # 增加 N 張卡進池：取代舊的「抽中機率 +X%」寫法。
+        # event_pool 允許同一個 id 出現多次，多一張就是多一份被抽中的機會。
+        #
+        # 語意是「**每一張**符合的卡各加 N 張」，不是從符合的卡裡挑一張加。
+        # 所以 tags=["軍事"], powers=["日"], copies=1 的意思是：
+        # 資料檔裡每一張日本 [軍事] 事件卡都各多一張進池。
+        pool_add = payload.get("event_pool_add")
+        if pool_add:
+            pool = self.state.setdefault("event_pool", [])
+            for spec in pool_add:
+                copies = int(spec.get("copies", 1))
+                ids = list(spec.get("cards") or [])
+                if not ids:
+                    ids = self._event_cards_matching(spec.get("tags") or [], spec.get("powers") or [])
+                if not ids:
+                    # 目前資料檔裡沒有符合的卡（例如 [軍事] 類事件卡尚未建檔）。
+                    # 誠實記下來，不要假裝加成功了。
+                    applied.append({"kind": "event_pool_add", "copies": copies,
+                                    "added": [], "note": "no matching event cards in data",
+                                    **{k: spec.get(k) for k in ("tags", "powers") if spec.get(k)}})
+                    continue
+                added = []
+                for card_id in ids:
+                    pool.extend([card_id] * copies)
+                    added.extend([card_id] * copies)
+                applied.append({"kind": "event_pool_add", "copies": copies,
+                                "matched": sorted(set(ids)), "added": added})
+
+        # ---- 預備隊增減（11.3 裁兵）----------------------------------
+        # require_all=True 時整組要嘛全扣、要嘛一個都不扣（兵源不足就整批放棄），
+        # 回報 shortfall 讓上層決定要不要改走另一支。
+        specs = payload.get("reserve_delta") or []
+        if specs:
+            require_all = bool(payload.get("reserve_delta_require_all"))
+            for code in targets:
+                reserves = self._player(code)["unit_reserves"]
+                short = [str(spec["unit_type"]) for spec in specs
+                         if int(spec.get("amount", 0)) < 0
+                         and int(reserves.get(str(spec["unit_type"]), 0)) < abs(int(spec["amount"]))]
+                if require_all and short:
+                    applied.append({"kind": "reserve_delta_skipped", "player": code,
+                                    "shortfall": short})
+                    # 兵源不足就自動改走替代方案（11.3：湊不出兵就等於宣告不裁）。
+                    fallback = payload.get("on_reserve_shortfall")
+                    if fallback:
+                        applied += self._apply_event_payload(fallback, players=[code], card=card)
+                    continue
+                for spec in specs:
+                    unit = str(spec["unit_type"]); amount = int(spec.get("amount", 0))
+                    before = int(reserves.get(unit, 0))
+                    self._add_reserve(code, unit, amount)
+                    after = int(self._player(code)["unit_reserves"].get(unit, 0))
+                    applied.append({"kind": "reserve_delta", "player": code, "unit_type": unit,
+                                    "amount": after - before})
+
+        # ---- 永久改寫功能卡的利率（11.3 不裁兵：軍閥公債利率永久 12%）----
+        rate = payload.get("loan_rate_override")
+        if rate:
+            for code in targets:
+                entry = {"card_id": str(rate["card_id"]),
+                         "interest_per_turn": float(rate["interest_per_turn"]), "label": label}
+                self._player(code).setdefault("loan_rate_overrides", []).append(entry)
+                applied.append({"kind": "loan_rate_override", "player": code, **entry})
+
+        # ---- 抽卡時擲一次骰，依結果套用其中一支（11.5 廢兩改元之議）----
+        roll_spec = payload.get("random_outcome")
+        if roll_spec:
+            roll = self.random.random()
+            chosen = None
+            cumulative = 0.0
+            for branch in roll_spec.get("branches") or []:
+                cumulative += float(branch.get("chance", 0))
+                if roll < cumulative:
+                    chosen = branch
+                    break
+            if chosen is None and roll_spec.get("branches"):
+                chosen = roll_spec["branches"][-1]
+            if chosen:
+                applied.append({"kind": "random_outcome", "roll": round(roll, 4),
+                                "chosen": chosen.get("id"),
+                                "newspaper_index": chosen.get("newspaper_index", 0)})
+                applied += self._apply_event_payload(chosen.get("apply") or {},
+                                                     players=targets, card=card)
+
+        # ---- 交戰扣產出（11.1 江浙財團的墊款）--------------------------
+        # 這是全場性的：不管是誰在江浙開打，兩省境內每座城市都吃這個減損。
+        war_rule = payload.get("province_combat_penalty")
+        if war_rule:
+            entry = {"provinces": list(war_rule.get("provinces") or []),
+                     "cash": int(war_rule.get("cash", 0)),
+                     "factory": int(war_rule.get("factory", 0)),
+                     "label": label, "source_card": card.get("id")}
+            existing = self.state.setdefault("province_combat_penalties", [])
+            if not any(e.get("source_card") == entry["source_card"] for e in existing):
+                existing.append(entry)
+                self._refresh_city_income()
+                applied.append({"kind": "province_combat_penalty", **entry})
+
+        # ---- 公債承銷特權（11.1 的另一半）------------------------------
+        # 紅利跟著江浙兩省跑，所以存的是條件而不是結果：每次要用的時候現算。
+        bond = payload.get("bond_underwriting")
+        if bond:
+            entry = {"provinces": list(bond.get("provinces") or []),
+                     "relation_max": dict(bond.get("relation_max") or {}),
+                     "full_subscription": bool(bond.get("full_subscription")),
+                     "no_credit_damage": bool(bond.get("no_credit_damage")),
+                     "label": label, "source_card": card.get("id")}
+            existing = self.state.setdefault("bond_underwriting", [])
+            if not any(e.get("source_card") == entry["source_card"] for e in existing):
+                existing.append(entry)
+                applied.append({"kind": "bond_underwriting", **entry})
+
+        # ---- 租界城市改發固定值（11.2 南洋兄弟與英美煙草）--------------
+        cover = payload.get("concession_override")
+        if cover:
+            entry = {"cash": int(cover.get("cash", 0)), "factory": int(cover.get("factory", 0)),
+                     "until_turn": turn + int(cover.get("turns", 3)),
+                     "label": label, "source_card": card.get("id")}
+            self.state.setdefault("concession_overrides", []).append(entry)
+            self._refresh_city_income()
+            applied.append({"kind": "concession_override", **entry})
+
+        # ---- 逐國發放（10.5 庚款興學：一國一筆，兩國都達標就雙倍）----
+        grant = payload.get("per_power_grant")
+        if grant:
+            each = grant.get("each") or {}
+            for code in targets:
+                relations = self._player(code).get("foreign_relations", {})
+                for rule in grant.get("powers") or []:
+                    power = str(rule["power"])
+                    if int(relations.get(power, 0)) < int(rule.get("min", 0)):
+                        continue
+                    payload_each = deepcopy(each)
+                    amp = payload_each.pop("relation_drop_amplifier", None)
+                    if amp:
+                        payload_each["relation_drop_amplifier"] = [dict(amp, power=power)]
+                    applied.append({"kind": "per_power_grant", "player": code,
+                                    "power": power, "label": rule.get("label")})
+                    applied += self._apply_event_payload(payload_each, players=[code], card=card)
+
+        # ---- 條件分支：依另一張卡的狀態走不同效果（9.5、10.1、10.3）----
+        #
+        # 三張卡都是「若目標卡已抽出／生效中，走 A；否則走 B」。
+        # 判定依據：event_history 有沒有抽過，以及該卡的效果現在是否還掛在場上。
+        branch = payload.get("conditional_branch")
+        if branch:
+            probe = str(branch["card_id"])
+            drawn = any(entry.get("card_id") == probe
+                        for entry in self.state.get("event_history", []))
+            active = self._event_effect_active(probe)
+            key = "if_active" if (drawn and active) else ("if_drawn" if drawn else "otherwise")
+            chosen = branch.get(key) or branch.get("otherwise")
+            applied.append({"kind": "conditional_branch", "probe": probe,
+                            "drawn": drawn, "active": active, "chosen": key})
+            if chosen:
+                applied += self._apply_event_payload(chosen, players=players, card=card)
+
+        # ---- 延長某張事件卡已經掛著的效果（9.5 延長自由中國教育家）----
+        extend = payload.get("extend_effect")
+        if extend:
+            span = int(extend.get("turns", 5))
+            probe = str(extend["card_id"])
+            touched = 0
+            for entry in self.state.get("perk_suspensions", []):
+                if entry.get("source_card") != probe:
+                    continue
+                if entry.get("until_turn") is not None:
+                    entry["until_turn"] = int(entry["until_turn"]) + span
+                    touched += 1
+            for entry in self.state.get("event_locks", []):
+                if entry.get("source_card") != probe:
+                    continue
+                if entry.get("until_turn") is not None:
+                    entry["until_turn"] = int(entry["until_turn"]) + span
+                    touched += 1
+            applied.append({"kind": "extend_effect", "card_id": probe,
+                            "turns": span, "entries": touched})
+
+        # ---- 擴大省份綁定免疫的適用範圍（10.1 把復興儒學擴到山東＋直隸）----
+        widen = payload.get("widen_province_immunity")
+        if widen:
+            extra = list(widen.get("add_provinces") or [])
+            probe = str(widen.get("source_card", ""))
+            touched = 0
+            for code in list(self.state["players"]):
+                for entry in self._player(code).get("province_card_immunities") or []:
+                    if probe and entry.get("source_card") != probe:
+                        continue
+                    provinces = entry.setdefault("provinces", [entry["province"]])
+                    for name in extra:
+                        if name not in provinces:
+                            provinces.append(name)
+                            touched += 1
+            applied.append({"kind": "widen_province_immunity",
+                            "add_provinces": extra, "entries": touched})
+
+        # ---- 讓省份綁定免疫暫時失效（10.3 古史辨打掉復興儒學的護持）----
+        pierce = payload.get("suspend_province_immunity")
+        if pierce:
+            probe = str(pierce.get("source_card", ""))
+            until = turn + int(pierce.get("turns", 10))
+            touched = 0
+            for code in list(self.state["players"]):
+                for entry in self._player(code).get("province_card_immunities") or []:
+                    if probe and entry.get("source_card") != probe:
+                        continue
+                    entry["suspended_until_turn"] = until
+                    touched += 1
+            applied.append({"kind": "suspend_province_immunity",
+                            "until_turn": until, "entries": touched})
+
+        # ---- 學潮（9.3、10.7）----------------------------------------
+        unrest = payload.get("student_unrest")
+        if unrest:
+            multiplier = self.student_unrest_multiplier()
+            span = int(unrest.get("turns", 3))
+            want = int(unrest.get("cities", 2))
+            min_level = int(unrest.get("min_level", 4))
+            for code in targets:
+                pool_cities = self._student_unrest_candidates(code, min_level)
+                if not pool_cities:
+                    applied.append({"kind": "student_unrest", "player": code, "cities": [],
+                                    "note": "no city of the required level under this player"})
+                    continue
+                picked = self.random.sample(pool_cities, k=min(want, len(pool_cities)))
+                entry = {
+                    "id": f"student_unrest:{card.get('id')}:{code}",
+                    "kind": "student_unrest",
+                    "card_id": card.get("id"),
+                    "name": label,
+                    "target_owner": code,
+                    "created_turn": turn,
+                    "remaining_turns": span,
+                    "city_ids": [c["id"] for c in picked],
+                    "cities": [{"id": c["id"], "name": c["name"]} for c in picked],
+                    "cash_multiplier": multiplier,
+                    "factory_multiplier": multiplier,
+                    "blocks_reinforcement": True,
+                }
+                self.state.setdefault("city_output_effects", []).append(deepcopy(entry))
+                applied.append({"kind": "student_unrest", "player": code,
+                                "cities": entry["cities"], "turns": span,
+                                "multiplier": multiplier})
+            self._refresh_city_income()
+
+        # ---- 《新月》月刊：此後學潮只減 1/4（9.5）---------------------
+        if payload.get("student_unrest_relief"):
+            if not self.state.get("student_unrest_relief"):
+                self.state["student_unrest_relief"] = True
+                applied.append({"kind": "student_unrest_relief",
+                                "multiplier": self.STUDENT_UNREST_RELIEVED_MULTIPLIER})
+
+        # ---- 關係下降放大器（10.5 庚款興學）---------------------------
+        # 「下一次與該國關係因你的行動下降時，多降 1 點」——用完就消耗掉。
+        for amp in (payload.get("relation_drop_amplifier") or []):
+            for code in targets:
+                entry = {"power": str(amp["power"]), "extra": int(amp.get("extra", 1)),
+                         "uses": amp.get("uses", 1), "label": label}
+                self._player(code).setdefault("relation_drop_amplifiers", []).append(entry)
+                applied.append({"kind": "relation_drop_amplifier", "player": code, **entry})
+
+        # ---- 租界國關係（11.2 南洋兄弟與英美煙草）----------------------
+        # 一座城可能有多國租界；同一國在同一位玩家身上只扣一次。
+        conc = payload.get("concession_relations")
+        if conc:
+            delta = int(conc.get("delta", -1))
+            for code in targets:
+                powers = set()
+                for city in self.data["strategic_map"]["cities"]:
+                    if self.state["city_owners"].get(city["id"], city["faction"]) != code:
+                        continue
+                    powers.update(city.get("concession") or [])
+                if not powers:
+                    continue
+                relations = self._player(code).setdefault("foreign_relations", {})
+                for power in sorted(powers):
+                    relations[power] = max(FOREIGN_RELATION_MIN, min(FOREIGN_RELATION_MAX,
+                                                 int(relations.get(power, 0)) + delta))
+                applied.append({"kind": "concession_relations", "player": code,
+                                "powers": sorted(powers), "delta": delta})
+
+        # ---- 永久徵兵成本調整（11.4 中華國貨展覽會）-------------------
+        perm = payload.get("permanent_recruit_adjustment")
+        if perm:
+            for code in targets:
+                adjust = self._player(code).setdefault("recruit_cost_adjustment", {})
+                for unit, delta in (perm.get("units") or {}).items():
+                    slot = adjust.setdefault(unit, {})
+                    for field, amount in delta.items():
+                        slot[field] = int(slot.get(field, 0)) + int(amount)
+                applied.append({"kind": "permanent_recruit_adjustment", "player": code,
+                                "units": perm.get("units")})
+
+        # ---- 給前端執行的效果（忠誠等住在將領樹上的東西）--------------
+        for effect in (payload.get("frontend_effects") or []):
+            for code in targets:
+                entry = {"kind": effect["kind"], "label": label,
+                         **{k: v for k, v in effect.items() if k != "kind"}}
+                # 廣播電台放大忠誠幅度：卡片改制成事件卡之後，這條加成照樣要吃得到。
+                # 只放大幅度、不改正負號，與功能卡路徑同一套規則。
+                radio = self._player(code).get("radio_station") or {}
+                source = str(effect.get("card_id") or card.get("id") or "")
+                if entry.get("amount") and source in (radio.get("affects_cards") or []):
+                    magnitude = int(radio.get("loyalty_magnitude", 1))
+                    entry["amount"] = magnitude * (1 if int(entry["amount"]) > 0 else -1)
+                    entry["amplified_by"] = "radio_station"
+                self._player(code).setdefault("pending_frontend_effects", []).append(entry)
+                applied.append({"kind": "frontend_effect", "player": code,
+                                "effect": effect["kind"], "amount": entry.get("amount")})
+
+        # ---- 省份綁定的功能卡免疫（10.8 復興儒學）---------------------
+        for imm in (payload.get("province_card_immunity") or []):
+            for code in targets:
+                entry = {"province": str(imm["province"]),
+                         "provinces": [str(imm["province"])],
+                         "cards": list(imm.get("cards") or []),
+                         "label": label, "source_card": card.get("id")}
+                self._player(code).setdefault("province_card_immunities", []).append(entry)
+                applied.append({"kind": "province_card_immunity", "player": code, **entry})
+
         suspension = payload.get("perk_suspension")
         if suspension:
             # turns 為 null 代表無期限（中央研究院把〈盜賣文物〉永久收走）。
@@ -3064,7 +3620,8 @@ class GameEngine:
             entry = {"cards": list(suspension.get("cards") or []),
                      "until_turn": (turn + int(span)) if span is not None else None,
                      "players": targets if (suspension.get("self_only") or players is not None) else None,
-                     "label": suspension.get("label", label)}
+                     "label": suspension.get("label", label),
+                     "source_card": card.get("id")}
             self.state.setdefault("perk_suspensions", []).append(entry)
             # 被按住的卡立刻從還沒抽到的地方收走（手上那幾張留著，但打不出來）；
             # 若卡片註明 clear_active，連已經生效中的效果也一起撤掉。
@@ -3129,10 +3686,36 @@ class GameEngine:
                                     "card_id": card_id, "removed": removed})
         # 中央研究院的收編與除名。
         if payload.get("academia_grant"):
+            # v4 7.2：研究院成立是全場一次性的事件。成立之後：
+            #   1. 加成跟著江蘇跑，任何控制江蘇且未失格的玩家都吃得到；
+            #   2. 〈盜賣文物〉從所有人的功能卡池「完全移除」（不是暫時封鎖，不會回來）；
+            #   3. 已洗入牌庫的〈中國人之恥〉一次清空。
+            founded = self.state.setdefault("academia_sinica", {})
+            if not founded.get("founded"):
+                founded["founded"] = True
+                founded["founded_turn"] = turn
+                applied.append({"kind": "academia_founded", "turn": turn})
+                # 〈盜賣文物〉不 purge——它改為「逐玩家封鎖」，見 academia_active()。
+                # 這裡只把〈中國人之恥〉一次清空（v4 7.2）。
+                for code in list(self.state["players"]):
+                    state_payload = self._player(code)
+                    for card_id in ("national_shame",):
+                        removed = 0
+                        for zone in ("function_deck", "hand", "discard"):
+                            before = len(state_payload.get(zone) or [])
+                            state_payload[zone] = [item for item in state_payload.get(zone, [])
+                                                   if item != card_id]
+                            removed += before - len(state_payload[zone])
+                        if state_payload.get("pending_draw") == card_id:
+                            state_payload["pending_draw"] = None
+                            removed += 1
+                        if removed:
+                            applied.append({"kind": "academia_purge", "player": code,
+                                            "card_id": card_id, "removed": removed})
             for code in targets:
                 status = self.academia_status(code)
                 if not status.get("disqualified"):
-                    status["holder"] = True
+                    status["holder"] = True   # 保留：記錄是誰抽到的，不再是吃加成的門檻
                     applied.append({"kind": "academia_grant", "player": code})
             self._refresh_city_income()
         if payload.get("academia_disqualify"):
@@ -3205,7 +3788,10 @@ class GameEngine:
                     "id": card.get("id"),
                     "name": flag.get("label", label),
                     "kind": flag["kind"],
-                    "remaining_turns": int(flag.get("turns", 1)),
+                    # turns 為 null 代表無期限（廢兩改元成功後的永久免疫）。
+                    "remaining_turns": (int(flag["turns"]) if flag.get("turns") is not None
+                                        else None),
+                    "permanent": flag.get("turns") is None,
                     "owners": [code],
                 }
                 entry.update({key: value for key, value in flag.items()
@@ -3255,7 +3841,7 @@ class GameEngine:
         """這張功能卡現在是不是被事件卡按住了（不限列強 perk）。"""
         if card_id == "artifact_smuggling" and self.academia_active(player):
             return {"label": "中央研究院收編文物", "cards": [card_id], "until_turn": None,
-                    "note": "控制江蘇期間文物收歸國有"}
+                    "note": "控制江蘇期間文物收歸國有，〈盜賣文物〉封鎖中；離開江蘇即解封"}
         turn = int(self.state["turn"])
         for entry in self.state.get("perk_suspensions", []):
             until = entry.get("until_turn")
@@ -3394,7 +3980,9 @@ class GameEngine:
         watched = set()
         for entry in self.state.get("perk_suspensions", []):
             watched.update(entry.get("cards") or [])
-        if self.academia_status(player).get("holder"):
+        if self.academia_founded():
+            # 研究院成立後這張卡就是「封鎖／解封」在跑：控制江蘇時鎖住（desired=0），
+            # 離開江蘇就洗回原本張數，所以不管現在鎖沒鎖都要納入同步。
             watched.add("artifact_smuggling")
         card_ids = {card["id"] for card in self.data["function_cards"]["cards"]}
         for card_id in watched:
@@ -3501,6 +4089,62 @@ class GameEngine:
             code for code, payload in self.state["players"].items()
             if int(payload.get("foreign_relations", {}).get("su", 0)) >= FOREIGN_FRIENDLY_THRESHOLD
         ]
+
+    def _consume_relation_drop_amplifier(self, player: str, power: str) -> int:
+        """取出並消耗一次「關係下降加碼」。回傳要額外扣的點數（0 表示沒有）。"""
+        entries = self._player(player).get("relation_drop_amplifiers") or []
+        for entry in entries:
+            if str(entry.get("power")) != str(power):
+                continue
+            extra = int(entry.get("extra", 1))
+            uses = entry.get("uses")
+            if uses is not None:
+                entry["uses"] = int(uses) - 1
+                if entry["uses"] <= 0:
+                    entries.remove(entry)
+            return extra
+        return 0
+
+    def province_card_immunity(self, player: str, card_id: str) -> Optional[Dict[str, Any]]:
+        """復興儒學那種「只要還控制某省，這張卡對你無效」的免疫。
+
+        免疫跟著省份跑：丟掉該省立刻失效，奪回就恢復。
+        10.1 昆明湖可以把適用省份擴大（provinces 多一個直隸），
+        10.3《古史辨》可以把它暫時按掉（suspended_until_turn）。
+        """
+        turn = int(self.state["turn"])
+        for entry in self._player(player).get("province_card_immunities") or []:
+            if card_id not in (entry.get("cards") or []):
+                continue
+            suspended = entry.get("suspended_until_turn")
+            if suspended is not None and turn < int(suspended):
+                continue
+            provinces = entry.get("provinces") or [entry["province"]]
+            if not any(self._controlled_provinces(player, [name]) for name in provinces):
+                continue
+            return entry
+        return None
+
+    def _event_effect_active(self, card_id: str) -> bool:
+        """這張事件卡掛出去的效果現在還在場上嗎（供 9.5／10.1／10.3 的分支判定）。"""
+        turn = int(self.state["turn"])
+        for entry in self.state.get("perk_suspensions", []):
+            if entry.get("source_card") != card_id:
+                continue
+            until = entry.get("until_turn")
+            if until is None or turn < int(until):
+                return True
+        for entry in self.state.get("event_locks", []):
+            if entry.get("source_card") != card_id:
+                continue
+            until = entry.get("until_turn")
+            if until is None or turn < int(until):
+                return True
+        for code in self.state["players"]:
+            for entry in self._player(code).get("province_card_immunities") or []:
+                if entry.get("source_card") == card_id:
+                    return True
+        return False
 
     def _validate_card_use(self, player: str, card: Dict[str, Any]) -> None:
         suspended = self.suspended_card_entry(player, str(card.get("id", "")))

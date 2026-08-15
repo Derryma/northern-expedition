@@ -153,6 +153,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             force=force,
             riot_garrisons=payload.get("riot_garrisons") or {},
             city_garrisons=payload.get("city_garrisons") or {},
+            contested_provinces=payload.get("contested_provinces"),
         )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
