@@ -21,6 +21,7 @@ DATA_PATHS = {
     "unit_stats": "comabt_system/data/unit_stats.json",
     "tactics": "comabt_system/data/tactics.json",
     "general_traits": "comabt_system/data/general_traits.json",
+    "navy_system": "navy_system/data/navy_rules.json",
     "strategic_map": "scenario/data/strategic_map.json",
 }
 
@@ -50,6 +51,7 @@ def load_game_data() -> Dict[str, Any]:
     data["metadata"] = {
         "function_cards": len(data["function_cards"]["cards"]),
         "event_cards": len(data["event_cards"]["cards"]),
+        "navy_divisions": len(data["navy_system"]["initial_divisions"]),
         "npc_factions": len(data["npc_factions"]["npc_factions"]),
         "foreign_powers": len(data["foreign_powers"]["powers"]),
     }

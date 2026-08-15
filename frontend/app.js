@@ -1,6 +1,24 @@
 import { factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
 import { RIVERS } from './map.js';
 import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES } from './map.js';
+import {
+  NAVY_UNIT_META,
+  activeGunBoats,
+  createInitialNavies,
+  maxGunBoatHp,
+  maxCargoBoatHp,
+  navyCanEnterCell,
+  navyCapacity,
+  navyFaction,
+  navyPath,
+  normalizeNavyDivision,
+  resolveArmyNavyContact,
+  resolveNavyDuel,
+  retreatBaselineGunBoatHp,
+  restoreHpToFloor,
+  totalCargoBoatHp,
+  totalGunBoatHp,
+} from './navy.js';
 
 const portraits = {
   F: "/assets/portraits/張作霖.jpg",
@@ -61,22 +79,32 @@ let generalTreeData = null;
 const generalTrees = {};
 const initialGeneralTrees = {};
 const generalOwners = {};
+const initialGeneralOwners = {};
 const loyaltyOverrides = {};
 let currentPhase = "event"; // event, preparation, military
 let currentPlayer = null;
 let selectedArmyId = null;
+let selectedNavyId = null;
 const resolvedArmyIds = new Set();
+const resolvedNavyIds = new Set();
 const MAX_HAND_SIZE = 6;
 const DEFAULT_FUNCTION_CARD_DRAW_COST = 5;
 const DEFAULT_FUNCTION_CARD_DRAW_FACTORY_COST = 5;
 let foreignTab = "warlords";
 let dealTarget = null;
 let moveMode = false;
+let navyMoveMode = false;
 let engineeringMode = null;
 let uiNotice = null;
 const armyOrderHistory = [];
+const navyOrderHistory = [];
+let navyDivisions = [];
+let initialNavyDivisions = [];
+const navyBattleReports = [];
+const hiddenNavyBattleReportIds = new Set();
 // 瓊州海峽開局就架著浮橋，海南島才連得上大陸。
 const PREBUILT_PONTOONS = ['20,38'];
+const LAND_ONLY_CITY_IDS = new Set(["hangzhou", "yueyang", "nanchang", "hefei"]);
 const completedPontoons = new Set(PREBUILT_PONTOONS);
 const completedFortresses = new Set();
 const activeBattles = [];
@@ -98,6 +126,7 @@ let cityEconomySync = Promise.resolve();
 const jailedGenerals = { F: [], W: [], S: [], N: [] };
 const recruitedGenerals = { F: [], W: [], S: [], N: [] };
 const INITIAL_ARMY_UNITS = {};
+const LOYALTY_BASELINE_ARMY_UNITS = {};
 const INITIAL_ARMY_FACTIONS = {};
 let sharedRevision = 0;
 let sharedSnapshotHash = "";
@@ -400,8 +429,8 @@ function traitChip(trait) {
 }
 
 const ENGINEERING_OPERATIONS = {
-  pontoon_bridge: { label: "架設浮橋", turns: 2 },
-  fortress_builder: { label: "構築要塞", turns: 3 },
+  pontoon_bridge: { label: "架設浮橋", turns: 2, factoryCost: 10 },
+  fortress_builder: { label: "構築要塞", turns: 3, factoryCost: 10 },
 };
 // 工程能力除了將領檔案裡的 skills 之外，也可以由特質帶出來。
 // 22 名主要將領的浮橋／要塞是寫在各自的 skills 欄位，這裡保留的是
@@ -641,10 +670,21 @@ async function loadAllGeneralTrees() {
 function initializeGeneralRuntime() {
   for (const key of Object.keys(generalOwners)) delete generalOwners[key];
   for (const key of Object.keys(loyaltyOverrides)) delete loyaltyOverrides[key];
+  for (const key of Object.keys(initialGeneralOwners)) delete initialGeneralOwners[key];
   for (const [faction, tree] of Object.entries(generalTrees)) {
     normalizeGeneralTree(tree);
-    for (const generalId of Object.keys(tree.generals || {})) generalOwners[generalId] = faction;
+    for (const generalId of Object.keys(tree.generals || {})) {
+      generalOwners[generalId] = faction;
+      initialGeneralOwners[generalId] = faction;
+    }
   }
+}
+
+function generalAbsoluteLoyaltyActive(general) {
+  if (!general?.absolute_loyalty) return false;
+  if (Object.hasOwn(loyaltyOverrides, general.id) && Number(loyaltyOverrides[general.id]) <= 1) return false;
+  const initialOwner = initialGeneralOwners[general.id];
+  return !initialOwner || generalOwners[general.id] === initialOwner;
 }
 
 function normalizedSlotCount(general) {
@@ -675,8 +715,17 @@ function synchronizeFieldArmies() {
       army.status = "active";
       army.faction = faction;
       INITIAL_ARMY_UNITS[army.id] = { ...general.units };
+      LOYALTY_BASELINE_ARMY_UNITS[army.id] = { ...general.units };
       INITIAL_ARMY_FACTIONS[army.id] = faction;
     }
+  }
+}
+
+function refreshArmyLoyaltyBaselines(force = false) {
+  const turn = Number(state?.turn || 0);
+  if (!force && turn % 5 !== 0) return;
+  for (const army of allArmies()) {
+    LOYALTY_BASELINE_ARMY_UNITS[army.id] = wholeUnits(armyUnits(army));
   }
 }
 
@@ -693,13 +742,13 @@ function mutableGeneralIdsForOwner(owner) {
     .map(([generalId]) => generalId)
     .filter((generalId) => {
       const general = generalById(generalId);
-      return general && general.loyalty !== null && !general.absolute_loyalty && !general.loyalty_exempt;
+      return general && general.loyalty !== null && !generalAbsoluteLoyaltyActive(general) && !general.loyalty_exempt;
     });
 }
 
 function adjustGeneralLoyalty(generalId, amount) {
   const general = generalById(generalId);
-  if (!general || general.loyalty === null || general.absolute_loyalty || general.loyalty_exempt) return;
+  if (!general || general.loyalty === null || generalAbsoluteLoyaltyActive(general) || general.loyalty_exempt) return;
   const fieldArmy = allArmies(true).find((army) => army.generalId === generalId);
   const current = calculateGeneralLoyalty(general, fieldArmy).value ?? 1;
   loyaltyOverrides[generalId] = Math.max(1, Math.min(10, current + Number(amount || 0)));
@@ -753,6 +802,21 @@ function descendantGeneralIds(tree, generalId) {
   return descendants;
 }
 
+function commandDescendantIds(sourceTree, generalId, capturedGeneral = null) {
+  const descendants = new Set(descendantGeneralIds(sourceTree, generalId));
+  const visitCopy = (general) => {
+    for (const subordinate of general?.subordinates || []) {
+      const subordinateId = typeof subordinate === "string" ? subordinate : subordinate?.id;
+      if (!subordinateId || descendants.has(subordinateId)) continue;
+      descendants.add(subordinateId);
+      descendantGeneralIds(sourceTree, subordinateId).forEach((id) => descendants.add(id));
+      if (typeof subordinate === "object") visitCopy(subordinate);
+    }
+  };
+  visitCopy(capturedGeneral);
+  return [...descendants];
+}
+
 async function api(path, payload = null) {
   const options = payload
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
@@ -772,6 +836,7 @@ function tacticalSnapshot() {
       units: { ...army.units },
       status: army.status,
       faction: army.faction,
+      embarkedOn: army.embarkedOn || null,
       previousCellKey: army.previousCellKey || null,
       resolvedTurn: army.resolvedTurn ?? null,
       specialOperation: army.specialOperation ? { ...army.specialOperation } : null,
@@ -790,15 +855,20 @@ function tacticalSnapshot() {
     }])),
     activeBattles: JSON.parse(JSON.stringify(activeBattles)),
     battleReports: JSON.parse(JSON.stringify(battleReports)),
+    navyDivisions: JSON.parse(JSON.stringify(navyDivisions)),
+    navyBattleReports: JSON.parse(JSON.stringify(navyBattleReports)),
     generalTrees: JSON.parse(JSON.stringify(generalTrees)),
     generalOwners: { ...generalOwners },
     loyaltyOverrides: { ...loyaltyOverrides },
+    loyaltyBaselineArmyUnits: JSON.parse(JSON.stringify(LOYALTY_BASELINE_ARMY_UNITS)),
     jailedGenerals: JSON.parse(JSON.stringify(jailedGenerals)),
     recruitedGenerals: JSON.parse(JSON.stringify(recruitedGenerals)),
     completedPontoons: [...completedPontoons],
     completedFortresses: [...completedFortresses],
     resolvedArmyIds: [...resolvedArmyIds],
+    resolvedNavyIds: [...resolvedNavyIds],
     armyOrderHistory: JSON.parse(JSON.stringify(armyOrderHistory)),
+    navyOrderHistory: JSON.parse(JSON.stringify(navyOrderHistory)),
     turnReady: { ...turnReady },
     pendingProvinceClaims: JSON.parse(JSON.stringify(pendingProvinceClaims)),
   };
@@ -834,10 +904,16 @@ function applyTacticalSnapshot(snapshot) {
   }
   replaceArray(activeBattles, snapshot.activeBattles);
   replaceArray(battleReports, snapshot.battleReports);
+  if (Array.isArray(snapshot.navyDivisions) && snapshot.navyDivisions.length) {
+    replaceArray(navyDivisions, snapshot.navyDivisions);
+  }
+  for (const navy of navyDivisions) normalizeNavyDivision(navy, navyRules());
+  replaceArray(navyBattleReports, snapshot.navyBattleReports);
   replaceObject(generalTrees, JSON.parse(JSON.stringify(snapshot.generalTrees || generalTrees)));
   for (const tree of Object.values(generalTrees)) normalizeGeneralTree(tree);
   replaceObject(generalOwners, snapshot.generalOwners);
   replaceObject(loyaltyOverrides, snapshot.loyaltyOverrides);
+  if (snapshot.loyaltyBaselineArmyUnits) replaceObject(LOYALTY_BASELINE_ARMY_UNITS, snapshot.loyaltyBaselineArmyUnits);
   for (const faction of new Set([...Object.keys(jailedGenerals), ...Object.keys(snapshot.jailedGenerals || {})])) {
     jailedGenerals[faction] ||= [];
     recruitedGenerals[faction] ||= [];
@@ -850,12 +926,20 @@ function applyTacticalSnapshot(snapshot) {
   for (const key of snapshot.completedFortresses || []) completedFortresses.add(key);
   resolvedArmyIds.clear();
   for (const armyId of snapshot.resolvedArmyIds || []) resolvedArmyIds.add(armyId);
+  resolvedNavyIds.clear();
+  for (const navyId of snapshot.resolvedNavyIds || []) resolvedNavyIds.add(navyId);
   for (const army of allArmies(true)) {
     if (army.resolvedTurn === state?.turn && !resolvedArmyIds.has(army.id)) resolvedArmyIds.add(army.id);
   }
+  for (const navy of navyDivisions) {
+    if (navy.resolvedTurn === state?.turn && !resolvedNavyIds.has(navy.id)) resolvedNavyIds.add(navy.id);
+  }
   replaceArray(armyOrderHistory, snapshot.armyOrderHistory);
+  replaceArray(navyOrderHistory, snapshot.navyOrderHistory);
   replaceObject(turnReady, snapshot.turnReady);
   replaceArray(pendingProvinceClaims, snapshot.pendingProvinceClaims);
+  normalizeArmyForceCaps();
+  refreshArmyLoyaltyBaselines(!Object.keys(LOYALTY_BASELINE_ARMY_UNITS).length);
   generalTreeData = generalTrees[currentPlayer];
 }
 
@@ -952,6 +1036,12 @@ function indexCards() {
   }
 }
 
+function initializeNavies() {
+  const cityById = new Map((bootstrap.strategic_map?.cities || []).map((city) => [city.id, city]));
+  navyDivisions = createInitialNavies(bootstrap.navy_system, cells, cityById);
+  initialNavyDivisions = JSON.parse(JSON.stringify(navyDivisions));
+}
+
 function cellDistance(first, second) {
   return Math.hypot(hcx(first.c) - hcx(second.c), hcy(first.c, first.r) - hcy(second.c, second.r));
 }
@@ -1022,8 +1112,11 @@ function indexScenarioCells() {
 
   const occupiedCityCells = new Set();
   for (const city of scenario.cities || []) {
+    if (LAND_ONLY_CITY_IDS.has(city.id)) delete city.port;
     INITIAL_CITY_FACTIONS[city.id] ||= city.faction;
     const candidates = Object.values(cells).filter((cell) =>
+      cell.land !== false
+      &&
       !occupiedCityCells.has(cell.key)
       && !cell.power                       // 列強租借地不能拿來擺中國城市
       && (!cell.river || cell.railBridge)
@@ -1038,6 +1131,11 @@ function indexScenarioCells() {
     if (!cell) throw new Error(`No valid tile available for city ${city.name}`);
     if (cell.river && !cell.railBridge) throw new Error(`City ${city.name} requires a railway bridge`);
     cell.city = city;
+    if (LAND_ONLY_CITY_IDS.has(city.id)) {
+      cell.river = null;
+      cell.portWater = false;
+      cell.railBridge = false;
+    }
     occupiedCityCells.add(cell.key);
   }
 
@@ -1048,6 +1146,7 @@ function indexScenarioCells() {
 // 河港城市的地格一律視為水域。天然河道保留原名，其餘標為內河。
 function markRiverPortWater() {
   for (const cell of Object.values(cells)) {
+    if (LAND_ONLY_CITY_IDS.has(cell.city?.id)) continue;
     if (cell.city?.port !== "river") continue;
     cell.portWater = true;
     if (!cell.river) cell.river = nearestRiverName(cell) || "內河";
@@ -1189,7 +1288,7 @@ function setupMapZoom() {
   }, { passive: false });
   let drag = null;
   container.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || event.target.closest(".army-marker, .battle-marker")) return;
+    if (event.button !== 0 || event.target.closest(".army-marker, .navy-marker, .battle-marker")) return;
     drag = { x: event.clientX, y: event.clientY, panX: mapPanX, panY: mapPanY, moved: false };
     container.classList.add("panning");
   });
@@ -1854,7 +1953,7 @@ function renderGeneralsPanel() {
     <section class="jail-roster">
       <h3>被俘將領</h3>
       ${prisoners.length ? prisoners.map((record) => {
-        const neededSlots = transferBranchSize(generalTrees[record.originFaction], record.general.id);
+        const neededSlots = 1;
         const canRecruit = lieutenants.length && freeMajorSlots >= neededSlots && (state.players[currentPlayer]?.unit_reserves?.infantry || 0) >= 5;
         return `
         <div class="jail-general">
@@ -1920,7 +2019,7 @@ function attachGeneralHandlers(root) {
         showNotice(!superiorId ? "沒有可隸屬的現役中將。" : "沒有可部署新編軍的己方主要城市。");
         return;
       }
-      const branchSize = transferBranchSize(generalTrees[record.originFaction], record.general.id);
+      const branchSize = 1;
       if (availableMajorGeneralSlots(currentPlayer) < branchSize) {
         showNotice(`中將空位不足：此批將領需要 ${branchSize} 個少將空位。`);
         return;
@@ -2003,17 +2102,14 @@ function appendGeneralToTree(general, faction, superiorId, loyalty = 2, options 
 }
 
 function transferBranchSize(sourceTree, generalId) {
-  return 1 + descendantGeneralIds(sourceTree, generalId).length;
+  return generalId ? 1 : 0;
 }
 
-// 招降／策反時整條支系都會跟著轉投，後端要知道這批人帶著哪些技能
-// （目前只有〈日本買辦〉會在轉投時產生非戰鬥效果）。
+// 招降／策反只處理被點選的將領本人；原本麾下關係在轉入新陣營後失效。
+// 後端只需要知道本人帶來的非戰鬥技能。
 function transferringTraits(sourceTree, general) {
-  const ids = [general.id, ...descendantGeneralIds(sourceTree, general.id)];
   const traits = new Set(general.traits || []);
-  for (const id of ids) {
-    for (const trait of sourceTree?.generals?.[id]?.traits || []) traits.add(trait);
-  }
+  for (const trait of sourceTree?.generals?.[general.id]?.traits || []) traits.add(trait);
   return [...traits];
 }
 
@@ -2034,7 +2130,7 @@ function installTransferredCommand(transferred, destinationFaction, preferredSup
     const superior = reorderedLieutenants.find((item) => lieutenantGeneralOpenSlots(item) > 0);
     if (!superior) throw new Error("沒有足夠的中將空位接收這批將領");
     const copied = JSON.parse(JSON.stringify(general));
-    copied.faction = FACTIONS[destinationFaction].name;
+    copied.faction = general.faction || FACTIONS[destinationFaction].name;
     copied.status = "active";
     copied.loyalty_exempt = false;
     copied.loyalty = copied.id === transferred[0].id ? rootLoyalty : 1;
@@ -2052,43 +2148,91 @@ function installTransferredCommand(transferred, destinationFaction, preferredSup
   return installed;
 }
 
+function queueDescendantCaptivesForRecruitedLeader(record, captorFaction) {
+  const sourceTree = generalTrees[record.originFaction];
+  const descendants = commandDescendantIds(sourceTree, record.general.id, record.general);
+  for (const generalId of descendants) {
+    const descendant = sourceTree?.generals?.[generalId];
+    const army = allArmies(true).find((item) => item.generalId === generalId);
+    if (!descendant || !army || factionForArmy(army) !== record.originFaction
+      || ["jailed", "killed", "destroyed"].includes(army.status)) continue;
+    if ((jailedGenerals[captorFaction] || []).some((item) => item.general?.id === generalId)) continue;
+    const preservedUnits = wholeUnits(armyUnits(army));
+    jailedGenerals[captorFaction].push({
+      armyId: army.id,
+      originFaction: record.originFaction,
+      capturedTurn: state.turn,
+      cellKey: army.cellKey,
+      lon: army.lon,
+      lat: army.lat,
+      general: {
+        ...JSON.parse(JSON.stringify(descendant)),
+        role: "major_general",
+        subordinates: [],
+        subordinate_slots: 0,
+        parent_id: null,
+        status: "jailed",
+        loyalty: descendant.loyalty === null ? null : 1,
+        units: preservedUnits,
+      },
+    });
+    const ledger = state.players[record.originFaction]?.army_reinforcements;
+    if (ledger) delete ledger[army.id];
+    army.units = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
+    army.status = "jailed";
+    descendant.status = "jailed";
+    descendant.loyalty_exempt = false;
+    if (descendant.loyalty !== null && descendant.loyalty !== undefined) descendant.loyalty = 1;
+    loyaltyOverrides[generalId] = 1;
+    markArmyResolved(army);
+  }
+}
+
+function transferFactionNavies(originFaction, destinationFaction) {
+  let sequence = allNavies(true).filter((navy) => navyFaction(navy) === destinationFaction).length + 1;
+  const transferred = [];
+  for (const navy of allNavies(true)) {
+    if (navyFaction(navy) !== originFaction) continue;
+    normalizeNavyDivision(navy, navyRules());
+    if (!(navy.gunBoats || []).length && !(navy.cargoBoatHp || []).length) continue;
+    navy.faction = destinationFaction;
+    navy.name = `${FACTIONS[destinationFaction]?.name || destinationFaction}第${chineseNumber(sequence)}江防艦隊`;
+    delete navy.resolvedTurn;
+    resolvedNavyIds.delete(navy.id);
+    transferred.push(navy.name);
+    sequence += 1;
+  }
+  return transferred;
+}
+
 function recruitCapturedGeneral(record, faction, superiorId, deploymentCell) {
   const army = armyById(record.armyId);
   const sourceTree = generalTrees[record.originFaction];
-  const transferredIds = [record.general.id, ...descendantGeneralIds(sourceTree, record.general.id)];
-  const transferred = transferredIds
-    .map((id) => sourceTree?.generals?.[id] || (id === record.general.id ? record.general : null))
-    .filter(Boolean)
-    .map((general) => JSON.parse(JSON.stringify(general)));
-  for (const general of transferred) detachGeneralFromTree(sourceTree, general.id);
-  installTransferredCommand(transferred, faction, superiorId, 2);
-  const general = transferred[0] || record.general;
+  if (!army) throw new Error("找不到俘虜原部隊，無法招降。");
+  const general = JSON.parse(JSON.stringify(record.general || sourceTree?.generals?.[record.general.id]));
+  queueDescendantCaptivesForRecruitedLeader(record, faction);
+  const wasFactionLeader = sourceTree?.great_general_id === general.id || general.role === "great_general";
+  detachGeneralFromTree(sourceTree, general.id);
+  installTransferredCommand([general], faction, superiorId, 2);
   const nextNumber = nextAvailableArmyNumber(faction, army.id);
+  const startingUnits = { infantry: 5, cavalry: 0, artillery: 0, machine_gun: 0 };
   Object.assign(army, {
     faction,
     general: general.name,
     designator: formatArmyDesignator(nextNumber),
     status: "active",
-    units: { infantry: 5, cavalry: 0, artillery: 0, machine_gun: 0 },
+    units: startingUnits,
   });
-  moveArmyToCell(army, deploymentCell);
+  const installedGeneral = generalTrees[faction]?.generals?.[general.id];
+  if (installedGeneral) installedGeneral.units = { ...startingUnits };
+  LOYALTY_BASELINE_ARMY_UNITS[army.id] = { ...startingUnits };
+  const targetCell = cells[record.cellKey] || deploymentCell;
+  moveArmyToCell(army, targetCell);
+  if (targetCell) occupyTile(targetCell, faction);
   state.players[faction].army_reinforcements[army.id] = {};
-  for (const fieldArmy of allArmies(true).filter((item) => transferredIds.includes(item.generalId))) {
-    const transferredGeneral = transferred.find((item) => item.id === fieldArmy.generalId);
-    const assignedNumber = nextAvailableArmyNumber(faction, fieldArmy.id);
-    fieldArmy.faction = faction;
-    fieldArmy.status = "active";
-    fieldArmy.general = transferredGeneral?.name || fieldArmy.general;
-    fieldArmy.designator = formatArmyDesignator(assignedNumber);
-    markArmyResolved(fieldArmy);
-    if (fieldArmy.cellKey && cells[fieldArmy.cellKey]) occupyTile(cells[fieldArmy.cellKey], faction);
-    const oldLedger = state.players[record.originFaction]?.army_reinforcements?.[fieldArmy.id];
-    if (oldLedger) {
-      state.players[faction].army_reinforcements[fieldArmy.id] = { ...oldLedger };
-      if (state.players[record.originFaction]) {
-        delete state.players[record.originFaction].army_reinforcements[fieldArmy.id];
-      }
-    }
+  if (wasFactionLeader) {
+    const navies = transferFactionNavies(record.originFaction, faction);
+    if (navies.length) uiNotice = `${general.name}歸降，${navies.join("、")}轉投我方。`;
   }
 }
 
@@ -2103,27 +2247,22 @@ function detachGeneralFromTree(tree, generalId) {
 function transferDefectingCommand(army, destinationFaction, superiorId) {
   const sourceFaction = generalOwners[army.generalId] || factionForArmy(army);
   const sourceTree = generalTrees[sourceFaction];
-  const transferredIds = [army.generalId, ...descendantGeneralIds(sourceTree, army.generalId)];
-  const transferred = transferredIds
-    .map((id) => sourceTree?.generals?.[id])
-    .filter(Boolean)
-    .map((general) => JSON.parse(JSON.stringify(general)));
-  for (const general of transferred) detachGeneralFromTree(sourceTree, general.id);
+  const general = sourceTree?.generals?.[army.generalId];
+  if (!general) throw new Error("找不到可策反將領。");
+  const transferred = [JSON.parse(JSON.stringify(general))];
+  detachGeneralFromTree(sourceTree, army.generalId);
   installTransferredCommand(transferred, destinationFaction, superiorId, 2);
-  for (const fieldArmy of allArmies(true).filter((item) => transferredIds.includes(item.generalId))) {
-    const transferredGeneral = transferred.find((item) => item.id === fieldArmy.generalId);
-    fieldArmy.designator = formatArmyDesignator(nextAvailableArmyNumber(destinationFaction, fieldArmy.id));
-    fieldArmy.faction = destinationFaction;
-    fieldArmy.status = "active";
-    fieldArmy.general = transferredGeneral?.name || fieldArmy.general;
-    markArmyResolved(fieldArmy);
-    if (fieldArmy.cellKey && cells[fieldArmy.cellKey]) occupyTile(cells[fieldArmy.cellKey], destinationFaction);
-    const oldLedger = state.players[sourceFaction]?.army_reinforcements?.[fieldArmy.id];
-    if (oldLedger) {
-      state.players[destinationFaction].army_reinforcements[fieldArmy.id] = { ...oldLedger };
-      if (state.players[sourceFaction]) {
-        delete state.players[sourceFaction].army_reinforcements[fieldArmy.id];
-      }
+  army.designator = formatArmyDesignator(nextAvailableArmyNumber(destinationFaction, army.id));
+  army.faction = destinationFaction;
+  army.status = "active";
+  army.general = transferred[0]?.name || army.general;
+  markArmyResolved(army);
+  if (army.cellKey && cells[army.cellKey]) occupyTile(cells[army.cellKey], destinationFaction);
+  const oldLedger = state.players[sourceFaction]?.army_reinforcements?.[army.id];
+  if (oldLedger) {
+    state.players[destinationFaction].army_reinforcements[army.id] = { ...oldLedger };
+    if (state.players[sourceFaction]) {
+      delete state.players[sourceFaction].army_reinforcements[army.id];
     }
   }
   return transferred;
@@ -2136,13 +2275,13 @@ async function attemptArmyDefection(army, superiorId) {
   }
   const general = generalById(army.generalId);
   const loyalty = calculateGeneralLoyalty(general, army).value;
-  if (loyalty === null || general?.loyalty_exempt || general?.absolute_loyalty) {
+  if (loyalty === null || general?.loyalty_exempt || generalAbsoluteLoyaltyActive(general)) {
     showNotice("此將領屬於派系核心，不能以金錢策反。");
     return;
   }
   const branchSize = transferBranchSize(generalTrees[factionForArmy(army)], army.generalId);
   if (availableMajorGeneralSlots(currentPlayer) < branchSize) {
-    showNotice(`我方中將空位不足，這支部隊連同麾下 ${Math.max(0, branchSize - 1)} 名附屬將領無法一併接收。`);
+    showNotice("我方中將空位不足，無法接收這名將領。");
     return;
   }
   const result = await api("/api/attempt-defection", {
@@ -2162,7 +2301,7 @@ async function attemptArmyDefection(army, superiorId) {
   }
   const transferred = transferDefectingCommand(army, currentPlayer, superiorId);
   selectedArmyId = army.id;
-  uiNotice = `策反成功：${army.general}及其麾下 ${Math.max(0, transferred.length - 1)} 名將領轉投我方，原部隊完整保留。`;
+  uiNotice = `策反成功：${army.general}轉投我方，原部隊完整保留。`;
   generalTreeData = generalTrees[currentPlayer];
   initMap();
   renderPendingActions();
@@ -2175,9 +2314,11 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
   if (!includeCaptured && generalOwners[general.id] !== currentPlayer) return "";
   if (!includeCaptured && fieldArmy?.status === "jailed") return "";
   const hasArmy = Boolean(fieldArmy) && fieldArmy.status !== "jailed" && general.status !== "recruited";
+  const capturedUnits = includeCaptured ? wholeUnits(general.units || {}) : null;
+  const hasCapturedUnits = capturedUnits && forcePoints(capturedUnits) > 0;
   const unitsText = general.status === "in_exile"
     ? `自帶 ${unitSummary(Object.fromEntries(Object.entries(general.units || {}).filter(([, count]) => Number(count) > 0)))}`
-    : (hasArmy ? unitSummary(armyUnits(fieldArmy)) : "無部隊");
+    : (hasArmy ? unitSummary(armyUnits(fieldArmy)) : hasCapturedUnits ? unitSummary(capturedUnits) : "無部隊");
   const loyalty = calculateGeneralLoyalty(general, fieldArmy);
   const lowLoyalty = loyalty.value !== null && loyalty.value < 6;
   const loyaltyText = loyalty.value !== null ? loyalty.value : '—';
@@ -2196,7 +2337,7 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
         <div class="tree-name">${general.name}${killedTag}${guardTag}</div>
         <div class="tree-faction">${general.faction || "在野"}</div>
         <div class="tree-units">${unitsText}</div>
-        ${hasArmy ? forceMeterMarkup(armyUnits(fieldArmy), { compact: true }) : ""}
+        ${hasArmy ? forceMeterMarkup(armyUnits(fieldArmy), { compact: true }) : hasCapturedUnits ? forceMeterMarkup(capturedUnits, { compact: true }) : ""}
         <div class="tree-traits">${(general.traits || []).map(traitChip).join("")}</div>
       </div>
       ${general.loyalty !== null ? `
@@ -2211,22 +2352,20 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
 
 function calculateGeneralLoyalty(general, fieldArmy) {
   if (general.loyalty === null || general.loyalty === undefined) return { value: null, tooltip: "" };
-  if (general.absolute_loyalty) {
+  if (generalAbsoluteLoyaltyActive(general)) {
     return { value: 10, tooltip: "絕對忠誠: 固定 10\n不受功能卡、戰損或策反效果影響" };
   }
-  if (Object.hasOwn(loyaltyOverrides, general.id)) {
-    const adjustment = traitLoyaltyAdjustment(general);
-    const current = Math.max(0, Math.min(10, loyaltyOverrides[general.id] + adjustment.amount));
-    return { value: current, tooltip: `當前忠誠: ${current}${adjustment.note}\n受俘虜、招降、策反或功能卡影響` };
-  }
   const relationPenalty = traitLoyaltyAdjustment(general);
-  const baseLoyalty = Math.max(0, Math.min(10, Number(general.loyalty) + relationPenalty.amount));
+  const hasOverride = Object.hasOwn(loyaltyOverrides, general.id);
+  const baseSource = hasOverride ? loyaltyOverrides[general.id] : Number(general.loyalty);
+  const baseLoyalty = Math.max(0, Math.min(10, Number(baseSource) + relationPenalty.amount));
+  const overrideNote = hasOverride ? "\n當前忠誠曾受俘虜、招降、策反或功能卡改變" : "";
   if (general.status === "in_exile") {
     return { value: baseLoyalty, tooltip: `出山時的基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n在野期間不套用部隊相關的增減` };
   }
   if (!fieldArmy || fieldArmy.status === "jailed" || general.status === "recruited") {
     const value = Math.min(baseLoyalty, 2);
-    return { value, tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n無直屬部隊: -${Math.max(0, baseLoyalty - value)}` };
+    return { value, tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}${overrideNote}\n無直屬部隊: -${Math.max(0, baseLoyalty - value)}` };
   }
   const faction = factionForArmy(fieldArmy);
   const friendlyForces = allArmies()
@@ -2236,13 +2375,13 @@ function calculateGeneralLoyalty(general, fieldArmy) {
   const currentForce = forcePoints(armyUnits(fieldArmy));
   const averageForce = friendlyForces.reduce((sum, value) => sum + value, 0) / Math.max(1, friendlyForces.length);
   const relativePower = Math.max(-2, Math.min(2, Math.round((currentForce / Math.max(1, averageForce) - 1) * 3)));
-  const initialForce = forcePoints(INITIAL_ARMY_UNITS[fieldArmy.id] || {});
+  const initialForce = forcePoints(LOYALTY_BASELINE_ARMY_UNITS[fieldArmy.id] || INITIAL_ARMY_UNITS[fieldArmy.id] || {});
   const lossRate = Math.max(0, (initialForce - currentForce) / Math.max(1, initialForce));
   const battleLoss = -Math.min(4, Math.floor(lossRate * 5));
   const value = Math.max(0, Math.min(10, baseLoyalty + relativePower + battleLoss));
   return {
     value,
-    tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n相對實力影響: ${relativePower >= 0 ? '+' : ''}${relativePower}\n戰損影響: ${battleLoss}\n現有戰力: ${Math.round(currentForce)} / 初始 ${Math.round(initialForce)}`,
+    tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}${overrideNote}\n相對實力影響: ${relativePower >= 0 ? '+' : ''}${relativePower}\n戰損影響: ${battleLoss}\n現有戰力: ${Math.round(currentForce)} / 基準 ${Math.round(initialForce)}`,
   };
 }
 
@@ -2316,6 +2455,7 @@ function renderRecruitmentPanel() {
   const profile = state.players[currentPlayer] || {};
   const costModifier = profile.recruitment_cost_modifier ?? 1;
   const costs = bootstrap.recruit_costs || {};
+  const navyCosts = bootstrap.navy_recruit_costs || {};
 
   return `
     <div class="recruitment-grid">
@@ -2334,6 +2474,24 @@ function renderRecruitmentPanel() {
           </div>
           <div class="unit-cost">
             <button class="train-unit-btn" data-train-unit="${type}">訓練 +1</button>
+          </div>
+        </div>
+      `}).join('')}
+    </div>
+    <h3 class="panel-subtitle">海軍預備</h3>
+    <div class="recruitment-grid navy-recruitment-grid">
+      ${Object.entries(NAVY_UNIT_META).map(([type, unit]) => {
+        const cost = navyCosts[type] || {};
+        const reserve = profile.navy_reserves?.[type] ?? 0;
+        return `
+        <div class="unit-option" data-navy-unit="${type}">
+          <div class="navy-profile-icon">${type === "gun_boat" ? "砲" : "運"}</div>
+          <div class="unit-details">
+            <h3>${unit.name}</h3>
+            <div class="unit-stats">預備 ${reserve} · 現金 $${cost.cash ?? 0} · 工廠 ${cost.factory ?? 0}</div>
+          </div>
+          <div class="unit-cost">
+            <button class="train-unit-btn" data-train-navy-unit="${type}">建造 +1</button>
           </div>
         </div>
       `}).join('')}
@@ -2359,6 +2517,24 @@ function attachRecruitmentHandlers() {
         const result = await api("/api/train-unit", {
           player: currentPlayer,
           unit_type: button.dataset.trainUnit,
+          count: 1,
+        });
+        state = result.state;
+        syncStrategicCitiesFromState();
+        updateTopBar();
+        renderPanel("recruitment");
+        renderPendingActions();
+      } catch (error) {
+        showNotice(error.message);
+      }
+    });
+  });
+  $("recruitmentContent").querySelectorAll("[data-train-navy-unit]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        const result = await api("/api/train-navy-unit", {
+          player: currentPlayer,
+          unit_type: button.dataset.trainNavyUnit,
           count: 1,
         });
         state = result.state;
@@ -2806,7 +2982,7 @@ function loyaltyCardTargets(card) {
   return Object.entries(generalOwners).flatMap(([generalId, owner]) => {
     if ((ownCard && owner !== currentPlayer) || (!ownCard && owner === currentPlayer)) return [];
     const general = generalById(generalId);
-    if (!general || general.loyalty === null || general.absolute_loyalty || (!ownCard && general.loyalty_exempt)) return [];
+    if (!general || general.loyalty === null || generalAbsoluteLoyaltyActive(general) || (!ownCard && general.loyalty_exempt)) return [];
     const fieldArmy = allArmies(true).find((army) => army.generalId === generalId);
     if (fieldArmy?.status === "jailed") return [];
     const loyalty = calculateGeneralLoyalty(general, fieldArmy).value;
@@ -2854,7 +3030,7 @@ function applyAssassination(outcome) {
   for (const childId of descendantGeneralIds(tree, generalId)) {
     const child = tree.generals?.[childId];
     if (!child || child.role !== "major_general") continue;
-    if (child.absolute_loyalty || child.loyalty_exempt || child.loyalty === null) continue;
+    if (generalAbsoluteLoyaltyActive(child) || child.loyalty_exempt || child.loyalty === null) continue;
     loyaltyOverrides[childId] = 0;
   }
 }
@@ -3122,6 +3298,7 @@ async function boot() {
   indexCards();
   indexScenarioCells();
   snapArmiesToStartCities();
+  initializeNavies();
   indexProvinceCells();
   await loadAllGeneralTrees();
   initializeGeneralRuntime();
@@ -3313,7 +3490,7 @@ function drawCities(ctx) {
     }
     // 水波紋：所有河港都畫，不再只畫有鐵路橋的那幾座。
     // 鐵路橋另有黃色方塊標記，兩者互不取代。
-    if (city.port === 'river' || cell.railBridge) {
+    if (city.port === 'river' || city.port === 'sea' || cell.railBridge) {
       ctx.strokeStyle = '#79b8d2';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -3497,12 +3674,24 @@ function initMap() {
   for (let c = 0; c < COLS; c++) {
     for (let r = 0; r < ROWS; r++) {
       const cell = cells[`${c},${r}`];
-      if (!cell || !cell.land) continue;
+      if (!cell || (!cell.land && !cell.coastalWater)) continue;
 
       const X = hcx(c), Y = hcy(c, r);
 
       // Draw faction-colored hex fill
-      if (cell.fac && FACTIONS[cell.fac]) {
+      if (cell.coastalWater) {
+        ctx.fillStyle = "rgba(74, 128, 151, 0.62)";
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 180 * (60 * i);
+          const hx = X + s * Math.cos(a);
+          const hy = Y + s * Math.sin(a);
+          if (i === 0) ctx.moveTo(hx, hy);
+          else ctx.lineTo(hx, hy);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else if (cell.fac && FACTIONS[cell.fac]) {
         const facColor = FACTIONS[cell.fac].color;
         ctx.fillStyle = mixColor(facColor);
         ctx.beginPath();
@@ -3649,7 +3838,7 @@ function renderArmyMarkers(faction) {
     halo.setAttribute('class', 'army-halo');
     halo.setAttribute('cx', X);
     halo.setAttribute('cy', Y);
-    halo.setAttribute('r', 16);
+    halo.setAttribute('r', 13);
     halo.setAttribute('fill', color);
     halo.setAttribute('opacity', '0.3');
     if (armyFaction === faction && !armyIsResolvedThisTurn(army) && !activeBattleForArmy(army)) g.appendChild(halo);
@@ -3658,7 +3847,7 @@ function renderArmyMarkers(faction) {
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', X);
     circle.setAttribute('cy', Y);
-    circle.setAttribute('r', 12.5);
+    circle.setAttribute('r', 10);
     circle.setAttribute('fill', color);
     circle.setAttribute('stroke', '#fff');
     circle.setAttribute('stroke-width', '2');
@@ -3670,9 +3859,9 @@ function renderArmyMarkers(faction) {
 
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('x', X);
-    text.setAttribute('y', Y + 4);
+    text.setAttribute('y', Y + 3);
     text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('font-size', '11');
+    text.setAttribute('font-size', '10');
     text.setAttribute('font-weight', 'bold');
     text.setAttribute('fill', '#fff');
     text.textContent = number;
@@ -3686,7 +3875,6 @@ function renderArmyMarkers(faction) {
     const focusArmy = () => {
       const battle = activeBattleForArmy(army);
       if (battle) selectBattle(battle.id);
-      else if (armyFaction !== currentPlayer && moveMode) handleMapDestination(cell);
       else selectArmy(army.id);
     };
     g.addEventListener('click', focusArmy);
@@ -3700,7 +3888,98 @@ function renderArmyMarkers(faction) {
     svgOverlay.appendChild(g);
   });
 
+  renderNavyMarkers(svgOverlay, faction);
   renderBattleMarkers(svgOverlay);
+}
+
+function navyTooltipText(navy) {
+  normalizeNavyDivision(navy, navyRules());
+  const active = activeGunBoats(navy, navyRules()).length;
+  return `${navy.name}\n砲艇 ${active}/${navy.gunBoats.length} 可戰 · 運輸船 ${navy.cargoBoats} · HP ${Math.round(totalGunBoatHp(navy))}/${maxGunBoatHp(navy)} · 運輸 ${Math.round(totalCargoBoatHp(navy, navyRules()))}/${maxCargoBoatHp(navy, navyRules())}`;
+}
+
+function navyCellLabel(cell) {
+  return cell?.city?.name || cell?.river || cell?.navalRouteName || "水域";
+}
+
+function navyMoveFactoryCost(navy) {
+  const perGunBoat = Number(navyRules().move?.factory_cost_per_gun_boat || 5);
+  normalizeNavyDivision(navy, navyRules());
+  return Math.max(0, (navy?.gunBoats || []).length * perGunBoat);
+}
+
+function navyMoveCostText(navy) {
+  const perGunBoat = Number(navyRules().move?.factory_cost_per_gun_boat || 5);
+  const gunBoats = (navy?.gunBoats || []).length;
+  return `每艘砲艇工業點 ${perGunBoat}；本艦隊 ${gunBoats} 艘砲艇，共工業點 ${navyMoveFactoryCost(navy)}`;
+}
+
+function renderNavyMarkers(svgOverlay, observer) {
+  const occupancy = new Map();
+  for (const navy of allNavies()) {
+    normalizeNavyDivision(navy, navyRules());
+    const faction = navyFaction(navy);
+    const cell = cells[navy.cellKey];
+    if (!cell) continue;
+    if (!navyIsVisible(navy, observer)) continue;
+    const occupants = occupancy.get(cell.key) || 0;
+    occupancy.set(cell.key, occupants + 1);
+    const x = hcx(cell.c) + occupants * 8;
+    const y = hcy(cell.c, cell.r) + occupants * 5;
+    const color = FACTIONS[faction]?.color || "#315f73";
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const classes = ["navy-marker"];
+    if (faction !== observer) classes.push("enemy");
+    if (navyIsResolvedThisTurn(navy)) classes.push("resolved");
+    if (selectedNavyId === navy.id) classes.push("selected");
+    g.setAttribute("class", classes.join(" "));
+    g.setAttribute("data-navy-id", navy.id);
+    g.setAttribute("role", "button");
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("transform", `translate(${x}, ${y})`);
+
+    const hull = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hull.setAttribute("d", "M-14 -3 L10 -3 L15 2 L8 9 L-8 9 L-15 2 Z");
+    hull.setAttribute("fill", color);
+    hull.setAttribute("stroke", "#fff8e8");
+    hull.setAttribute("stroke-width", "2");
+    g.appendChild(hull);
+
+    const cabin = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    cabin.setAttribute("x", "-6");
+    cabin.setAttribute("y", "-9");
+    cabin.setAttribute("width", "11");
+    cabin.setAttribute("height", "6");
+    cabin.setAttribute("rx", "1");
+    cabin.setAttribute("fill", "#fff8e8");
+    g.appendChild(cabin);
+
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("x", "0");
+    label.setAttribute("y", "6");
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("font-size", "10");
+    label.setAttribute("font-weight", "800");
+    label.setAttribute("fill", "#1f2421");
+    label.textContent = "艦";
+    g.appendChild(label);
+
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = navyTooltipText(navy);
+    g.appendChild(title);
+
+    const focus = () => {
+      selectNavy(navy.id);
+    };
+    g.addEventListener("click", focus);
+    g.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        focus();
+      }
+    });
+    svgOverlay.appendChild(g);
+  }
 }
 
 function currentArmies() {
@@ -3711,11 +3990,154 @@ function allArmies(includeInactive = false) {
   const armies = Object.values(ARMY_POSITIONS).flat();
   return includeInactive
     ? armies
-    : armies.filter((army) => !["jailed", "killed", "destroyed"].includes(army.status));
+    : armies.filter((army) => !["jailed", "killed", "destroyed"].includes(army.status) && !army.embarkedOn);
 }
 
 function armyById(armyId) {
   return allArmies(true).find((army) => army.id === armyId) || null;
+}
+
+function allNavies(includeInactive = false) {
+  for (const navy of navyDivisions) normalizeNavyDivision(navy, navyRules());
+  return includeInactive
+    ? navyDivisions
+    : navyDivisions.filter((navy) =>
+      navy.status !== "retreated" && ((navy.gunBoats || []).length || (navy.cargoBoatHp || []).length)
+    );
+}
+
+function currentNavies() {
+  return allNavies().filter((navy) => navyFaction(navy) === currentPlayer);
+}
+
+function navyById(navyId) {
+  return allNavies(true).find((navy) => navy.id === navyId) || null;
+}
+
+function selectedNavy() {
+  return selectedNavyId ? navyById(selectedNavyId) : null;
+}
+
+function navyRules() {
+  return bootstrap?.navy_system || {};
+}
+
+function navyIsResolvedThisTurn(navy) {
+  return Boolean(navy && (navy.resolvedTurn === state?.turn || resolvedNavyIds.has(navy.id)));
+}
+
+function markNavyResolved(navyOrId) {
+  const navy = typeof navyOrId === "string" ? navyById(navyOrId) : navyOrId;
+  if (!navy) return;
+  navy.resolvedTurn = state?.turn ?? 0;
+  resolvedNavyIds.add(navy.id);
+}
+
+function clearNavyResolved(navy) {
+  if (!navy) return;
+  delete navy.resolvedTurn;
+  resolvedNavyIds.delete(navy.id);
+}
+
+function navyCanReceiveOrder(navy) {
+  return Boolean(navy) && !navyIsResolvedThisTurn(navy);
+}
+
+function navyAtCell(cellKey, owner = null) {
+  return allNavies().find((navy) =>
+    navy.cellKey === cellKey && (!owner || navyFaction(navy) === owner)
+  ) || null;
+}
+
+function enemyNavyAtCell(cellKey, faction = currentPlayer) {
+  return allNavies().find((navy) => navy.cellKey === cellKey && navyFaction(navy) !== faction) || null;
+}
+
+function navyInContact(navy) {
+  const faction = navyFaction(navy);
+  const enemyNavy = enemyNavyAtCell(navy.cellKey, faction);
+  return Boolean((enemyNavy && factionsAtWar(faction, navyFaction(enemyNavy)))
+    || allArmies().some((army) =>
+      army.cellKey === navy.cellKey
+      && factionForArmy(army) !== faction
+      && factionsAtWar(faction, factionForArmy(army))
+    ));
+}
+
+function cellVector(fromCell, toCell) {
+  if (!fromCell || !toCell) return { x: 0, y: 0 };
+  return { x: hcx(toCell.c) - hcx(fromCell.c), y: hcy(toCell.c, toCell.r) - hcy(fromCell.c, fromCell.r) };
+}
+
+function waterRetreatPriority(cell) {
+  if (cell.coastalWater || (cell.river && !cell.city)) return 0;
+  if (cell.river || cell.city?.port) return 1;
+  if (cell.railBridge) return 2;
+  return 3;
+}
+
+function navyRetreatCell(navy, threatCell = null) {
+  const source = cells[navy.cellKey];
+  const faction = navyFaction(navy);
+  const away = threatCell ? cellVector(threatCell, source) : null;
+  const options = cellNeighbors(source).filter((cell) =>
+    navyCanEnterCell(cell)
+    && !enemyNavyAtCell(cell.key, faction)
+    && !allArmies().some((army) => army.cellKey === cell.key && factionForArmy(army) !== faction)
+  );
+  options.sort((a, b) => {
+    const water = waterRetreatPriority(a) - waterRetreatPriority(b);
+    if (water) return water;
+    if (!away) return 0;
+    const va = cellVector(source, a);
+    const vb = cellVector(source, b);
+    const dotA = va.x * away.x + va.y * away.y;
+    const dotB = vb.x * away.x + vb.y * away.y;
+    return dotB - dotA;
+  });
+  return options[0] || null;
+}
+
+function navyContactEstimate(navy) {
+  const faction = navyFaction(navy);
+  const rules = navyRules();
+  const ownMax = retreatBaselineGunBoatHp(navy, rules);
+  const ownHp = totalGunBoatHp(navy);
+  const retreatHp = ownMax * (1 - Number(rules?.land_interaction?.navy_retreat_gun_boat_hp_loss_ratio || 0.5));
+  const enemyNavy = enemyNavyAtCell(navy.cellKey, faction);
+  const enemyArmy = allArmies().find((army) =>
+    army.cellKey === navy.cellKey && factionForArmy(army) !== faction && factionsAtWar(faction, factionForArmy(army))
+  );
+  let incoming = 0;
+  const notes = [];
+  if (enemyNavy && factionsAtWar(faction, navyFaction(enemyNavy))) {
+    const damage = activeGunBoats(enemyNavy, rules).length * Number(rules?.units?.gun_boat?.attack?.gun_boat || 5);
+    incoming += damage;
+    notes.push(`${enemyNavy.name}砲艇火力 ${damage}`);
+  }
+  if (enemyArmy) {
+    const damage = Math.max(0, Math.round(Number(armyUnits(enemyArmy).artillery || 0)))
+      * Number(rules?.land_interaction?.artillery_attack_to_gun_boat || 1);
+    incoming += damage;
+    notes.push(`${armyCombatLabel(enemyArmy)}砲兵火力 ${damage}`);
+  }
+  if (ownMax <= 0) return "已無砲艇可戰";
+  if (ownHp <= retreatHp) return "已達退卻線，可撤退";
+  if (incoming <= 0) return "敵方目前無有效反艦火力";
+  const ownRounds = Math.max(1, Math.ceil((ownHp - retreatHp) / incoming));
+  const enemyEstimate = enemyNavy && factionsAtWar(faction, navyFaction(enemyNavy))
+    ? (() => {
+      const enemyMax = retreatBaselineGunBoatHp(enemyNavy, rules);
+      const enemyHp = totalGunBoatHp(enemyNavy);
+      const enemyFloor = enemyMax * (1 - Number(rules?.land_interaction?.navy_retreat_gun_boat_hp_loss_ratio || 0.5));
+      const enemyIncoming = activeGunBoats(navy, rules).length * Number(rules?.units?.gun_boat?.attack?.gun_boat || 5);
+      if (enemyMax <= 0) return "；敵方已無砲艇可戰";
+      if (enemyHp <= enemyFloor) return "；敵方已達退卻線";
+      if (enemyIncoming <= 0) return "";
+      return `；敵方約 ${Math.max(1, Math.ceil((enemyHp - enemyFloor) / enemyIncoming))} 輪達退卻線`;
+    })()
+    : "";
+  return `我方約 ${ownRounds} 輪達退卻線${enemyEstimate}（${notes.join("；")}）`;
 }
 
 function factionForArmy(army) {
@@ -3798,7 +4220,7 @@ function absoluteTransferPair(firstArmy, secondArmy) {
   const firstGeneral = generalById(firstArmy.generalId);
   const secondGeneral = generalById(secondArmy.generalId);
   const roles = new Set([firstGeneral?.role, secondGeneral?.role]);
-  const hasAbsolute = Boolean(firstGeneral?.absolute_loyalty || secondGeneral?.absolute_loyalty);
+  const hasAbsolute = Boolean(generalAbsoluteLoyaltyActive(firstGeneral) || generalAbsoluteLoyaltyActive(secondGeneral));
   return hasAbsolute && roles.has("great_general") && roles.has("lieutenant_general");
 }
 
@@ -3933,8 +4355,32 @@ function armyIsVisible(army, armyFaction, observer) {
   const nearbyArmy = allArmies().some((ownArmy) =>
     factionForArmy(ownArmy) === observer && cellWithinRange(ownArmy.cellKey, army.cellKey, 2)
   );
-  if (nearbyArmy) return true;
+  const nearbyNavy = allNavies().some((navy) =>
+    navyFaction(navy) === observer && cellWithinRange(navy.cellKey, army.cellKey, 2)
+  );
+  if (nearbyArmy || nearbyNavy) return true;
   return armyRevealedByIntel(army, observer);
+}
+
+function navyIsVisible(navy, observer = currentPlayer) {
+  const faction = navyFaction(navy);
+  if (faction === observer) return true;
+  const cell = cells[navy?.cellKey];
+  if (!cell) return false;
+  const nearbyArmy = allArmies().some((army) =>
+    factionForArmy(army) === observer && cellWithinRange(army.cellKey, navy.cellKey, 2)
+  );
+  const nearbyNavy = allNavies().some((ownNavy) =>
+    navyFaction(ownNavy) === observer && cellWithinRange(ownNavy.cellKey, navy.cellKey, 2)
+  );
+  if (nearbyArmy || nearbyNavy) return true;
+  const province = cell.city?.province || strategicProvinceForCell(cell);
+  const byAir = activeTimedEffects(observer, "aerial_recon")
+    .some((effect) => (effect.target_provinces || []).includes(province));
+  if (byAir) return true;
+  if (factionHasPoliceProtection(faction)) return false;
+  return activeTimedEffects(observer, "intel_network")
+    .some((effect) => effect.target_province === province);
 }
 
 function selectedArmy() {
@@ -3942,10 +4388,8 @@ function selectedArmy() {
 }
 
 function armyUnits(army) {
-  const faction = factionForArmy(army);
-  const additions = state.players[faction]?.army_reinforcements?.[army.id] || {};
   return Object.fromEntries(
-    Object.keys(UNIT_META).map((type) => [type, Math.max(0, Math.round((army.units[type] || 0) + (additions[type] || 0)))])
+    Object.keys(UNIT_META).map((type) => [type, Math.max(0, Math.round(Number(army?.units?.[type] || 0)))])
   );
 }
 
@@ -4009,6 +4453,7 @@ function applyFieldHospitalRecovery() {
     if (!hasFieldHospital(army)) { delete army.fieldHospitalPending; continue; }
     const pick = pending.units[Math.floor(Math.random() * pending.units.length)];
     army.units[pick] = Number(army.units[pick] || 0) + 1;
+    army.units = clampUnitsToForceCap(army.units);
     delete army.fieldHospitalPending;
     healed.push(`${army.designator}：${UNIT_META[pick]?.name || pick} +1 營`);
   }
@@ -4066,10 +4511,39 @@ function armyForceCap() {
 }
 
 function forcePoints(units) {
-  return (units.infantry || 0)
-    + (units.cavalry || 0)
-    + (units.machine_gun || 0) * 2
-    + (units.artillery || 0) * 4;
+  const points = bootstrap?.features?.unit_force_points || {
+    infantry: 1, cavalry: 1, machine_gun: 2, artillery: 4,
+  };
+  return Object.keys(UNIT_META).reduce((sum, type) =>
+    sum + Math.max(0, Number(units?.[type] || 0)) * Number(points[type] || 0), 0);
+}
+
+function clampUnitsToForceCap(units, cap = armyForceCap()) {
+  const points = bootstrap?.features?.unit_force_points || {
+    infantry: 1, cavalry: 1, machine_gun: 2, artillery: 4,
+  };
+  const normalized = wholeUnits(units);
+  const trimOrder = Object.keys(UNIT_META)
+    .sort((a, b) => Number(points[b] || 0) - Number(points[a] || 0));
+  while (forcePoints(normalized) > cap) {
+    const unit = trimOrder.find((type) => Number(normalized[type] || 0) > 0);
+    if (!unit) break;
+    normalized[unit] = Math.max(0, Number(normalized[unit] || 0) - 1);
+  }
+  return normalized;
+}
+
+function normalizeArmyForceCaps() {
+  for (const army of allArmies(true)) {
+    if (!army?.units || ["jailed", "killed", "destroyed"].includes(army.status)) continue;
+    const before = forcePoints(armyUnits(army));
+    if (before <= armyForceCap()) continue;
+    army.units = clampUnitsToForceCap(armyUnits(army));
+    const general = generalById(army.generalId);
+    if (general) general.units = { ...army.units };
+    const ledger = state?.players?.[factionForArmy(army)]?.army_reinforcements;
+    if (ledger) delete ledger[army.id];
+  }
 }
 
 function citiesInProvince(province) {
@@ -4165,7 +4639,28 @@ function queueCityOwnershipSync(cityId, faction) {
 }
 
 function renderBattleMarkers(svgOverlay) {
-  for (const battle of activeBattles) {
+  const markers = activeBattles.map((battle) => ({
+    id: battle.id,
+    status: battle.status,
+    cellKey: battle.cellKey,
+    label: "戰",
+    title: battle.status === 'pending' ? '戰鬥待決' : '查看戰果',
+  }));
+  for (const report of navyBattleReports) {
+    if (hiddenNavyBattleReportIds.has(report.id) || !reportVisibleToPlayer(report)) continue;
+    const navy = navyById(report.navyId);
+    const army = armyById(report.armyId);
+    const cellKey = report.cellKey || navy?.cellKey || army?.cellKey;
+    if (!cellKey) continue;
+    markers.push({
+      id: report.id,
+      status: "resolved",
+      cellKey,
+      label: "戰",
+      title: report.message || "查看海戰情報",
+    });
+  }
+  for (const battle of markers) {
     const cell = cells[battle.cellKey];
     if (!cell) continue;
     const x = hcx(cell.c), y = hcy(cell.c, cell.r);
@@ -4179,9 +4674,9 @@ function renderBattleMarkers(svgOverlay) {
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     label.setAttribute('text-anchor', 'middle');
     label.setAttribute('y', '4');
-    label.textContent = '戰';
+    label.textContent = battle.label;
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-    title.textContent = battle.status === 'pending' ? '戰鬥待決' : '查看戰果';
+    title.textContent = battle.title;
     group.append(circle, label, title);
     const open = () => selectBattle(battle.id);
     group.addEventListener('click', open);
@@ -4227,7 +4722,8 @@ function battleSideLabel(battle, side) {
 
 function estimatedRoundsUntilBreak(battle, side) {
   const currentSections = battle.result?.remaining?.[side]?.sections || {};
-  if (Object.values(currentSections).some((status) => status === "fleeing")) return 0;
+  const sectionStatuses = Object.values(currentSections);
+  if (sectionStatuses.length && sectionStatuses.every((status) => status === "fleeing")) return 0;
   const latestEstimate = [...(battle.result?.log || [])]
     .reverse()
     .find((entry) => entry.round && entry.time_to_breakdown?.[side]);
@@ -4296,6 +4792,56 @@ function pursuitReportMarkup(result) {
   return `<div class="battle-pursuit">追擊：勝方騎兵 ${pursuit.cavalry} 營，自由攻擊造成 ${damageText}；各兵種最多損失剩餘 HP 的 50%。</div>`;
 }
 
+function reportVisibleToPlayer(report, player = currentPlayer) {
+  return report?.attackerFaction === player
+    || report?.defenderFaction === player
+    || report?.faction === player
+    || report?.targetFaction === player;
+}
+
+function visibleCombatReports() {
+  const landReports = [...activeBattles, ...battleReports]
+    .filter((item) => !["pending", "ongoing"].includes(item.status))
+    .filter((item) => !hiddenBattleReportIds.has(item.id) && reportVisibleToPlayer(item))
+    .map((item) => ({ id: item.id, kind: "land", label: "戰", title: battleSideLabel(item, "A") + " vs " + battleSideLabel(item, "B") }));
+  const seaReports = navyBattleReports
+    .filter((item) => !hiddenNavyBattleReportIds.has(item.id) && reportVisibleToPlayer(item))
+    .map((item) => ({ id: item.id, kind: "navy", label: "戰", title: item.message || "海戰情報" }));
+  return [...landReports, ...seaReports].sort((a, b) => b.id - a.id).slice(0, 8);
+}
+
+function renderNavyBattlePanel(root, report) {
+  const actor = report.kind === "army_navy" ? armyById(report.armyId) : navyById(report.navyId);
+  const target = report.kind === "army_navy" ? navyById(report.navyId) : navyById(report.targetNavyId);
+  root.hidden = false;
+  $("battleReportDock").hidden = false;
+  root.dataset.battleId = String(report.id);
+  root.classList.remove("collapsed");
+  const actorName = actor?.name || (actor ? armyCombatLabel(actor) : null) || FACTIONS[report.faction]?.name || "我方";
+  const targetName = target?.name || (target ? armyCombatLabel(target) : null) || FACTIONS[report.targetFaction]?.name || "敵方";
+  const details = report.kind === "navy_duel"
+    ? `<span>${actorName} 對敵造成 ${Math.round(report.result?.attackerDamage || 0)} HP</span>
+       <span>${targetName} 反擊造成 ${Math.round(report.result?.defenderDamage || 0)} HP</span>
+       <span>${report.result?.attackerRetreat ? actorName + "撤離" : actorName + "留在戰區"}；${report.result?.defenderRetreat ? targetName + "撤離" : targetName + "留在戰區"}</span>`
+    : `<span>陸軍砲兵：${report.result?.artilleryBefore || 0} → ${report.result?.artilleryAfter || 0} 營</span>
+       <span>砲艇受損：${Math.round(report.result?.boatDamage || 0)} HP</span>
+       <span>${report.result?.landRetreat ? "陸軍已無砲兵，退出接觸" : "陸軍仍有砲兵，留在戰區"}；${report.result?.navyRetreat ? "艦隊退卻" : "艦隊未退"}</span>`;
+  const navy = navyById(report.navyId);
+  const targetNavy = navyById(report.targetNavyId);
+  const retreatNavy = [navy, targetNavy]
+    .find((item) => item && navyFaction(item) === currentPlayer && navyInContact(item));
+  root.innerHTML = `
+    <div class="battle-heading"><b>海戰情報</b><span>${FACTIONS[report.faction]?.shortName || report.faction} vs ${FACTIONS[report.targetFaction]?.shortName || report.targetFaction}</span><button class="battle-collapse" data-dismiss-navy-report="${report.id}" title="移除此情報">×</button></div>
+    <div class="battle-intelligence navy-battle-info">
+      <span>${report.message || ""}</span>
+      ${details}
+    </div>
+    ${navy ? `<div class="battle-sides"><div><b>${navy.name}</b>${navyHealthMarkup(navy)}</div>${targetNavy ? `<div><b>${targetNavy.name}</b>${navyHealthMarkup(targetNavy)}</div>` : ""}</div>` : ""}
+    ${retreatNavy ? `<div class="battle-actions"><button data-navy-report-retreat="${retreatNavy.id}">撤退${retreatNavy.name}</button></div>` : ""}
+    <div class="battle-result"><small>右鍵移除此情報</small></div>
+  `;
+}
+
 function renderBattlePanel() {
   const root = $("battlePanel");
   const reports = [...activeBattles, ...battleReports].filter((item) => !hiddenBattleReportIds.has(item.id));
@@ -4303,6 +4849,16 @@ function renderBattlePanel() {
     || [...reports].reverse().find((item) =>
       item.attackerFaction === currentPlayer || item.defenderFaction === currentPlayer
     );
+  const navyReport = navyBattleReports.find((item) =>
+    item.id === selectedBattleId && !hiddenNavyBattleReportIds.has(item.id) && reportVisibleToPlayer(item)
+  ) || (!battle ? [...navyBattleReports].reverse().find((item) =>
+    !hiddenNavyBattleReportIds.has(item.id) && reportVisibleToPlayer(item)
+  ) : null);
+  if (navyReport && (!battle || selectedBattleId === navyReport.id)) {
+    selectedBattleId = navyReport.id;
+    renderNavyBattlePanel(root, navyReport);
+    return;
+  }
   if (!battle) {
     root.hidden = true;
     $("battleReportDock").hidden = true;
@@ -4424,12 +4980,17 @@ function renderTileInfo() {
   const concessionPowers = Array.isArray(city?.concession) ? city.concession : [];
   const tags = [];
   if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
+  if (city?.port === "sea") tags.push('<span class="tile-tag tile-tag-port">海港</span>');
   if (concessionPowers.length) {
     tags.push(`<span class="tile-tag tile-tag-concession">租界</span>` + concessionPowers.map((key) => `
       <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
     `).join(""));
   }
   const concessionRow = tags.length ? `<div class="tile-concession">${tags.join("")}</div>` : "";
+  const naviesHere = allNavies().filter((navy) => navy.cellKey === cell.key);
+  const navyRow = naviesHere.length
+    ? `<div class="tile-concession">${naviesHere.map((navy) => `<span class="tile-tag tile-tag-port">${FACTIONS[navyFaction(navy)]?.shortName || navyFaction(navy)} · ${navy.name}</span>`).join("")}</div>`
+    : "";
   const railText = railroads.length
     ? railroads.map(railwayStatusLabel).join("、")
     : "無";
@@ -4447,7 +5008,8 @@ function renderTileInfo() {
       <span>鐵路<strong>${railText}</strong></span>
       <span>產出<strong>$${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
     </div>
-    ${concessionRow}`;
+    ${concessionRow}
+    ${navyRow}`;
 }
 
 function engineeringOperationsFor(army) {
@@ -4459,8 +5021,45 @@ function engineeringOperationsFor(army) {
   return [...skills].filter((skill) => ENGINEERING_OPERATIONS[skill]);
 }
 
+function payEngineeringCost(operation, action) {
+  const cost = Number(operation?.factoryCost || 0);
+  const payload = state.players[currentPlayer];
+  if (!payload) throw new Error("找不到玩家工業點資料。");
+  if (Number(payload.factory_points || 0) < cost) {
+    throw new Error(`${operation.label}需要工業點 ${cost}（目前 ${Number(payload.factory_points || 0)}）。`);
+  }
+  payload.factory_points = Number(payload.factory_points || 0) - cost;
+  if (action) action.factoryCost = cost;
+  updateTopBar();
+}
+
+function startEngineeringOperation(army, engineering, targetCellKey) {
+  const operation = ENGINEERING_OPERATIONS[engineering];
+  const action = beginArmyOrder(army, "engineering");
+  try {
+    payEngineeringCost(operation, action);
+  } catch (error) {
+    const index = armyOrderHistory.indexOf(action);
+    if (index >= 0) armyOrderHistory.splice(index, 1);
+    throw error;
+  }
+  army.specialOperation = {
+    id: engineering,
+    label: operation.label,
+    turnsRemaining: operation.turns,
+    targetCellKey,
+  };
+  action.engineering = engineering;
+  return action;
+}
+
 function renderArmyDetail() {
   const root = $("armyDetail");
+  const navy = selectedNavy();
+  if (navy) {
+    renderNavyDetail(root, navy);
+    return;
+  }
   const army = selectedArmy();
   if (!army) {
     root.hidden = true;
@@ -4493,7 +5092,7 @@ function renderArmyDetail() {
   );
   const lieutenants = availableLieutenantGenerals(currentPlayer);
   const branchSize = transferBranchSize(generalTrees[armyFaction], army.generalId);
-  const canDefect = loyalty !== null && !general?.loyalty_exempt && !general?.absolute_loyalty && lieutenants.length
+  const canDefect = loyalty !== null && !general?.loyalty_exempt && !generalAbsoluteLoyaltyActive(general) && lieutenants.length
     && availableMajorGeneralSlots(currentPlayer) >= branchSize
     && (showComposition ? profile.treasury >= defectionCost : profile.treasury >= 10);
 
@@ -4529,7 +5128,8 @@ function renderArmyDetail() {
       ${joinableBattle ? `<button class="join-battle-command" data-join-battle="${joinableBattle.id}">加入戰鬥</button>` : ""}
       ${engineering.map((skill) => {
         const operation = ENGINEERING_OPERATIONS[skill];
-        return `<button data-engineering-operation="${skill}">${operation.label} (${operation.turns} 回合)</button>`;
+        const affordable = Number(state.players[currentPlayer]?.factory_points || 0) >= operation.factoryCost;
+        return `<button data-engineering-operation="${skill}" ${affordable ? "" : "disabled"} title="${operation.label}：需 ${operation.turns} 回合，消耗工業點/FP ${operation.factoryCost}">${operation.label} (${operation.turns} 回合 · 工${operation.factoryCost})</button>`;
       }).join("")}`}
       ${isOwnArmy && !fightingBattle && !army.specialOperation ? forcedMarchButtonMarkup(army) : ""}
       ${canReinforce ? `<button data-army-operation="recruit">補充兵力</button>` : ""}
@@ -4609,9 +5209,300 @@ async function buyForcedMarch(army, button) {
   }
 }
 
+function navyHealthMarkup(navy) {
+  normalizeNavyDivision(navy, navyRules());
+  const floor = Number(navyRules()?.units?.gun_boat?.inactive_below_hp || 15);
+  const gunMarkup = (navy.gunBoats || []).map((boat, index) => {
+    const hp = Math.max(0, Number(boat.hp || 0));
+    const maxHp = Math.max(1, Number(boat.maxHp || 30));
+    const active = hp >= floor;
+    return `
+      <div class="navy-boat-health ${active ? "" : "inactive"}">
+        <span>砲艇 ${index + 1}${active ? "" : " · 失能"}</span>
+        <div class="boat-health-bar"><i style="width:${Math.max(0, Math.min(100, hp / maxHp * 100))}%"></i></div>
+        <b>${Math.round(hp)}/${maxHp}</b>
+      </div>`;
+  }).join("");
+  const cargoMarkup = (navy.cargoBoatHp || []).map((boat, index) => {
+    const hp = Math.max(0, Number(boat.hp || 0));
+    const maxHp = Math.max(1, Number(boat.maxHp || 10));
+    return `
+      <div class="navy-boat-health cargo">
+        <span>運輸船 ${index + 1}</span>
+        <div class="boat-health-bar"><i style="width:${Math.max(0, Math.min(100, hp / maxHp * 100))}%"></i></div>
+        <b>${Math.round(hp)}/${maxHp}</b>
+      </div>`;
+  }).join("");
+  return `<div class="navy-health-list">${gunMarkup}${cargoMarkup || '<small>無運輸船</small>'}</div>`;
+}
+
+function carriedArmy(navy) {
+  return navy?.carriedArmyId ? armyById(navy.carriedArmyId) : null;
+}
+
+function navyReserveButtonsMarkup(navy, city, faction) {
+  if (!city?.port || !cityControlledBy(city, faction)) {
+    return `<div class="active-operation">海軍預備隊只能在己方港口編入艦隊。</div>`;
+  }
+  const reserves = state.players[faction]?.navy_reserves || {};
+  return `
+    <div class="army-reinforcement navy-reinforcement">
+      <b>${city.name}海軍預備隊</b>
+      ${Object.entries(NAVY_UNIT_META).map(([type, unit]) => `
+        <button data-reinforce-navy-unit="${type}" ${Number(reserves[type] || 0) > 0 ? "" : "disabled"}>
+          <span>${unit.name}</span><strong>${reserves[type] ?? 0}</strong>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function embarkableArmies(navy) {
+  const cell = cells[navy.cellKey];
+  if (!cell?.city?.port) return [];
+  const capacity = navyCapacity(navy, navyRules());
+  return currentArmies().filter((army) =>
+    army.cellKey === navy.cellKey
+    && !army.embarkedOn
+    && armyCanReceiveOrder(army)
+    && !activeBattleForArmy(army)
+    && forcePoints(armyUnits(army)) <= capacity
+  );
+}
+
+function renderNavyDetail(root, navy) {
+  const faction = navyFaction(navy);
+  const isOwnNavy = faction === currentPlayer;
+  const cell = cells[navy.cellKey];
+  const city = cell?.city || null;
+  const carried = carriedArmy(navy);
+  const canOrder = isOwnNavy && navyCanReceiveOrder(navy);
+  const moveCost = navyMoveFactoryCost(navy);
+  const inContact = navyInContact(navy);
+  const canRepair = isOwnNavy && city?.port && [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])]
+    .some((boat) => Number(boat.hp || 0) < Number(boat.maxHp || 30));
+  const embarkable = isOwnNavy && !carried ? embarkableArmies(navy) : [];
+  root.hidden = false;
+  root.innerHTML = `
+    <div class="army-profile navy-profile">
+      <div class="navy-profile-icon">艦</div>
+      <div><b>${navy.name}</b><span>${FACTIONS[faction]?.shortName || faction} · 無將領</span></div>
+      <small>${city ? `${city.name} · ${city.province}` : navyCellLabel(cell)}</small>
+    </div>
+    <div class="navy-composition">
+      <span>砲艇 <b>${activeGunBoats(navy, navyRules()).length}/${navy.gunBoats.length}</b></span>
+      <span>運輸船 <b>${navy.cargoBoats}</b></span>
+      <span>運載 <b>${carried ? armyCombatLabel(carried) : `${navyCapacity(navy, navyRules())} 戰力容量`}</b></span>
+    </div>
+    ${navyHealthMarkup(navy)}
+    ${inContact ? `<div class="active-operation">交戰中：${navyContactEstimate(navy)}</div>` : ""}
+    ${isOwnNavy ? `
+      <div class="army-operations navy-operations">
+        ${!canOrder ? `<button disabled>${navyIsResolvedThisTurn(navy) ? "本回合已行動" : "不可行動"}</button>${inContact ? `<button data-navy-operation="retreat">撤退</button>` : ""}` : `
+          <button class="${navyMoveMode ? "active" : ""}" data-navy-operation="move" title="沿可航行水道最多 ${navyRules().move?.tiles_per_turn || 2} 格；${navyMoveCostText(navy)}">移動（${moveCost ? `工${moveCost}` : "工0"}）</button>
+          <button data-navy-operation="hold">待命</button>
+          ${canRepair ? `<button data-navy-operation="repair">修理</button>` : ""}
+          ${inContact ? `<button data-navy-operation="retreat">撤退</button>` : ""}
+          ${carried && city?.port ? `<button data-navy-operation="disembark">登陸</button>` : ""}
+          ${embarkable.length ? `<button data-navy-operation="embark">搭載陸軍</button>` : ""}
+        `}
+      </div>
+      ${embarkable.length ? `<div class="navy-embark-list">${embarkable.map((army) => `
+        <button data-embark-army="${army.id}">${armyCombatLabel(army)} · 戰力 ${Math.round(forcePoints(armyUnits(army)))}</button>
+      `).join("")}</div>` : ""}
+      ${navyReserveButtonsMarkup(navy, city, faction)}
+    ` : ""}
+  `;
+}
+
+async function handleNavyOperation(navy, operation, embarkArmyId, target, reinforceUnitType = null) {
+  if (reinforceUnitType) {
+    await reinforceNavyFromReserve(navy, reinforceUnitType, target);
+    return;
+  }
+  if (operation === "retreat") {
+    const destination = navyRetreatCell(navy);
+    if (!destination) {
+      showNotice("沒有可供艦隊撤退的相鄰水道。");
+      return;
+    }
+    beginNavyOrder(navy, "retreat");
+    moveNavyToCell(navy, destination);
+    markNavyResolved(navy);
+    uiNotice = `${navy.name}已撤退至${destination.city?.name || destination.river || "水域"}。`;
+    initMap();
+    renderPendingActions();
+    await publishSharedState(true);
+    return;
+  }
+  if (!navyCanReceiveOrder(navy)) {
+    showNotice("此艦隊本回合已行動。");
+    return;
+  }
+  if (operation === "embark" && !embarkArmyId) {
+    const options = embarkableArmies(navy);
+    if (options.length !== 1) {
+      showNotice("請在下方選擇要搭載的陸軍。");
+      return;
+    }
+    embarkArmyId = options[0].id;
+  }
+  if (embarkArmyId) {
+    const army = armyById(embarkArmyId);
+    if (!army || army.cellKey !== navy.cellKey) {
+      showNotice("可搭載陸軍不在本艦隊所在港口。");
+      return;
+    }
+    if (forcePoints(armyUnits(army)) > navyCapacity(navy, navyRules())) {
+      showNotice(`運輸船容量不足：目前容量 ${navyCapacity(navy, navyRules())} 戰力點。`);
+      return;
+    }
+    beginNavyOrder(navy, "embark");
+    navy.carriedArmyId = army.id;
+    army.embarkedOn = navy.id;
+    moveNavyToCell(navy, cells[navy.cellKey]);
+    markNavyResolved(navy);
+    markArmyResolved(army);
+    uiNotice = `${armyCombatLabel(army)}已登上${navy.name}。`;
+    initMap();
+    renderPendingActions();
+    await publishSharedState(true);
+    return;
+  }
+  if (operation === "move") {
+    if (!navyCanReceiveOrder(navy)) {
+      showNotice("此艦隊本回合已行動。");
+      return;
+    }
+    navyMoveMode = !navyMoveMode;
+    moveMode = false;
+    engineeringMode = null;
+    showNotice(navyMoveMode
+      ? `選擇可航行地格；艦隊最多 ${navyRules().move?.tiles_per_turn || 2} 格，${navyMoveCostText(navy)}。`
+      : "已取消艦隊移動。");
+    $("mapStage").classList.toggle("move-mode", navyMoveMode);
+    renderArmyDetail();
+    return;
+  }
+  if (operation === "hold") {
+    beginNavyOrder(navy, "hold");
+    resolveNavyContacts(navy);
+    resolveNavy(navy.id);
+    await publishSharedState(true);
+    return;
+  }
+  if (operation === "repair") {
+    const cell = cells[navy.cellKey];
+    if (!cell?.city?.port) {
+      showNotice("艦艇只能在港口修理。");
+      return;
+    }
+    const raw = window.prompt("將所有現存艦艇至少修到幾 HP？", String(navyRules().units?.gun_boat?.hp || 30));
+    if (raw === null) return;
+    const targetHp = Number(raw);
+    if (!Number.isFinite(targetHp) || targetHp <= 0) {
+      showNotice("修理目標 HP 必須是正數。");
+      return;
+    }
+    const preview = JSON.parse(JSON.stringify(navy));
+    const restored = restoreHpToFloor(preview, targetHp);
+    if (restored <= 0) {
+      showNotice("所有現存艦艇都已達到該 HP。");
+      return;
+    }
+    target.disabled = true;
+    try {
+      const result = await api("/api/repair-navy", { player: currentPlayer, hp: restored });
+      state = result.state;
+      restoreHpToFloor(navy, targetHp);
+      beginNavyOrder(navy, "repair");
+      markNavyResolved(navy);
+      syncStrategicCitiesFromState();
+      updateTopBar();
+      uiNotice = `${navy.name}修復 ${restored} HP，消耗工業點 ${result.factory}。`;
+      initMap();
+      renderPendingActions();
+      await publishSharedState(true);
+    } catch (error) {
+      target.disabled = false;
+      showNotice(error.message);
+    }
+    return;
+  }
+  if (operation === "disembark") {
+    const cell = cells[navy.cellKey];
+    const army = carriedArmy(navy);
+    if (!cell?.city?.port || !army) {
+      showNotice("登陸必須在港口，且艦隊需要載有陸軍。");
+      return;
+    }
+    beginNavyOrder(navy, "disembark");
+    delete army.embarkedOn;
+    moveArmyToCell(army, cell);
+    navy.carriedArmyId = null;
+    markNavyResolved(navy);
+    markArmyResolved(army);
+    uiNotice = `${armyCombatLabel(army)}已自${navy.name}登陸${cell.city.name}。`;
+    initMap();
+    renderPendingActions();
+    await publishSharedState(true);
+  }
+}
+
+async function reinforceNavyFromReserve(navy, unitType, target) {
+  const faction = navyFaction(navy);
+  const cell = cells[navy.cellKey];
+  const city = cell?.city || null;
+  if (faction !== currentPlayer) {
+    showNotice("只能編入自己的艦隊。");
+    return;
+  }
+  if (!city?.port || !cityControlledBy(city, faction)) {
+    showNotice("海軍預備隊只能在己方港口編入艦隊。");
+    return;
+  }
+  if (!Number(state.players[faction]?.navy_reserves?.[unitType] || 0)) {
+    showNotice("沒有可編入的海軍預備隊。");
+    return;
+  }
+  if (target) target.disabled = true;
+  try {
+    const result = await api("/api/reinforce-navy", {
+      player: faction,
+      city_id: city.id,
+      unit_type: unitType,
+      count: 1,
+    });
+    state = result.state;
+    if (unitType === "gun_boat") {
+      const hp = Number(navyRules().units?.gun_boat?.hp || 30);
+      navy.gunBoats ||= [];
+      navy.gunBoats.push({ id: `${navy.id}-G${navy.gunBoats.length + 1}`, hp, maxHp: hp });
+    } else if (unitType === "cargo_boat") {
+      const hp = Number(navyRules().units?.cargo_boat?.hp || 10);
+      navy.cargoBoatHp ||= [];
+      navy.cargoBoatHp.push({ id: `${navy.id}-C${navy.cargoBoatHp.length + 1}`, hp, maxHp: hp });
+      navy.cargoBoats = navy.cargoBoatHp.length;
+    }
+    syncStrategicCitiesFromState();
+    updateTopBar();
+    uiNotice = `${navy.name}編入${NAVY_UNIT_META[unitType]?.name || unitType} +1。`;
+    renderArmyDetail();
+    renderPendingActions();
+    await publishSharedState(true);
+  } catch (error) {
+    if (target) target.disabled = false;
+    showNotice(error.message);
+  }
+}
+
 function pendingArmies() {
   const fightingIds = new Set(activeBattles.flatMap(battleParticipantIds));
   return currentArmies().filter((army) => !armyIsResolvedThisTurn(army) && !fightingIds.has(army.id));
+}
+
+function pendingNavies() {
+  return currentNavies().filter((navy) => !navyIsResolvedThisTurn(navy));
 }
 
 function joinBattle(army, battle) {
@@ -4643,8 +5534,25 @@ function joinBattle(army, battle) {
   renderPendingActions();
 }
 
+function selectNavy(navyId) {
+  selectedNavyId = navyId;
+  selectedArmyId = null;
+  selectedBattleId = null;
+  moveMode = false;
+  navyMoveMode = false;
+  engineeringMode = null;
+  uiNotice = null;
+  $("mapStage").classList.remove("move-mode");
+  selectTile(cells[selectedNavy()?.cellKey]);
+  renderArmyMarkers(currentPlayer);
+  renderPendingActions();
+  document.querySelector(`[data-navy-id="${navyId}"]`)?.focus({ preventScroll: true });
+}
+
 function selectArmy(armyId) {
   selectedArmyId = armyId;
+  selectedNavyId = null;
+  navyMoveMode = false;
   moveMode = false;
   uiNotice = null;
   $("mapStage").classList.remove("move-mode");
@@ -4652,6 +5560,16 @@ function selectArmy(armyId) {
   renderArmyMarkers(currentPlayer);
   renderPendingActions();
   document.querySelector(`[data-army-id="${armyId}"]`)?.focus({ preventScroll: true });
+}
+
+function resolveNavy(navyId) {
+  markNavyResolved(navyId);
+  navyMoveMode = false;
+  uiNotice = null;
+  const nextNavy = pendingNavies()[0];
+  selectedNavyId = nextNavy?.id || null;
+  renderArmyMarkers(currentPlayer);
+  renderPendingActions();
 }
 
 function resolveArmy(armyId) {
@@ -4666,6 +5584,7 @@ function resolveArmy(armyId) {
 
 function beginArmyOrder(army, type) {
   const action = {
+    orderIndex: armyOrderHistory.length + navyOrderHistory.length,
     player: currentPlayer,
     type,
     armyId: army.id,
@@ -4685,7 +5604,197 @@ function beginArmyOrder(army, type) {
   return action;
 }
 
+function beginNavyOrder(navy, type) {
+  const carried = carriedArmy(navy);
+  const action = {
+    orderIndex: armyOrderHistory.length + navyOrderHistory.length,
+    player: currentPlayer,
+    type,
+    navyId: navy.id,
+    wasResolved: navyIsResolvedThisTurn(navy),
+    before: {
+      cellKey: navy.cellKey,
+      lon: navy.lon,
+      lat: navy.lat,
+      gunBoats: JSON.parse(JSON.stringify(navy.gunBoats || [])),
+      cargoBoats: navy.cargoBoats,
+      cargoBoatHp: JSON.parse(JSON.stringify(navy.cargoBoatHp || [])),
+      carriedArmyId: navy.carriedArmyId || null,
+      resolvedTurn: navy.resolvedTurn ?? null,
+    },
+    carriedArmyBefore: carried ? {
+      id: carried.id,
+      cellKey: carried.cellKey,
+      lon: carried.lon,
+      lat: carried.lat,
+      embarkedOn: carried.embarkedOn || null,
+      resolvedTurn: carried.resolvedTurn ?? null,
+    } : null,
+  };
+  navyOrderHistory.push(action);
+  return action;
+}
+
+function moveNavyToCell(navy, cell) {
+  if (!navy || !cell) return;
+  navy.cellKey = cell.key;
+  navy.lon = cell.lon;
+  navy.lat = cell.lat;
+  const carried = carriedArmy(navy);
+  if (carried) {
+    carried.cellKey = cell.key;
+    carried.lon = cell.lon;
+    carried.lat = cell.lat;
+  }
+}
+
+function recordNavyBattle(report) {
+  const navy = navyById(report.navyId);
+  const army = armyById(report.armyId);
+  const stored = {
+    id: Date.now() * 100 + navyBattleReports.length,
+    turn: state?.turn || 0,
+    cellKey: report.cellKey || navy?.cellKey || army?.cellKey || null,
+    ...report,
+  };
+  navyBattleReports.push(stored);
+  uiNotice = report.message;
+  if (reportVisibleToPlayer(stored)) {
+    selectedBattleId = stored.id;
+    selectedNavyId = null;
+    selectedArmyId = null;
+  }
+  return stored;
+}
+
+function navyDamageSummary(damage) {
+  const sunk = (damage?.damaged || []).filter((item) => item.sunk);
+  if (!sunk.length) return "";
+  const labels = sunk.map((item) => item.type === "cargo_boat" ? "運輸船" : "砲艇");
+  return `，擊沉${labels.join("、")}`;
+}
+
+function applyArmyNavyContact(army, navy) {
+  const before = armyUnits(army);
+  const result = resolveArmyNavyContact(before, navy, navyRules());
+  setArmyTotalUnits(army, { ...before, artillery: result.artilleryAfter }, { capAtCurrent: true, currentUnits: before });
+  recordNavyBattle({
+    kind: "army_navy",
+    armyId: army.id,
+    navyId: navy.id,
+    faction: factionForArmy(army),
+    targetFaction: navyFaction(navy),
+    result,
+    message: `${armyCombatLabel(army)}砲兵與${navy.name}交火：艦艇受損 ${Math.round(result.boatDamage)} HP${navyDamageSummary(result.boatDamageDetail)}，砲兵損失 ${result.artilleryLost} 營。${result.navyFired ? "砲艇完成還擊。" : "砲艇均已失能，未能還擊。"}${result.landRetreat ? "陸軍已無砲兵，被迫退出接觸。" : "陸軍仍有砲兵，繼續據守。"}${result.navyRetreat ? "艦隊達退卻條件。" : ""}`,
+  });
+  return result;
+}
+
+function applyNavyDuel(attacker, defender) {
+  const result = resolveNavyDuel(attacker, defender, navyRules());
+  recordNavyBattle({
+    kind: "navy_duel",
+    navyId: attacker.id,
+    targetNavyId: defender.id,
+    faction: navyFaction(attacker),
+    targetFaction: navyFaction(defender),
+    result,
+    message: `${attacker.name}與${defender.name}交火：敵方受損 ${Math.round(result.attackerDamage)} HP${navyDamageSummary(result.attackerDamageDetail)}，我方受損 ${Math.round(result.defenderDamage)} HP${navyDamageSummary(result.defenderDamageDetail)}。${result.attackerActiveGunBoats ? "攻方完成射擊" : "攻方無可戰砲艇"}；${result.defenderActiveGunBoats ? "守方完成射擊" : "守方無可戰砲艇"}。`,
+  });
+  return result;
+}
+
+function retreatNavyFromContact(navy, fallbackCell = null, threatCell = null) {
+  const destination = navyRetreatCell(navy, threatCell);
+  if (destination) moveNavyToCell(navy, destination);
+  else if (fallbackCell) moveNavyToCell(navy, fallbackCell);
+}
+
+function retreatArmyFromNavyContact(army, navy, fallbackCell = null) {
+  const destination = fallbackCell || retreatCellFor(army, null, navy?.cellKey);
+  if (destination) moveArmyToCell(army, destination);
+}
+
+function resolveNavyContacts(navy, fallbackCell = null) {
+  if (!navy) return false;
+  const faction = navyFaction(navy);
+  let fought = false;
+  const enemyNavy = enemyNavyAtCell(navy.cellKey, faction);
+  if (enemyNavy && factionsAtWar(faction, navyFaction(enemyNavy))) {
+    fought = true;
+    const result = applyNavyDuel(navy, enemyNavy);
+    if (result.attackerRetreat) retreatNavyFromContact(navy, fallbackCell, cells[enemyNavy.previousCellKey] || cells[enemyNavy.cellKey]);
+    if (result.defenderRetreat) retreatNavyFromContact(enemyNavy, null, cells[navy.previousCellKey] || cells[navy.cellKey]);
+  }
+  const hostileNavyStillScreening = allNavies().some((other) =>
+    other.id !== navy.id
+    && other.cellKey === navy.cellKey
+    && factionsAtWar(faction, navyFaction(other))
+  );
+  if (hostileNavyStillScreening) return fought;
+  const enemies = allArmies().filter((army) =>
+    army.cellKey === navy.cellKey
+    && factionForArmy(army) !== faction
+    && factionsAtWar(faction, factionForArmy(army))
+  );
+  for (const army of enemies) {
+    fought = true;
+    const result = applyArmyNavyContact(army, navy);
+    if (result.landRetreat) retreatArmyFromNavyContact(army, navy);
+    if (result.navyRetreat) retreatNavyFromContact(navy, fallbackCell, cells[army.previousCellKey] || cells[army.cellKey]);
+  }
+  return fought;
+}
+
+function resolveAllNavyContacts() {
+  const foughtPairs = new Set();
+  let fought = false;
+  for (const navy of allNavies()) {
+    const faction = navyFaction(navy);
+    const cellKey = navy.cellKey;
+    for (const enemyNavy of allNavies()) {
+      if (enemyNavy.id === navy.id || enemyNavy.cellKey !== cellKey) continue;
+      const enemyFaction = navyFaction(enemyNavy);
+      if (!factionsAtWar(faction, enemyFaction)) continue;
+      const pairKey = [navy.id, enemyNavy.id].sort().join("|");
+      if (foughtPairs.has(pairKey)) continue;
+      foughtPairs.add(pairKey);
+      fought = true;
+      const result = applyNavyDuel(navy, enemyNavy);
+      if (result.attackerRetreat) retreatNavyFromContact(navy, null, cells[enemyNavy.previousCellKey] || cells[enemyNavy.cellKey]);
+      if (result.defenderRetreat) retreatNavyFromContact(enemyNavy, null, cells[navy.previousCellKey] || cells[navy.cellKey]);
+    }
+    const hostileNavyStillScreening = allNavies().some((other) =>
+      other.id !== navy.id
+      && other.cellKey === navy.cellKey
+      && factionsAtWar(faction, navyFaction(other))
+    );
+    if (hostileNavyStillScreening) continue;
+    for (const army of allArmies()) {
+      if (army.cellKey !== cellKey || !factionsAtWar(faction, factionForArmy(army))) continue;
+      const pairKey = [navy.id, army.id].sort().join("|");
+      if (foughtPairs.has(pairKey)) continue;
+      foughtPairs.add(pairKey);
+      fought = true;
+      const result = applyArmyNavyContact(army, navy);
+      if (result.landRetreat) retreatArmyFromNavyContact(army, navy);
+      if (result.navyRetreat) retreatNavyFromContact(navy, null, cells[army.previousCellKey] || cells[army.cellKey]);
+    }
+  }
+  return fought;
+}
+
 function undoLastArmyOrder() {
+  const latestArmy = armyOrderHistory
+    .filter((action) => action.player === currentPlayer)
+    .at(-1);
+  const latestNavy = navyOrderHistory
+    .filter((action) => action.player === currentPlayer)
+    .at(-1);
+  if (latestNavy && (!latestArmy || latestNavy.orderIndex > latestArmy.orderIndex)) {
+    undoLastNavyOrder();
+    return;
+  }
   const actionIndex = armyOrderHistory.findLastIndex((action) => action.player === currentPlayer);
   if (actionIndex < 0) return;
   const [action] = armyOrderHistory.splice(actionIndex, 1);
@@ -4703,6 +5812,9 @@ function undoLastArmyOrder() {
   else delete army.specialOperation;
   if (action.before.resolvedTurn === null) delete army.resolvedTurn;
   else army.resolvedTurn = action.before.resolvedTurn;
+  if (action.factoryCost && state.players[action.player]) {
+    state.players[action.player].factory_points = Number(state.players[action.player].factory_points || 0) + Number(action.factoryCost);
+  }
   if (action.battleId) {
     if (action.defenderBefore) {
       const defender = armyById(action.defenderBefore.id);
@@ -4749,10 +5861,27 @@ function undoLastArmyOrder() {
       queueCityOwnershipSync(changedCell.city.id, action.territoryChange.previousCityFaction);
     }
   }
-  if (action.prisoner) {
-    const jail = jailedGenerals[action.prisoner.captor] || [];
-    const prisonerIndex = jail.findIndex((record) => record.armyId === action.prisoner.armyId);
+  const prisonersToUndo = action.prisoners || (action.prisoner ? [action.prisoner] : []);
+  for (const prisoner of prisonersToUndo) {
+    const jail = jailedGenerals[prisoner.captor] || [];
+    const prisonerIndex = jail.findIndex((record) => record.armyId === prisoner.armyId);
     if (prisonerIndex >= 0) jail.splice(prisonerIndex, 1);
+  }
+  for (const before of Object.values(action.capturedBranchBefore || {})) {
+    const restoredArmy = armyById(before.id);
+    if (!restoredArmy) continue;
+    Object.assign(restoredArmy, {
+      faction: before.faction,
+      cellKey: before.cellKey,
+      lon: before.lon,
+      lat: before.lat,
+      units: { ...before.units },
+      status: before.status,
+    });
+    if (state.players[before.faction]) {
+      state.players[before.faction].army_reinforcements[before.id] = { ...before.reinforcements };
+    }
+    clearArmyResolved(restoredArmy);
   }
   if (action.loyaltyBefore) {
     for (const [generalId, previous] of Object.entries(action.loyaltyBefore)) {
@@ -4773,7 +5902,72 @@ function undoLastArmyOrder() {
 }
 
 function canUndoArmyOrder() {
-  return armyOrderHistory.some((action) => action.player === currentPlayer);
+  return armyOrderHistory.some((action) => action.player === currentPlayer)
+    || navyOrderHistory.some((action) => action.player === currentPlayer);
+}
+
+function undoLastNavyOrder() {
+  const actionIndex = navyOrderHistory.findLastIndex((action) => action.player === currentPlayer);
+  if (actionIndex < 0) return;
+  const [action] = navyOrderHistory.splice(actionIndex, 1);
+  const navy = navyById(action.navyId);
+  if (!navy) return;
+  Object.assign(navy, {
+    cellKey: action.before.cellKey,
+    lon: action.before.lon,
+    lat: action.before.lat,
+    gunBoats: JSON.parse(JSON.stringify(action.before.gunBoats || [])),
+    cargoBoats: action.before.cargoBoats,
+    cargoBoatHp: JSON.parse(JSON.stringify(action.before.cargoBoatHp || [])),
+    carriedArmyId: action.before.carriedArmyId,
+  });
+  normalizeNavyDivision(navy, navyRules());
+  if (action.before.resolvedTurn === null) delete navy.resolvedTurn;
+  else navy.resolvedTurn = action.before.resolvedTurn;
+  if (action.factoryCost && state.players[action.player]) {
+    state.players[action.player].factory_points = Number(state.players[action.player].factory_points || 0) + Number(action.factoryCost);
+  }
+  if (action.territoryChange) {
+    const changedCell = cells[action.territoryChange.key];
+    if (changedCell) {
+      changedCell.fac = action.territoryChange.previousFaction;
+      if (changedCell.city && action.territoryChange.previousCityFaction
+        && changedCell.city.faction !== action.territoryChange.previousCityFaction) {
+        transferCityEconomy(changedCell.city, changedCell.city.faction, action.territoryChange.previousCityFaction);
+        queueCityOwnershipSync(changedCell.city.id, action.territoryChange.previousCityFaction);
+      }
+    }
+  }
+  if (action.carriedArmyBefore) {
+    const army = armyById(action.carriedArmyBefore.id);
+    if (army) {
+      Object.assign(army, {
+        cellKey: action.carriedArmyBefore.cellKey,
+        lon: action.carriedArmyBefore.lon,
+        lat: action.carriedArmyBefore.lat,
+      });
+      if (action.carriedArmyBefore.embarkedOn) army.embarkedOn = action.carriedArmyBefore.embarkedOn;
+      else delete army.embarkedOn;
+      if (action.carriedArmyBefore.resolvedTurn === null) clearArmyResolved(army);
+      else {
+        army.resolvedTurn = action.carriedArmyBefore.resolvedTurn;
+        resolvedArmyIds.add(army.id);
+      }
+    }
+  }
+  if (action.wasResolved) markNavyResolved(navy);
+  else clearNavyResolved(navy);
+  delete turnReady[currentPlayer];
+  selectedNavyId = navy.id;
+  selectedArmyId = null;
+  selectedBattleId = null;
+  navyMoveMode = false;
+  moveMode = false;
+  uiNotice = "已撤銷上一道艦隊命令。";
+  updateTopBar();
+  renderArmyMarkers(currentPlayer);
+  renderPendingActions();
+  publishSharedState(true).catch((error) => console.error("Undo navy publish failed:", error));
 }
 
 // ---- 崩鐵玩家：搶修中的鐵路 ----------------------------------------------
@@ -4845,6 +6039,15 @@ function riverStepAllowed(from, to, railwayMovement = false) {
     || (railwayMovement && cell.railBridge));
 }
 
+function hostileBlockingNavyAtCell(cell, movingFaction = currentPlayer) {
+  if (!cell) return null;
+  return allNavies().find((navy) =>
+    navy.cellKey === cell.key
+    && navyFaction(navy) !== movingFaction
+    && factionsAtWar(movingFaction, navyFaction(navy))
+  ) || null;
+}
+
 function railwayPath(source, destination) {
   if (!source.railNeighbors?.size || !destination.railroads?.size) return null;
   const downed = unusableRailways();
@@ -4859,6 +6062,7 @@ function railwayPath(source, destination) {
       if (visited.has(key)) continue;
       const next = cells[key];
       if (!next || next.power || !railLinkUsable(cell, next, downed)) continue;
+      if (next.key !== destination.key && hostileBlockingNavyAtCell(next, currentPlayer)) continue;
       if (!riverStepAllowed(cell, next, true)) continue;
       visited.add(key);
       queue.push({ cell: next, path: [...path, next] });
@@ -4974,6 +6178,7 @@ function applyNpcReinforcements(turn = Number(state?.turn || 0)) {
           gains.push(UNIT_META[pick]?.name || pick);
         }
       }
+      army.units = clampUnitsToForceCap(army.units);
       if (gains.length) grown.push(`${FACTIONS[faction]?.shortName || faction} ${army.designator}：+${gains.join("、+")}`);
     }
   }
@@ -4999,20 +6204,12 @@ function pendingEventState() {
   if (!card) return null;
   const answered = entry.responses || {};
   const strict = Boolean(bootstrap?.event_draw_rules?.strict_response_order);
-  // scope 是 drawer 的卡（有進入條件的那幾張）只有抽到的那一家要回應。
-  const resolutionMeta = card.resolution || {};
-  const needsEveryone = resolutionMeta.type === "choice" && resolutionMeta.scope !== "drawer";
   const factions = Object.keys(state?.players || {});
   let waiting;
-  if (needsEveryone) {
-    // 一定要照後端排好的 responders 順序（抽到的那一家排第一），
-    // 不能拿 state.players 的鍵值順序來當回應順序，否則畫面會指錯人。
-    const queue = (entry.responders || []).length ? entry.responders : factions;
-    waiting = queue.filter((code) => !(code in answered));
-  } else if (strict) {
+  if (strict) {
     waiting = (entry.responders || []).filter((code) => !(code in answered));
   } else {
-    waiting = Object.keys(answered).length ? [] : factions;
+    waiting = Object.keys(answered).length ? [] : ((entry.responders || []).length ? entry.responders : factions);
   }
   return {
     turn: pending.turn,
@@ -5023,7 +6220,7 @@ function pendingEventState() {
     responders: entry.responders || [],
     responses: answered,
     strict,
-    needsEveryone,
+    needsEveryone: false,
     pendingResponders: waiting,
     // 寬鬆模式下這只用來顯示「還缺誰」，不再拿來鎖按鈕。
     waitingFor: waiting[0] || null,
@@ -5091,12 +6288,8 @@ function newspaperMarkup(view) {
     waitingText = newspaperInline(pendingFollowUp.follow_up.prompt || "請再指定一個對象");
   } else if (view.strict) {
     waitingText = mine ? "請閣下裁示" : `等待 ${FACTIONS[view.waitingFor]?.name || view.waitingFor} 回應`;
-  } else if (view.needsEveryone) {
-    waitingText = alreadyAnswered
-      ? `貴方已表態，尚待 ${pendingNames} 表態`
-      : `各勢力分別表態，尚待 ${pendingNames}`;
   } else {
-    waitingText = "任一勢力點閱即可";
+    waitingText = alreadyAnswered ? "已閱" : `等待 ${pendingNames || FACTIONS[view.drawer]?.name || view.drawer} 閱報`;
   }
   // 報紙自帶的陣營選擇欄：嚴格順序下玩家得先切到該回應的陣營才點得動按鈕，
   // 不必回主畫面找選單。四張結完報紙一收，這個選單也跟著消失。
@@ -5194,6 +6387,8 @@ async function respondToEvent(choice, followUp = null) {
       if (healed.length) showNotice(`傷兵歸隊：${healed.join("；")}`);
       const npcGrowth = applyNpcReinforcements();
       if (npcGrowth.length) showNotice(`NPC 補充兵源：${npcGrowth.join("；")}`);
+      normalizeArmyForceCaps();
+      refreshArmyLoyaltyBaselines();
       resolvedArmyIds.clear();
       replaceObject(turnReady, {});
       for (const army of allArmies()) {
@@ -5224,8 +6419,10 @@ async function switchFaction(code) {
   currentPlayer = code;
   if ($("playerSelect").value !== code) $("playerSelect").value = code;
   selectedArmyId = null;
+  selectedNavyId = null;
   selectedBattleId = null;
   moveMode = false;
+  navyMoveMode = false;
   uiNotice = null;
 
   await loadGeneralTreeForFaction(currentPlayer);
@@ -5254,7 +6451,7 @@ function applyFrontendEventEffects(cardId) {
       if (!TURN_PLAYERS.includes(faction)) continue;
       const general = generalTrees[faction]?.generals?.[army.generalId];
       const core = general && (general.role === "great_general" || general.loyalty_exempt
-        || general.loyalty === null || general.absolute_loyalty);
+        || general.loyalty === null || generalAbsoluteLoyaltyActive(general));
       if (!core) continue;
       const gained = [];
       for (const unit of Object.keys(UNIT_META)) {
@@ -5271,7 +6468,7 @@ function applyFrontendEventEffects(cardId) {
     for (const faction of TURN_PLAYERS) {
       const pool = Object.values(generalTrees[faction]?.generals || {}).filter((general) =>
         general.loyalty !== null && general.loyalty !== undefined
-        && !general.absolute_loyalty && !general.loyalty_exempt
+        && !generalAbsoluteLoyaltyActive(general) && !general.loyalty_exempt
         && generalOwners[general.id] === faction);
       if (!pool.length) continue;
       const pick = pool[Math.floor(Math.random() * pool.length)];
@@ -5329,13 +6526,18 @@ function advanceEngineering() {
   }
 }
 
-function setArmyTotalUnits(army, totals) {
-  const faction = factionForArmy(army);
-  army.units = wholeUnits(totals);
+function setArmyTotalUnits(army, totals, options = {}) {
+  const currentUnits = options.currentUnits || armyUnits(army);
+  const normalized = wholeUnits(totals);
+  const cappedTotals = options.capAtCurrent
+    ? Object.fromEntries(Object.keys(UNIT_META).map((type) => [
+      type,
+      Math.min(Number(normalized[type] || 0), Number(currentUnits[type] || 0)),
+    ]))
+    : normalized;
+  army.units = clampUnitsToForceCap(cappedTotals);
   const general = generalById(army.generalId);
   if (general) general.units = { ...army.units };
-  const reinforcementLedger = state.players[faction]?.army_reinforcements;
-  if (reinforcementLedger) delete reinforcementLedger[army.id];
 }
 
 function transferArmyUnit(fromArmy, toArmy, unitType, count = 1) {
@@ -5487,9 +6689,7 @@ function combatArmyPayload(army, tactic, defending = false, battle = null, oppon
   };
 }
 
-// 黔軍是地方民團而不是某位督軍的班底，沒有可俘可招的人；它的部隊被打垮就是
-// 就地潰散，不進俘虜區、不留將領、也不會拖累別人的忠誠。
-const NO_CAPTURE_FACTIONS = ["Q"];
+const NO_CAPTURE_FACTIONS = [];
 
 function armyCanBeCaptured(army) {
   const originFaction = generalOwners[army?.generalId] || factionForArmy(army);
@@ -5535,30 +6735,73 @@ function surrenderArmy(army, captorFaction, battle, action = null) {
     skills: [],
     units: { ...army.units },
   };
-  const record = {
-    armyId: army.id,
-    originFaction,
-    capturedTurn: state.turn,
-    general: {
-      ...JSON.parse(JSON.stringify(general)),
-      status: "jailed",
-      units: Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0])),
-    },
-  };
-  const reinforcementLedger = state.players[originFaction]?.army_reinforcements;
-  if (reinforcementLedger) delete reinforcementLedger[army.id];
-  army.units = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
-  army.status = "jailed";
   jailedGenerals[captorFaction] ||= [];
-  jailedGenerals[captorFaction].push(record);
-  const affectedDescendants = descendantGeneralIds(generalTrees[originFaction], army.generalId)
-    .filter((id) => generalOwners[id] === originFaction);
-  if (action) action.loyaltyBefore = Object.fromEntries(affectedDescendants.map((id) => [
-    id,
-    Object.hasOwn(loyaltyOverrides, id) ? loyaltyOverrides[id] : null,
-  ]));
-  for (const generalId of affectedDescendants) loyaltyOverrides[generalId] = 1;
-  if (action) action.prisoner = { captor: captorFaction, armyId: army.id };
+  const capturedRecords = [];
+  const jailFieldArmy = (fieldArmy) => {
+    if (action) {
+      action.capturedBranchBefore ||= {};
+      action.capturedBranchBefore[fieldArmy.id] ||= {
+        id: fieldArmy.id,
+        faction: factionForArmy(fieldArmy),
+        cellKey: fieldArmy.cellKey,
+        lon: fieldArmy.lon,
+        lat: fieldArmy.lat,
+        units: { ...fieldArmy.units },
+        reinforcements: { ...(state.players[factionForArmy(fieldArmy)]?.army_reinforcements?.[fieldArmy.id] || {}) },
+        status: fieldArmy.status,
+      };
+    }
+    const reinforcementLedger = state.players[originFaction]?.army_reinforcements;
+    if (reinforcementLedger) delete reinforcementLedger[fieldArmy.id];
+    fieldArmy.units = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
+    fieldArmy.status = "jailed";
+    markArmyResolved(fieldArmy);
+  };
+  const captureGeneral = (capturedGeneral, fieldArmy, options = {}) => {
+    if (!capturedGeneral || !fieldArmy) return;
+    if (jailedGenerals[captorFaction].some((record) => record.general?.id === capturedGeneral.id)) return;
+    const preservedUnits = wholeUnits(armyUnits(fieldArmy));
+    const capturedCopy = {
+      ...JSON.parse(JSON.stringify(capturedGeneral)),
+      status: "jailed",
+      units: preservedUnits,
+    };
+    if (options.loyalty !== undefined && capturedCopy.loyalty !== null) {
+      capturedCopy.loyalty = options.loyalty;
+    }
+    const record = {
+      armyId: fieldArmy.id,
+      originFaction,
+      capturedTurn: state.turn,
+      cellKey: fieldArmy.cellKey,
+      lon: fieldArmy.lon,
+      lat: fieldArmy.lat,
+      general: capturedCopy,
+    };
+    jailFieldArmy(fieldArmy);
+    jailedGenerals[captorFaction].push(record);
+    capturedRecords.push(record);
+  };
+  captureGeneral(general, army);
+  const affectedDescendants = commandDescendantIds(generalTrees[originFaction], army.generalId, general)
+    .filter((id) => generalTrees[originFaction]?.generals?.[id]);
+  if (action) {
+    action.loyaltyBefore ||= {};
+    for (const id of affectedDescendants) {
+      action.loyaltyBefore[id] = Object.hasOwn(loyaltyOverrides, id) ? loyaltyOverrides[id] : null;
+    }
+  }
+  for (const generalId of affectedDescendants) {
+    const subordinate = generalTrees[originFaction]?.generals?.[generalId];
+    if (!subordinate) continue;
+    subordinate.loyalty_exempt = false;
+    if (subordinate.loyalty !== null && subordinate.loyalty !== undefined) subordinate.loyalty = 1;
+    loyaltyOverrides[generalId] = 1;
+  }
+  if (action) {
+    action.prisoner = { captor: captorFaction, armyId: army.id };
+    action.prisoners = capturedRecords.map((record) => ({ captor: captorFaction, armyId: record.armyId }));
+  }
   const attacker = armyById(battle.attackerId);
   const defender = armyById(battle.defenderId);
   const surrenderedSide = battleSideForArmy(battle, army) || (army.id === battle.attackerId ? "A" : "B");
@@ -5573,7 +6816,6 @@ function surrenderArmy(army, captorFaction, battle, action = null) {
     },
   };
   if (surrenderedSide === "B") occupyTile(cells[battle.cellKey], battle.attackerFaction, action);
-  markArmyResolved(army);
   uiNotice = `${army.general}兵力不足，遭攻擊後投降並被收押。可在將領樹的被俘將領區招降。`;
 }
 
@@ -5669,7 +6911,10 @@ async function resolveBattleRound(battle) {
     const remainingById = new Map((result.remaining[side].armies || []).map((army) => [army.name, army.units]));
     for (const army of battleArmies(battle, side)) {
       const before = { ...armyUnits(army) };
-      setArmyTotalUnits(army, remainingById.get(army.id) || armyUnits(army));
+      setArmyTotalUnits(army, remainingById.get(army.id) || armyUnits(army), {
+        capAtCurrent: true,
+        currentUnits: before,
+      });
       recordCombatLosses(army, before);
     }
   }
@@ -5817,10 +7062,32 @@ function setupPendingActions() {
       selectBattle(Number(battleFocus.dataset.focusBattle));
       return;
     }
+    const reportFocus = event.target.closest("[data-focus-report]");
+    if (reportFocus) {
+      selectedBattleId = Number(reportFocus.dataset.focusReport);
+      selectedArmyId = null;
+      selectedNavyId = null;
+      renderPendingActions();
+      return;
+    }
     const focusButton = event.target.closest("[data-focus-army]");
     const resolveButton = event.target.closest("[data-resolve-army]");
-    if (resolveButton) resolveArmy(resolveButton.dataset.resolveArmy);
+    const focusNavyButton = event.target.closest("[data-focus-navy]");
+    const resolveNavyButton = event.target.closest("[data-resolve-navy]");
+    if (resolveNavyButton) resolveNavy(resolveNavyButton.dataset.resolveNavy);
+    else if (focusNavyButton) selectNavy(focusNavyButton.dataset.focusNavy);
+    else if (resolveButton) resolveArmy(resolveButton.dataset.resolveArmy);
     else if (focusButton) selectArmy(focusButton.dataset.focusArmy);
+  });
+  $("pendingList").addEventListener("contextmenu", (event) => {
+    const report = event.target.closest("[data-focus-report]");
+    if (!report) return;
+    event.preventDefault();
+    const id = Number(report.dataset.focusReport);
+    if (report.dataset.reportKind === "navy") hiddenNavyBattleReportIds.add(id);
+    else hiddenBattleReportIds.add(id);
+    if (selectedBattleId === id) selectedBattleId = null;
+    renderPendingActions();
   });
   $("pendingList").addEventListener("change", (event) => {
     const side = event.target.dataset.battleTactic;
@@ -5895,6 +7162,21 @@ function setupPendingActions() {
       renderBattlePanel();
       return;
     }
+    const dismissNavy = event.target.closest("[data-dismiss-navy-report]");
+    if (dismissNavy) {
+      hiddenNavyBattleReportIds.add(Number(dismissNavy.dataset.dismissNavyReport));
+      selectedBattleId = null;
+      renderBattlePanel();
+      renderPendingActions();
+      return;
+    }
+    const reportRetreat = event.target.closest("[data-navy-report-retreat]");
+    if (reportRetreat) {
+      const navy = navyById(reportRetreat.dataset.navyReportRetreat);
+      if (!navy || navyFaction(navy) !== currentPlayer) return;
+      await handleNavyOperation(navy, "retreat", null, reportRetreat);
+      return;
+    }
     const resolveButton = event.target.closest("[data-resolve-battle]");
     const retreatButton = event.target.closest("[data-retreat-battle]");
     const battle = activeBattles.find((item) => item.id === Number(
@@ -5917,6 +7199,15 @@ function setupPendingActions() {
   $("battlePanel").addEventListener("contextmenu", (event) => {
     const battleId = Number(event.currentTarget.dataset.battleId);
     if (!battleId) return;
+    const navyReport = navyBattleReports.find((item) => item.id === battleId);
+    if (navyReport) {
+      event.preventDefault();
+      hiddenNavyBattleReportIds.add(battleId);
+      selectedBattleId = null;
+      renderBattlePanel();
+      renderPendingActions();
+      return;
+    }
     const battle = [...activeBattles, ...battleReports].find((item) => item.id === battleId);
     if (!battle || ["pending", "ongoing"].includes(battle.status)) return;
     event.preventDefault();
@@ -5925,6 +7216,14 @@ function setupPendingActions() {
     renderBattlePanel();
   });
   $("armyDetail").addEventListener("click", async (event) => {
+    const navyOperation = event.target.closest("[data-navy-operation]")?.dataset.navyOperation;
+    const embarkArmyId = event.target.closest("[data-embark-army]")?.dataset.embarkArmy;
+    const reinforceNavyUnit = event.target.closest("[data-reinforce-navy-unit]")?.dataset.reinforceNavyUnit;
+    const navy = selectedNavy();
+    if (navy && (navyOperation || embarkArmyId || reinforceNavyUnit)) {
+      await handleNavyOperation(navy, navyOperation, embarkArmyId, event.target, reinforceNavyUnit);
+      return;
+    }
     const operation = event.target.closest("[data-army-operation]")?.dataset.armyOperation;
     const engineering = event.target.closest("[data-engineering-operation]")?.dataset.engineeringOperation;
     const reinforcement = event.target.closest("[data-reinforce-unit]")?.dataset.reinforceUnit;
@@ -5974,23 +7273,23 @@ function setupPendingActions() {
       }
       engineeringMode = engineering;
       moveMode = false;
-      showNotice("選擇與軍隊相鄰的河流地格架設浮橋。工程需 2 回合。");
+      showNotice("選擇與軍隊相鄰的河流地格架設浮橋。工程需 2 回合，工業點/FP 10。");
       $("mapStage").classList.add("move-mode");
     } else if (engineering === "fortress_builder") {
       if (!armyCanReceiveOrder(army)) {
         showNotice(activeBattleForArmy(army) ? "交戰中的軍隊不能施工。" : "此軍本回合已行動。");
         return;
       }
-      const action = beginArmyOrder(army, "engineering");
-      army.specialOperation = {
-        id: engineering,
-        label: ENGINEERING_OPERATIONS[engineering].label,
-        turnsRemaining: ENGINEERING_OPERATIONS[engineering].turns,
-        targetCellKey: army.cellKey,
-      };
-      action.engineering = engineering;
+      try {
+        startEngineeringOperation(army, engineering, army.cellKey);
+      } catch (error) {
+        showNotice(error.message);
+        return;
+      }
       moveMode = false;
       resolveArmy(army.id);
+      showNotice("構築要塞開始：工程需 3 回合，已支付工業點/FP 10。");
+      publishSharedState(true).catch((error) => console.error("Engineering publish failed:", error));
     } else if (operation === "recruit") {
       if (!armyCanReceiveOrder(army)) {
         showNotice(activeBattleForArmy(army) ? "交戰中的軍隊不能補充兵力。" : "此軍本回合已行動。");
@@ -6014,9 +7313,17 @@ function setupPendingActions() {
           current_force: forcePoints(armyUnits(army)),
         });
         state = result.state;
+        const acceptedType = result.unit_type || reinforcement;
+        const acceptedCount = Math.max(1, Number(result.count || 1));
+        const nextUnits = armyUnits(army);
+        nextUnits[acceptedType] = Number(nextUnits[acceptedType] || 0) + acceptedCount;
+        setArmyTotalUnits(army, nextUnits);
         syncStrategicCitiesFromState();
         updateTopBar();
         renderArmyDetail();
+        renderArmyMarkers(currentPlayer);
+        renderPendingActions();
+        await publishSharedState(true);
       } catch (error) {
         showNotice(error.message);
       }
@@ -6033,7 +7340,7 @@ function setupMapMovement() {
   const canvas = $("mapCanvas");
   if (canvas.dataset.movementReady) return;
   canvas.dataset.movementReady = "true";
-  canvas.addEventListener("click", (event) => {
+  canvas.addEventListener("click", async (event) => {
     if (suppressMapClick) {
       suppressMapClick = false;
       return;
@@ -6043,12 +7350,107 @@ function setupMapMovement() {
     const mapY = ((event.clientY - rect.top) / rect.height) * MAPH;
     const [lon, lat] = unpx(mapX, mapY);
     const destination = cellAt(lon, lat);
-    if (!moveMode && !engineeringMode) {
+    if (!moveMode && !engineeringMode && !navyMoveMode) {
       selectTile(destination);
+      return;
+    }
+    if (navyMoveMode) {
+      await handleNavyDestination(destination);
       return;
     }
     handleMapDestination(destination);
   });
+}
+
+async function handleNavyDestination(destination) {
+  const navy = selectedNavy();
+  const source = cells[navy?.cellKey];
+  if (!navy || !destination || !source || destination.key === source.key) return;
+  if (!navyCanReceiveOrder(navy)) {
+    showNotice("此艦隊本回合已行動。");
+    navyMoveMode = false;
+    $("mapStage").classList.remove("move-mode");
+    renderArmyDetail();
+    return;
+  }
+  if (!navyCanEnterCell(destination)) {
+    showNotice("艦隊只能進入河港、水域、鐵路橋或海港地格。");
+    return;
+  }
+  const destinationOwner = destination.city?.faction || destination.fac;
+  if (destination.city && destinationOwner && destinationOwner !== currentPlayer
+    && !factionsAtWar(currentPlayer, destinationOwner)) {
+    showNotice(`目前與${FACTIONS[destinationOwner]?.shortName || destinationOwner}和平，艦隊不能駛入其港口。`);
+    return;
+  }
+  const path = navyPath(source, destination, cellNeighbors, navyRules());
+  if (!path) {
+    showNotice(`艦隊一回合最多沿可航行水道移動 ${navyRules().move?.tiles_per_turn || 2} 格。`);
+    return;
+  }
+  const ownNavy = navyAtCell(destination.key, currentPlayer);
+  if (ownNavy && ownNavy.id !== navy.id) {
+    showNotice("該地格已有己方艦隊。");
+    return;
+  }
+  const enemyNavy = enemyNavyAtCell(destination.key, currentPlayer);
+  const enemyArmy = allArmies().find((army) =>
+    army.cellKey === destination.key
+    && factionForArmy(army) !== currentPlayer
+    && factionsAtWar(currentPlayer, factionForArmy(army))
+  );
+  if (enemyNavy && !factionsAtWar(currentPlayer, navyFaction(enemyNavy))) {
+    showNotice(`目前與${FACTIONS[navyFaction(enemyNavy)]?.shortName || navyFaction(enemyNavy)}和平，不能攻擊其艦隊。`);
+    return;
+  }
+  const peacefulArmy = allArmies().find((army) =>
+    army.cellKey === destination.key
+    && factionForArmy(army) !== currentPlayer
+    && !factionsAtWar(currentPlayer, factionForArmy(army))
+  );
+  if (peacefulArmy) {
+    const peacefulFaction = factionForArmy(peacefulArmy);
+    showNotice(`目前與${FACTIONS[peacefulFaction]?.shortName || peacefulFaction}和平，艦隊不能駛入其部隊所在港區。`);
+    return;
+  }
+  const action = beginNavyOrder(navy, "move");
+  const moveCost = navyMoveFactoryCost(navy);
+  try {
+    const paid = await api("/api/pay-navy-move", { player: currentPlayer, factory: moveCost });
+    state = paid.state;
+    action.factoryCost = Number(paid.factory || moveCost);
+    syncStrategicCitiesFromState();
+  } catch (error) {
+    navyOrderHistory.splice(navyOrderHistory.indexOf(action), 1);
+    showNotice(error.message);
+    return;
+  }
+  navy.previousCellKey = source.key;
+  moveNavyToCell(navy, destination);
+  let navalScreenCleared = !enemyNavy;
+  if (enemyNavy) {
+    const result = applyNavyDuel(navy, enemyNavy);
+    navalScreenCleared = Boolean(result.defenderRetreat && !result.attackerRetreat);
+    if (result.attackerRetreat) moveNavyToCell(navy, source);
+    if (result.defenderRetreat) retreatNavyFromContact(enemyNavy, null, source);
+  }
+  if (enemyArmy && navalScreenCleared && navy.cellKey === destination.key) {
+    const result = applyArmyNavyContact(enemyArmy, navy);
+    if (result.landRetreat) retreatArmyFromNavyContact(enemyArmy, navy);
+    if (result.navyRetreat) retreatNavyFromContact(navy, source, cells[enemyArmy.previousCellKey] || cells[enemyArmy.cellKey]);
+  }
+  if (destination.city && destinationOwner && destinationOwner !== currentPlayer
+    && factionsAtWar(currentPlayer, destinationOwner)
+    && navy.cellKey === destination.key) {
+    occupyTile(destination, currentPlayer, action);
+  }
+  markNavyResolved(navy);
+  navyMoveMode = false;
+  $("mapStage").classList.remove("move-mode");
+  updateTopBar();
+  initMap();
+  renderPendingActions();
+  await publishSharedState(true);
 }
 
 function handleMapDestination(destination) {
@@ -6070,17 +7472,17 @@ function handleMapDestination(destination) {
         showNotice("浮橋只能架設在相鄰的河流地格。");
         return;
       }
-      const action = beginArmyOrder(army, "engineering");
-      army.specialOperation = {
-        id: engineeringMode,
-        label: ENGINEERING_OPERATIONS[engineeringMode].label,
-        turnsRemaining: ENGINEERING_OPERATIONS[engineeringMode].turns,
-        targetCellKey: destination.key,
-      };
-      action.engineering = engineeringMode;
+      try {
+        startEngineeringOperation(army, engineeringMode, destination.key);
+      } catch (error) {
+        showNotice(error.message);
+        return;
+      }
       engineeringMode = null;
       $("mapStage").classList.remove("move-mode");
       resolveArmy(army.id);
+      showNotice("浮橋工程開始：工程需 2 回合，已支付工業點/FP 10。");
+      publishSharedState(true).catch((error) => console.error("Engineering publish failed:", error));
       return;
     }
 
@@ -6099,6 +7501,7 @@ function handleMapDestination(destination) {
       }
     }
     const adjacent = cellNeighbors(source).some((cell) => cell.key === destination.key);
+    const blockingNavy = enemyNavyAtCell(destination.key, currentPlayer);
     const railPath = railwayPath(source, destination);
     const marchPath = railPath ? null : forcedMarchPath(source, destination, army);
     if (!adjacent && !railPath && !marchPath) {
@@ -6107,7 +7510,7 @@ function handleMapDestination(destination) {
         : `一般移動限相鄰地格；購買急行軍後可走 ${forcedMarchRules().tiles} 格；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`);
       return;
     }
-    if (adjacent && !railPath && !marchPath && !riverStepAllowed(source, destination, false)) {
+    if (adjacent && !railPath && !marchPath && !blockingNavy && !riverStepAllowed(source, destination, false)) {
       showNotice("河流阻擋行軍：需先架設浮橋，或沿設有鐵路橋的鐵路通過。");
       return;
     }
@@ -6123,6 +7526,10 @@ function handleMapDestination(destination) {
         showNotice(`目前與${FACTIONS[destination.fac]?.shortName || destination.fac}和平，不能進入其領土。`);
         return;
       }
+    }
+    if (blockingNavy && !factionsAtWar(currentPlayer, navyFaction(blockingNavy))) {
+      showNotice(`目前與${FACTIONS[navyFaction(blockingNavy)]?.shortName || navyFaction(blockingNavy)}和平，不能攻擊其艦隊。`);
+      return;
     }
     if (enemy) {
       const enemyFaction = factionForArmy(enemy);
@@ -6140,16 +7547,30 @@ function handleMapDestination(destination) {
     army.cellKey = destination.key;
     army.lon = destination.lon;
     army.lat = destination.lat;
-    if (enemy) {
+    let navyContacted = false;
+    let navyContactResult = null;
+    if (blockingNavy) {
+      navyContacted = true;
+      navyContactResult = applyArmyNavyContact(army, blockingNavy);
+      if (navyContactResult.landRetreat) {
+        moveArmyToCell(army, source);
+      }
+      if (navyContactResult.navyRetreat) {
+        retreatNavyFromContact(blockingNavy, null, source);
+      }
+    }
+    if (!navyContacted && army.cellKey === destination.key && enemy) {
       startBattle(army, enemy, destination, source.key, action);
-    } else if (destination.fac !== currentPlayer) {
+    } else if (!navyContacted && army.cellKey === destination.key && destination.fac !== currentPlayer) {
+      occupyTile(destination, currentPlayer, action);
+    } else if (navyContacted && navyContactResult?.navyRetreat && !enemy && army.cellKey === destination.key && destination.fac !== currentPlayer) {
       occupyTile(destination, currentPlayer, action);
     }
     moveMode = false;
     $("mapStage").classList.remove("move-mode");
     resolveArmy(army.id);
-    if (enemy && selectedBattleId) selectBattle(selectedBattleId);
-    if (!enemy || activeBattles.at(-1)?.status === "surrendered") initMap();
+    if (!navyContacted && enemy && selectedBattleId) selectBattle(selectedBattleId);
+    if (navyContacted || !enemy || activeBattles.at(-1)?.status === "surrendered") initMap();
 }
 
 function notificationKey(player, index, item) {
@@ -6164,12 +7585,13 @@ function unreadNotifications(payload = state.players[currentPlayer]) {
 
 function renderPendingActions() {
   const pending = pendingArmies();
+  const navyPending = pendingNavies();
   const fighting = activeBattles.filter((battle) =>
     (battle.status === "pending" || battle.status === "ongoing")
     && (battle.attackerFaction === currentPlayer || battle.defenderFaction === currentPlayer)
   );
-  $("pendingCount").textContent = String(pending.length);
-  $("pendingTitle").textContent = fighting.length ? "交戰軍令" : pending.length ? "待命軍隊" : "軍令完成";
+  $("pendingCount").textContent = String(pending.length + navyPending.length);
+  $("pendingTitle").textContent = fighting.length ? "交戰軍令" : (pending.length || navyPending.length) ? "待命軍隊" : "軍令完成";
   const fightingMarkup = fighting.map((battle) => {
     const side = battle.attackerFaction === currentPlayer ? "A" : "B";
     const army = armyById(side === "A" ? battle.attackerId : battle.defenderId);
@@ -6193,8 +7615,22 @@ function renderPendingActions() {
         <button class="hold-command" data-resolve-army="${army.id}" title="原地待命">待命</button>
       </div>
     `).join("")
-    : fighting.length ? "" : '<div class="pending-complete">所有軍隊均已收到命令</div>';
-  $("pendingList").innerHTML = fightingMarkup + armyMarkup;
+    : "";
+  const navyMarkup = navyPending.length
+    ? navyPending.map((navy) => `
+      <div class="pending-unit navy-pending ${selectedNavyId === navy.id ? "active" : ""}">
+        <button class="pending-unit-main" data-focus-navy="${navy.id}">
+          <span class="pending-unit-number">艦</span>
+          <span><b>${navy.name}</b><small>${navyCellLabel(cells[navy.cellKey])} · HP ${Math.round(totalGunBoatHp(navy))}/${maxGunBoatHp(navy)}${navyInContact(navy) ? ` · 交戰中，${navyContactEstimate(navy)}` : ""}</small></span>
+        </button>
+        <button class="hold-command" data-resolve-navy="${navy.id}" title="原地待命">待命</button>
+      </div>
+    `).join("")
+    : "";
+  const completeMarkup = !fighting.length && !pending.length && !navyPending.length
+    ? '<div class="pending-complete">所有軍隊均已收到命令</div>'
+    : "";
+  $("pendingList").innerHTML = fightingMarkup + armyMarkup + navyMarkup + completeMarkup;
 
   renderArmyDetail();
   renderBattlePanel();
@@ -6270,6 +7706,7 @@ function renderPendingActions() {
 
 function updateEndTurnButton() {
   const pending = pendingArmies();
+  const navyPending = pendingNavies();
   const pendingBattles = activeBattles.filter((battle) =>
     ["pending", "ongoing"].includes(battle.status)
     && (!battle.confirmed?.A || !battle.confirmed?.B)
@@ -6277,10 +7714,10 @@ function updateEndTurnButton() {
   const btn = $("endTurnBtn");
   const readyPlayers = TURN_PLAYERS.filter((player) => turnReady[player] === state.turn);
   const waitingForAll = turnReady[currentPlayer] === state.turn && readyPlayers.length < TURN_PLAYERS.length;
-  btn.classList.toggle("ready", pending.length === 0 && pendingBattles.length === 0);
+  btn.classList.toggle("ready", pending.length === 0 && navyPending.length === 0 && pendingBattles.length === 0);
   btn.classList.toggle("waiting", waitingForAll);
-  $("endTurnLabel").textContent = pending.length
-    ? `下一支軍隊 (${pending.length})`
+  $("endTurnLabel").textContent = pending.length || navyPending.length
+    ? `下一支軍隊 (${pending.length + navyPending.length})`
     : pendingBattles.length ? `處理戰鬥 (${pendingBattles.length})`
       : waitingForAll ? `等待玩家 (${readyPlayers.length}/${TURN_PLAYERS.length})`
         : `結束回合 (${readyPlayers.length}/${TURN_PLAYERS.length})`;
@@ -6305,13 +7742,17 @@ async function resetGame() {
   uiNotice = null;
   skippedFunctionPurchasePrompts.clear();
   resolvedArmyIds.clear();
+  resolvedNavyIds.clear();
   replaceObject(turnReady, {});
   armyOrderHistory.length = 0;
+  navyOrderHistory.length = 0;
   activeBattles.length = 0;
   battleReports.length = 0;
+  navyBattleReports.length = 0;
   pendingProvinceClaims.length = 0;
   collapsedBattleIds.clear();
   hiddenBattleReportIds.clear();
+  hiddenNavyBattleReportIds.clear();
   retreatConfirmations.clear();
   completedPontoons.clear();
   for (const key of PREBUILT_PONTOONS) completedPontoons.add(key);
@@ -6329,13 +7770,16 @@ async function resetGame() {
   for (const army of Object.values(ARMY_POSITIONS).flat()) {
     Object.assign(army, INITIAL_ARMY_CELLS[army.id]);
     army.units = { ...INITIAL_ARMY_UNITS[army.id] };
+    LOYALTY_BASELINE_ARMY_UNITS[army.id] = { ...army.units };
     army.status = "active";
     army.faction = INITIAL_ARMY_FACTIONS[army.id];
     delete army.specialOperation;
     delete army.showRecruitment;
+    delete army.embarkedOn;
     delete army.previousCellKey;
     delete army.resolvedTurn;
   }
+  replaceArray(navyDivisions, JSON.parse(JSON.stringify(initialNavyDivisions)));
   updateTopBar();
   updatePhaseBanner();
   updateFeatureVisibility();
@@ -6353,8 +7797,13 @@ $("undoOrderBtn").addEventListener("click", undoLastArmyOrder);
 
 async function advanceToNextTurn(force = false) {
   const pending = pendingArmies();
+  const navyPending = pendingNavies();
   if (!force && pending.length) {
     selectArmy(pending[0].id);
+    return;
+  }
+  if (!force && navyPending.length) {
+    selectNavy(navyPending[0].id);
     return;
   }
   for (const battle of activeBattles) applyNpcBattleDefaults(battle);
@@ -6394,6 +7843,7 @@ async function advanceToNextTurn(force = false) {
       ["pending", "ongoing"].includes(battle.status) && battle.roundResolvedTurn !== state.turn
     );
     for (const battle of continuingBattles) await resolveBattleRound(battle);
+    resolveAllNavyContacts();
     await cityEconomySync;
     const result = await api("/api/next-turn", {
       active_player: currentPlayer,
@@ -6417,17 +7867,21 @@ async function advanceToNextTurn(force = false) {
     if (healed.length) showNotice(`傷兵歸隊：${healed.join("；")}`);
     const npcGrowth = applyNpcReinforcements();
     resolvedArmyIds.clear();
+    resolvedNavyIds.clear();
     replaceObject(turnReady, {});
     for (const army of allArmies()) {
       delete army.resolvedTurn;
       if (army.specialOperation) markArmyResolved(army);
     }
+    for (const navy of allNavies(true)) delete navy.resolvedTurn;
     armyOrderHistory.length = 0;
+    navyOrderHistory.length = 0;
     const terminalBattles = activeBattles.filter((battle) => !["pending", "ongoing"].includes(battle.status));
     battleReports.push(...terminalBattles);
     for (const battle of terminalBattles) activeBattles.splice(activeBattles.indexOf(battle), 1);
     selectedBattleId = activeBattles.at(-1)?.id || battleReports.at(-1)?.id || null;
     selectedArmyId = currentArmies()[0]?.id || null;
+    selectedNavyId = selectedArmyId ? null : currentNavies()[0]?.id || null;
     currentPhase = "military";
     updateTopBar();
     updatePhaseBanner();

@@ -1,43 +1,11 @@
-# Current Status - Fixed Issues
+# Current Status
 
-## ✅ Just Fixed
-1. **All panels now working** - Fixed CSS `.overlay-panel.active` display rule
-2. **All UI text in Chinese** - Changed all panel headers and buttons to Chinese
-3. **Loyalty tooltip in Chinese** - Shows "基礎忠誠", "相對實力影響", "戰損影響"
-4. **General tree reduced to 3 generals** - Chiang Kai-shek + 2 lieutenants only
+Updated 2026-08-15.
 
-## 🔴 Critical Issues Remaining
+The map overhaul, fog of war, army markers, reserve pool, general tree, cards, shared events, NPC armies, multiplayer synchronization, and first naval layer are implemented.
 
-### 1. Map Not Rehauled
-The current map still shows:
-- **All of East Asia** (Japan, Korea, Soviet territories, Mongolia, Southeast Asia)
-- Too much detail and information
-- No troop markers (番號)
+Current composition invariant: a field army's battalion totals live only in `army.units`. Backend reserve transfer returns a delta and does not maintain a second combat ledger. This prevents replenished units from being materialized again after fighting NPC armies.
 
-**What's needed:**
-- Simplify to **China mainland only**
-- Remove foreign territories completely
-- Add **番號 troop markers** showing unit designation at each general's position
-- Make troops clickable/draggable for movement
-- Clean hex grid focused on playable provinces
+Current naval invariant: fire eligibility is checked at the start of each exchange. A division with no active gunboat takes fire without replying and retreats. An army remains in contact while at least one artillery battalion survives. If both fleets cross their retreat line in the same exchange, higher remaining gunboat HP holds the tile; equal HP makes both withdraw.
 
-### 2. War Fog Not Implemented
-When selecting a faction in top-right dropdown:
-- Currently shows ALL factions' armies
-- Should only show selected faction's forces
-- Other factions should be hidden/fogged
-- Only reveal enemy units when in adjacent territories
-
-### 3. No Unit Inventory System
-- Recruited units need a holding area
-- Reserve pool to dispatch units to generals
-- Can only reinforce generals in controlled cities
-
-## Next Priority
-
-The **map overhaul** is the most critical. The game needs:
-1. China-focused simplified map
-2. Troop markers with 番號 (unit designation)
-3. Basic movement interaction
-
-Would you like me to create the simplified China map with troop markers now?
+Known architectural limit: Render and local shared games are memory-backed. A server restart requires restoring a saved snapshot.

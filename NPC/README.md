@@ -15,7 +15,10 @@ All other Chinese-side factions are organized as NPC factions.
 
 - `data/npc_factions.json` lists the playable majors, NPC rules, and NPC faction records.
 
-Each NPC faction keeps only 1-2 representative figures. Smaller named officers can return later as event text, local modifiers, or function-card results, but they should not clutter the primary NPC faction roster.
+The running scenario uses the compact field roster defined in `frontend/map.js`.
+Some factions now have three or four parallel field armies so their territory is
+not left empty; the JSON catalogue remains useful for balancing metadata, but is
+not the authoritative deployment list.
 
 ## NPC Rules
 
@@ -31,15 +34,18 @@ Each NPC faction keeps only 1-2 representative figures. Smaller named officers c
 
 | Faction | Armies |
 | --- | --- |
-| 晉系 | 閻錫山 at 太原; 傅作義 at 大同 |
-| 西北軍 | 馮玉祥 at 西安; 宋哲元 at 歸綏 |
-| 西北馬家軍 | 馬麒 at 西寧; 馬福祥 at 西寧 |
-| 湘軍 | 唐生智 at 長沙; 何鍵 at 衡陽 |
-| 川軍 | 劉湘 at 成都; 劉文輝 at 重慶 |
+| 晉系 | 閻錫山、徐永昌 at 太原; 傅作義 at 大同 |
+| 西北軍 | 馮玉祥、韓復榘、鹿鍾麟 at 西安; 宋哲元 at 歸綏 |
+| 西北馬家軍 | 馬麒、馬福祥、馬鴻賓 at 西寧 |
+| 湘軍 | 唐生智 at 長沙; 何鍵 at 衡陽; 趙恒惕 at 岳陽 |
+| 川軍 | 劉湘 at 成都; 劉文輝、楊森 at 重慶 |
 | 滇系 | 唐繼堯 at 昆明; 龍雲 at 大理 |
 | 黔軍 | 黔軍地方部隊 at 貴陽 |
 
 This keeps smaller warlords present as pressure and opportunity without making them a full extra player.
+
+湘軍與川軍是 `flat_command`：沒有大帥、沒有上下級。唐生智被俘或被招降時，何鍵與趙恒惕
+不會因此降忠誠、被俘或一同轉籍；每位平行將領只結算自己。
 
 ## 自動增兵（NPC 專屬）
 

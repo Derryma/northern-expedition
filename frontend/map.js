@@ -130,6 +130,97 @@ for (let c = 0; c < COLS; c++) {
   }
 }
 
+function neighborCoordKeys(c, r) {
+  const diagonalRows = c % 2 ? [r, r + 1] : [r - 1, r];
+  return [
+    `${c},${r - 1}`,
+    `${c},${r + 1}`,
+    `${c - 1},${diagonalRows[0]}`,
+    `${c - 1},${diagonalRows[1]}`,
+    `${c + 1},${diagonalRows[0]}`,
+    `${c + 1},${diagonalRows[1]}`,
+  ];
+}
+
+function coastalWaterAllowed(lon, lat) {
+  const northernCoast = lon >= 116.1 && lon <= 123.4 && lat >= 36.0 && lat <= 42.8;
+  const easternCoast = lon >= 118.0 && lat >= 27.5 && lat <= 36.6;
+  const southernCoast = lon >= 108.0 && lat >= 18.2 && lat <= 27.8;
+  return northernCoast || easternCoast || southernCoast;
+}
+
+const FORCED_COASTAL_WATER = new Set([
+  // 天津、渤海灣缺口：讓天津港真正貼近可航行水域，並補掉水面中的陸地洞。
+  '30,16', '30,17', '31,18', '32,18',
+  // 香港外側繞行水道：租借地本身不可通過，旁邊多給兩格讓艦隊繞行。
+  '25,37', '26,37',
+]);
+
+const FORCED_LAND_CELLS = new Set([
+  // 膠濟鐵路沿線：濟南往青島改走陸上路廊，不再把鐵路橋畫進海格。
+  '31,19', '32,19', '33,20',
+]);
+
+function markCoastalWaterCell(key) {
+  const [c, r] = key.split(',').map(Number);
+  const [lon, lat] = unpx(hcx(c), hcy(c, r));
+  cells[key] = {
+    ...(cells[key] || {}),
+    key,
+    c,
+    r,
+    lon,
+    lat,
+    land: false,
+    fac: null,
+    river: '近海',
+    coastalWater: true,
+    coastalWaterDepth: 1,
+  };
+}
+
+function markForcedLandCell(key) {
+  const [c, r] = key.split(',').map(Number);
+  const [lon, lat] = unpx(hcx(c), hcy(c, r));
+  cells[key] = {
+    ...(cells[key] || {}),
+    key,
+    c,
+    r,
+    lon,
+    lat,
+    land: true,
+    fac: cells[key]?.fac ?? factionAt(lon, lat),
+    river: null,
+    coastalWater: false,
+    coastalWaterDepth: 0,
+  };
+}
+
+for (const cell of Object.values({ ...cells })) {
+  for (const key of neighborCoordKeys(cell.c, cell.r)) {
+    if (cells[key]) continue;
+    const [c, r] = key.split(',').map(Number);
+    const [lon, lat] = unpx(hcx(c), hcy(c, r));
+    if (!coastalWaterAllowed(lon, lat)) continue;
+    if (pointInPolygon(lon, lat, CHINA_PROPER) || pointInPolygon(lon, lat, HAINAN)) continue;
+    cells[key] = {
+      key,
+      c,
+      r,
+      lon,
+      lat,
+      land: false,
+      fac: null,
+      river: '近海',
+      coastalWater: true,
+      coastalWaterDepth: 1,
+    };
+  }
+}
+for (const key of FORCED_COASTAL_WATER) markCoastalWaterCell(key);
+for (const key of FORCED_LAND_CELLS) markForcedLandCell(key);
+
 // 多邊形之外、但規則上需要的額外地格。
 // 香港在珠江口右下（英國屬地）；瓊州海峽是連接海南島與大陸的水道。
 export const EXTRA_CELLS = [
@@ -137,17 +228,30 @@ export const EXTRA_CELLS = [
   { key: '20,38', river: '瓊州海峽' },
 ];
 for (const spec of EXTRA_CELLS) {
-  if (cells[spec.key]) continue;
   const [c, r] = spec.key.split(',').map(Number);
   const [lon, lat] = unpx(hcx(c), hcy(c, r));
-  cells[spec.key] = { key: spec.key, c, r, lon, lat, land: true, fac: null, river: spec.river || null };
+  const existing = cells[spec.key] || {};
+  cells[spec.key] = {
+    ...existing,
+    key: spec.key,
+    c,
+    r,
+    lon,
+    lat,
+    land: existing.land ?? true,
+    fac: existing.fac ?? null,
+    river: spec.navalRoute ? null : (spec.river || existing.river || null),
+    coastalWater: spec.navalRoute ? false : Boolean(spec.coastalWater || existing.coastalWater),
+    navalRoute: Boolean(spec.navalRoute || existing.navalRoute),
+    navalRouteName: spec.navalRouteName || existing.navalRouteName || (spec.navalRoute ? '近海航道' : null),
+  };
 }
 
 // Hand-drawn control polygons can leave narrow seams. Fill only those seams
 // from the nearest assigned land cell so every playable hex has an owner.
 const assignedCells = Object.values(cells).filter((cell) => cell.fac);
 for (const cell of Object.values(cells)) {
-  if (cell.fac) continue;
+  if (!cell.land || cell.fac) continue;
   let nearest = null;
   let nearestDistance = Infinity;
   for (const candidate of assignedCells) {
@@ -243,6 +347,12 @@ for (const spot of EXTRA_WATER) {
   if (cell) cell.river = spot.name;
 }
 
+for (const cell of Object.values(cells)) {
+  if (!cell.navalRoute) continue;
+  cell.river = null;
+  cell.coastalWater = false;
+}
+
 export const ARMY_POSITIONS = {
   N: [
     { id: 'N-1', generalId: 'chiang_kai_shek', general: '蔣介石', designator: '第一軍', startCityId: 'guangzhou', lon: 113.3, lat: 23.1, units: { infantry: 15, cavalry: 2, artillery: 3, machine_gun: 4 } },
@@ -287,7 +397,7 @@ export const ARMY_POSITIONS = {
   H: [
     { id: 'H-1', generalId: 'tang_shengzhi', general: '唐生智', designator: '第一軍', startCityId: 'changsha', lon: 112.9, lat: 28.2, units: { infantry: 9, cavalry: 3, artillery: 1, machine_gun: 2 } },
     { id: 'H-2', generalId: 'he_jian', general: '何鍵', designator: '第二軍', startCityId: 'hengyang', lon: 112.6, lat: 26.9, units: { infantry: 7, cavalry: 3, artillery: 0, machine_gun: 1 } },
-    { id: 'H-3', generalId: 'zhao_hengti', general: '趙恒惕', designator: '第三軍', startCityId: 'changsha', lon: 112.9, lat: 28.2, units: { infantry: 7, cavalry: 2, artillery: 1, machine_gun: 1 } },
+    { id: 'H-3', generalId: 'zhao_hengti', general: '趙恒惕', designator: '第三軍', startCityId: 'yueyang', lon: 113.1, lat: 29.4, units: { infantry: 7, cavalry: 2, artillery: 1, machine_gun: 1 } },
   ],
   C: [
     { id: 'C-1', generalId: 'liu_xiang', general: '劉湘', designator: '第一軍', startCityId: 'chengdu', lon: 104.1, lat: 30.7, units: { infantry: 9, cavalry: 3, artillery: 1, machine_gun: 1 } },

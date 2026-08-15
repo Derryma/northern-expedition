@@ -62,6 +62,27 @@ Keep the host Terminal window open while playing. The host browser uses `http://
 - The current playtest state is held in server memory, so stopping the Python server ends that session.
 - GitHub Pages cannot run this Python game server or synchronize live match state. GitHub can store the source, but Render or Tailscale must run the live server for this build.
 
+## Save and restore a live match
+
+Before stopping a local server, save both the engine and tactical map state:
+
+```bash
+mkdir -p state_snapshots
+curl -s http://127.0.0.1:8766/api/shared-state \
+  -o state_snapshots/playtest.json
+```
+
+After starting the server again, restore that snapshot:
+
+```bash
+curl -s -X POST \
+  -H 'Content-Type: application/json' \
+  --data-binary @state_snapshots/playtest.json \
+  http://127.0.0.1:8766/api/restore-shared-state
+```
+
+Refresh every connected browser after restore. Keep snapshots local; do not commit a live match to GitHub.
+
 If macOS asks whether Python may accept incoming connections, choose **Allow**.
 
 ## Partner handoff for an AI coding agent

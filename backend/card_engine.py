@@ -43,6 +43,10 @@ RECRUIT_COSTS = {
     "machine_gun": {"cash": 10, "factory": 4},
     "artillery": {"cash": 16, "factory": 5},
 }
+NAVY_RECRUIT_COSTS = {
+    "gun_boat": {"cash": 200, "factory": 75},
+    "cargo_boat": {"cash": 100, "factory": 50},
+}
 LOYALTY_FUNCTION_CARD_IDS = ("unit_promotion", "local_autonomy_agitation")
 ABSOLUTE_LOYAL_GENERAL_IDS = {
     "zhang_xueliang",
@@ -287,6 +291,7 @@ class GameEngine:
             }
             profile["pending_deals"] = []
             profile["army_reinforcements"] = {}
+            profile["navy_reserves"] = {"gun_boat": 0, "cargo_boat": 0}
             profile["id"] = player
             profile["function_deck"] = list(function_ids)
             profile["hand"] = []
@@ -396,6 +401,14 @@ class GameEngine:
             raise ValueError("invalid engine snapshot")
         restored = deepcopy(snapshot)
         restored.pop("counts", None)
+        for profile in restored.get("players", {}).values():
+            # Tactical army.units is the sole army-composition authority. Older
+            # snapshots kept the same additions here as well, which doubled
+            # reinforced battalions after the next browser synchronization.
+            profile["army_reinforcements"] = {}
+            reserves = profile.setdefault("navy_reserves", {})
+            reserves.setdefault("gun_boat", 0)
+            reserves.setdefault("cargo_boat", 0)
         self.state = restored
         self._refresh_city_income()
         return self.snapshot()
@@ -412,8 +425,10 @@ class GameEngine:
             "general_traits": self.data["general_traits"],
             "general_skills": self.data["general_skills"],
             "generals_in_exile": self.data["generals_in_exile"],
+            "navy_system": self.data["navy_system"],
             "strategic_map": self._strategic_map_snapshot(),
             "recruit_costs": RECRUIT_COSTS,
+            "navy_recruit_costs": NAVY_RECRUIT_COSTS,
             "features": FEATURES,
             "cards": {
                 "function": self.data["function_cards"]["cards"],
@@ -449,7 +464,7 @@ class GameEngine:
         self.state["turn"] += 1
         self._update_qing_gang_riots(riot_garrisons or {})
         self._update_red_army_uprisings(city_garrisons or {})
-        # 事件卡週期：先把報紙發出去，等四張都回應完才結算本回合經濟。
+        # 事件卡週期：先把本回合唯一一則報紙發出去，等指定勢力回應後才結算經濟。
         if self._start_event_cycle():
             return {
                 "turn": {"turn": self.state["turn"], "awaiting_events": True},
@@ -2025,6 +2040,46 @@ class GameEngine:
         player_state["unit_reserve"] = sum(player_state["unit_reserves"].values())
         return {"state": self.snapshot()}
 
+    def train_navy_unit(self, player: str, unit_type: str, count: int = 1) -> Dict[str, Any]:
+        player_state = self._player(player)
+        if unit_type not in NAVY_RECRUIT_COSTS:
+            raise ValueError(f"unknown navy unit type: {unit_type!r}")
+        count = int(count)
+        if count < 1:
+            raise ValueError("navy recruit count must be positive")
+        unit_cost = NAVY_RECRUIT_COSTS[unit_type]
+        cash_cost = int(unit_cost["cash"]) * count
+        factory_cost = int(unit_cost["factory"]) * count
+        if player_state["treasury"] < cash_cost:
+            raise ValueError("insufficient treasury")
+        if player_state["factory_points"] < factory_cost:
+            raise ValueError("insufficient factory points")
+        player_state["treasury"] -= cash_cost
+        player_state["factory_points"] -= factory_cost
+        reserves = player_state.setdefault("navy_reserves", {"gun_boat": 0, "cargo_boat": 0})
+        reserves[unit_type] = int(reserves.get(unit_type, 0)) + count
+        return {"state": self.snapshot()}
+
+    def reinforce_navy(self, player: str, city_id: str, unit_type: str, count: int = 1) -> Dict[str, Any]:
+        player_state = self._player(player)
+        if unit_type not in NAVY_RECRUIT_COSTS:
+            raise ValueError(f"unknown navy unit type: {unit_type!r}")
+        count = int(count)
+        if count < 1:
+            raise ValueError("navy reinforcement count must be positive")
+        city = next(
+            (item for item in self.data["strategic_map"]["cities"] if item["id"] == city_id),
+            None,
+        )
+        owner = self.state.get("city_owners", {}).get(city_id, city["faction"] if city else None)
+        if not city or owner != player or city.get("port") not in {"river", "sea"}:
+            raise ValueError("navy reserve transfer requires a controlled harbor")
+        reserves = player_state.setdefault("navy_reserves", {"gun_boat": 0, "cargo_boat": 0})
+        if int(reserves.get(unit_type, 0)) < count:
+            raise ValueError("insufficient navy reserve")
+        reserves[unit_type] = int(reserves.get(unit_type, 0)) - count
+        return {"state": self.snapshot()}
+
     def reinforce_army(
         self,
         player: str,
@@ -2057,11 +2112,18 @@ class GameEngine:
             raise ValueError("insufficient unit reserve")
         player_state["unit_reserves"][unit_type] -= count
         player_state["unit_reserve"] = sum(player_state["unit_reserves"].values())
-        reinforcement = player_state["army_reinforcements"].setdefault(
-            army_id, {unit: 0 for unit in UNIT_TYPES}
-        )
-        reinforcement[unit_type] += count
-        return {"state": self.snapshot()}
+        # Army composition lives in the shared tactical state.  Older builds
+        # also accumulated this transfer in ``army_reinforcements``; combat
+        # then materialized that ledger into the army and counted it again on
+        # the next synchronization.  Return the accepted delta explicitly so
+        # the frontend can update the one authoritative army record.
+        player_state.setdefault("army_reinforcements", {}).pop(army_id, None)
+        return {
+            "state": self.snapshot(),
+            "army_id": army_id,
+            "unit_type": unit_type,
+            "count": count,
+        }
 
     # ---- 借款系統 ------------------------------------------------------
 
@@ -2260,6 +2322,39 @@ class GameEngine:
             "tiles": self.FORCED_MARCH_TILES,
             "state": self.snapshot(),
         }
+
+    def pay_navy_move(self, player: str, *, factory: Optional[int] = None) -> Dict[str, Any]:
+        player_state = self._player(player)
+        cost = int(factory if factory is not None else self.data["navy_system"]["move"]["factory_cost"])
+        if cost < 0:
+            raise ValueError("navy movement cost cannot be negative")
+        if int(player_state.get("factory_points", 0)) < cost:
+            raise ValueError(f"艦隊機動需要 {cost} 工業點")
+        player_state["factory_points"] = int(player_state.get("factory_points", 0)) - cost
+        self.state["last_action"] = {
+            "type": "navy_move_order",
+            "player": player,
+            "factory": cost,
+        }
+        return {"factory": cost, "state": self.snapshot()}
+
+    def repair_navy(self, player: str, hp: int) -> Dict[str, Any]:
+        player_state = self._player(player)
+        hp = max(0, int(hp))
+        cost_per_hp = int(self.data["navy_system"]["repair"]["factory_cost_per_hp"])
+        cost = hp * cost_per_hp
+        if hp <= 0:
+            raise ValueError("navy repair must restore positive HP")
+        if int(player_state.get("factory_points", 0)) < cost:
+            raise ValueError(f"艦艇修理需要 {cost} 工業點")
+        player_state["factory_points"] = int(player_state.get("factory_points", 0)) - cost
+        self.state["last_action"] = {
+            "type": "navy_repair",
+            "player": player,
+            "hp": hp,
+            "factory": cost,
+        }
+        return {"hp": hp, "factory": cost, "state": self.snapshot()}
 
     def _add_reserve(self, player: str, unit_type: str, amount: int) -> None:
         if unit_type not in UNIT_TYPES:
@@ -2731,7 +2826,7 @@ class GameEngine:
         result["faction_general_traits"] = self.faction_general_traits(player)
         return result
 
-    # ── 事件卡：每三回合一份《民國報》 ────────────────────────────────
+    # ── 事件卡：每三回合一則共享《民國報》 ────────────────────────────
     EVENT_RESPONSE_ORDER = ("F", "W", "S", "N")
 
     def _event_rules(self) -> Dict[str, Any]:
@@ -2744,7 +2839,7 @@ class GameEngine:
         raise ValueError(f"unknown event card: {card_id}")
 
     def _start_event_cycle(self) -> bool:
-        """回合數到了就抽卡，抽到的四張排成待回應佇列。回傳有沒有真的發報。"""
+        """回合數到了就抽事件卡；每則事件隨機指定一個適格玩家承受。"""
         rules = self._event_rules()
         every = int(rules.get("every_turns", 3))
         count = int(rules.get("cards_per_cycle", 4))
@@ -2767,18 +2862,9 @@ class GameEngine:
             card_id = eligible[self.random.randrange(len(eligible))]
             pool.remove(card_id)
             card = self._event_template(card_id)
-            drawer = order[index % len(order)]
             qualified = self._event_eligible_players(card)
-            if drawer not in qualified:
-                # 排到的那一家不符合條件，就把這張改發給符合的人（照固定順序取第一個）。
-                drawer = next((code for code in order if code in qualified), qualified[0])
-            resolution = card.get("resolution") or {}
-            if resolution.get("type") == "choice" and resolution.get("scope") != "drawer":
-                # 需要所有勢力表態：抽到的人排第一，其餘照固定順序接上。
-                responders = [drawer] + [code for code in order if code != drawer]
-            else:
-                # scope 是 drawer 的卡（含有進入條件的那幾張）只有抽到的那一家要回應。
-                responders = [drawer]
+            drawer = qualified[self.random.randrange(len(qualified))]
+            responders = [drawer]
             drawn.append({"card_id": card_id, "drawer": drawer,
                           "responders": responders, "responses": {}})
         self.state["pending_events"] = {"turn": int(self.state["turn"]), "cards": drawn, "index": 0}
@@ -2813,9 +2899,7 @@ class GameEngine:
         answered = entry.get("responses") or {}
         card = self._event_template(entry["card_id"])
         strict = bool(self._event_rules().get("strict_response_order"))
-        resolution_meta = card.get("resolution") or {}
-        needs_everyone = (resolution_meta.get("type") == "choice"
-                          and resolution_meta.get("scope") != "drawer")
+        needs_everyone = False
         waiting = [code for code in entry["responders"] if code not in answered]
         if not strict and not needs_everyone:
             # 寬鬆模式下的單純事件：任何一家點閱就算數，不必等抽到的那一家。
@@ -2895,7 +2979,7 @@ class GameEngine:
         turn_result = None
         if finished:
             self.state["pending_events"] = None
-            # 四張都結完了，這才輪到本回合的金錢、工廠與債務結算。
+            # 本次共享事件結完，才輪到本回合的金錢、工廠與債務結算。
             turn_result = self._finish_turn()
         return {
             "applied": applied,

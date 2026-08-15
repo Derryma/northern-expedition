@@ -115,11 +115,15 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/deal": self._deal,
             "/api/respond-deal": self._respond_deal,
             "/api/train-unit": self._train_unit,
+            "/api/train-navy-unit": self._train_navy_unit,
             "/api/reinforce-army": self._reinforce_army,
+            "/api/reinforce-navy": self._reinforce_navy,
             "/api/repay-debt": self._repay_debt,
             "/api/loan-offers": self._loan_offers,
             "/api/take-loan": self._take_loan,
             "/api/pay-forced-march": self._pay_forced_march,
+            "/api/pay-navy-move": self._pay_navy_move,
+            "/api/repair-navy": self._repair_navy,
             "/api/capture-city": self._capture_city,
             "/api/recruit-captive-general": self._recruit_captive_general,
             "/api/attempt-defection": self._attempt_defection,
@@ -243,6 +247,15 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             army_id=str(payload.get("army_id") or ""),
         )
 
+    def _pay_navy_move(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.pay_navy_move(
+            str(payload["player"]),
+            factory=int(payload["factory"]) if payload.get("factory") is not None else None,
+        )
+
+    def _repair_navy(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.repair_navy(str(payload["player"]), int(payload.get("hp", 0)))
+
     def _capture_city(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.capture_city(str(payload["city_id"]), str(payload["faction"]))
 
@@ -282,6 +295,13 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             int(payload.get("count", 1)),
         )
 
+    def _train_navy_unit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.train_navy_unit(
+            str(payload["player"]),
+            str(payload["unit_type"]),
+            int(payload.get("count", 1)),
+        )
+
     def _reinforce_army(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.reinforce_army(
             str(payload["player"]),
@@ -290,6 +310,14 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             str(payload["unit_type"]),
             int(payload.get("count", 1)),
             payload.get("current_force"),
+        )
+
+    def _reinforce_navy(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.reinforce_navy(
+            str(payload["player"]),
+            str(payload["city_id"]),
+            str(payload["unit_type"]),
+            int(payload.get("count", 1)),
         )
 
     def _repay_debt(self, payload: Dict[str, Any]) -> Dict[str, Any]:

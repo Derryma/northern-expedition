@@ -1,5 +1,10 @@
 # UI Reorganization Summary
 
+> **Archived UI milestone.** The iframe/tab prototype described below has been
+> replaced by the map-first interface on port `8766`. Current UI ownership is in
+> `frontend/app.js`, `frontend/map.js`, `frontend/navy.js`, and
+> `frontend/styles.css`; see `frontend/STATUS.md`.
+
 ## What Changed
 
 The UI has been reorganized from iframe-based HTML views to a proper **tabbed management interface** that surfaces your game logic directly.
@@ -64,7 +69,7 @@ Following your requirements for HOI4 realism + CIV6 UI simplicity:
 python3 scripts/run_playtest_server.py
 ```
 
-Open: http://127.0.0.1:8765
+Open: http://127.0.0.1:8766
 
 ## Next Steps
 

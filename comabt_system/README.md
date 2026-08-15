@@ -79,7 +79,7 @@ Current coarse battalion HP and force points:
 
 | Unit | HP | Force Points |
 |---|---:|---:|
-| infantry | 3 | 1 |
+| infantry | 4 | 1 |
 | cavalry | 3 | 1 |
 | artillery | 2 | 4 |
 | machine_gun | 3 | 2 |
@@ -91,8 +91,8 @@ Current attack matrix, meaning damage dealt by one battalion of the source unit 
 | Source / Target | infantry | cavalry | artillery | machine_gun |
 |---|---:|---:|---:|---:|
 | infantry | 1 | 1 | 1 | 1 |
-| cavalry | 1 | 2 | 3 | 1 |
-| artillery | 2 | 1 | 3 | 3 |
+| cavalry | 2 | 2 | 3 | 1 |
+| artillery | 3 | 1 | 2 | 3 |
 | machine_gun | 2 | 3 | 2 | 2 |
 
 Design notes:
@@ -143,7 +143,7 @@ Each round log includes `artillery_contacts`, and each attack records `forced_co
 
 Each section begins in `fighting` state. Once casualties reach the section threshold, that section becomes `fleeing` and no longer attacks or receives normal targeting priority.
 
-Default threshold is `20%` casualties. Tactics and modifiers can change it.
+Default threshold is `30%` casualties. Tactics and modifiers can change it.
 
 ## Tactics
 
@@ -151,12 +151,12 @@ Built-in tactics:
 
 | Tactic | Attack | Harm Taken | Threshold |
 |---|---:|---:|---:|
-| `normal_advance` | 100% | 100% | 20% |
-| `probing_attack` | 50% | 60% | 20% |
-| `layered_delaying` | 70% | 75% | 25% |
-| `all_out_offense` | 140% | 125% | 20% |
-| `last_stand` | 100% | 135% | 60% |
-| `pinning_attack` | 80% | 85% | 20% |
+| `normal_advance` | 100% | 100% | 30% |
+| `probing_attack` | 35% | 45% | 25% |
+| `layered_delaying` | 55% | 55% | 40% |
+| `all_out_offense` | 170% | 145% | 25% |
+| `last_stand` | 110% | 115% | 90% |
+| `pinning_attack` | 90% | 70% | 20% |
 
 Example:
 

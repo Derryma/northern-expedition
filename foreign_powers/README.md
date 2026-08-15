@@ -2,6 +2,11 @@
 
 Updated foreign-power rules and data for *Northern Expedition*.
 
+> **Implementation authority:** the running engine reads
+> `data/foreign_powers.json`. An older target scale still appears in
+> `cards/data/card_pool_rules.json`; it is not currently used for relation
+> clamping or friendly/hostile bands and must not be treated as live rules.
+
 ## Files
 
 - `data/foreign_powers.json` contains the current foreign-power rules, territories, relation keys, the relation scale, the June-1926 starting relations, removed assets, and punitive-war constraints.

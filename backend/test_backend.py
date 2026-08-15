@@ -21,7 +21,7 @@ def advance_turn(engine, active_player=None, **kwargs):
     """推進一回合，順手把當回合跳出的事件卡全部「我知道了」掉。
 
     事件卡週期（每三回合）會讓 next_turn 停在等待回應的狀態，本回合的經濟要等
-    四張都回應完才結算。測試多半不關心事件內容，只要讓回合真的走完。
+    指定勢力讀完唯一一則報紙才結算。測試多半不關心事件內容，只要讓回合真的走完。
     """
     result = engine.next_turn(active_player=active_player, **kwargs)
     while True:
@@ -43,6 +43,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(data["metadata"]["event_cards"], 38)   # 設計稿一到八區塊
         self.assertNotIn("injected_event_cards", data["metadata"])
         self.assertEqual(set(data["indexes"]), {"function_cards"})
+        self.assertEqual(data["metadata"]["navy_divisions"], 4)
 
     def test_turn_does_not_auto_buy_function_cards(self):
         engine = GameEngine(seed=7)
@@ -63,6 +64,45 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result["turn"]["function_purchase_offer"], "N")
         for player in ("F", "W", "S", "N"):
             self.assertEqual(result["state"]["counts"]["players"][player]["hand"], 0)
+
+    def test_navy_rules_are_exposed_and_cost_factory_points(self):
+        engine = GameEngine(seed=7)
+        self.assertEqual(engine.bootstrap()["navy_system"]["move"]["factory_cost"], 10)
+        before = engine.state["players"]["N"]["factory_points"]
+        result = engine.pay_navy_move("N")
+        self.assertEqual(result["factory"], 10)
+        self.assertEqual(result["state"]["players"]["N"]["factory_points"], before - 10)
+
+    def test_navy_repair_costs_two_factory_per_hp(self):
+        engine = GameEngine(seed=7)
+        before = engine.state["players"]["W"]["factory_points"]
+        result = engine.repair_navy("W", 3)
+        self.assertEqual(result["factory"], 6)
+        self.assertEqual(result["state"]["players"]["W"]["factory_points"], before - 6)
+
+    def test_navy_recruitment_uses_large_cash_and_factory_costs(self):
+        engine = GameEngine(seed=7)
+        player = engine.state["players"]["N"]
+        player["treasury"] = 300
+        player["factory_points"] = 100
+
+        result = engine.train_navy_unit("N", "gun_boat")
+
+        updated = result["state"]["players"]["N"]
+        self.assertEqual(updated["treasury"], 100)
+        self.assertEqual(updated["factory_points"], 25)
+        self.assertEqual(updated["navy_reserves"]["gun_boat"], 1)
+
+    def test_navy_reserve_transfer_requires_controlled_harbor(self):
+        engine = GameEngine(seed=7)
+        engine.state["players"]["N"]["navy_reserves"]["cargo_boat"] = 1
+
+        with self.assertRaisesRegex(ValueError, "controlled harbor"):
+            engine.reinforce_navy("N", "guilin", "cargo_boat")
+
+        result = engine.reinforce_navy("N", "guangzhou", "cargo_boat")
+
+        self.assertEqual(result["state"]["players"]["N"]["navy_reserves"]["cargo_boat"], 0)
 
     def test_playable_factions_have_distinct_profiles(self):
         engine = GameEngine(seed=7)
@@ -189,7 +229,10 @@ class BackendTests(unittest.TestCase):
         updated = result["state"]["players"]["N"]
 
         self.assertEqual(updated["unit_reserves"]["infantry"], before - 1)
-        self.assertEqual(updated["army_reinforcements"]["N-1"]["infantry"], 1)
+        self.assertEqual(result["army_id"], "N-1")
+        self.assertEqual(result["unit_type"], "infantry")
+        self.assertEqual(result["count"], 1)
+        self.assertNotIn("N-1", updated["army_reinforcements"])
 
     def test_captured_major_city_can_reinforce_army(self):
         engine = GameEngine(seed=5)
@@ -200,11 +243,17 @@ class BackendTests(unittest.TestCase):
         updated = result["state"]["players"]["N"]
 
         self.assertEqual(updated["unit_reserves"]["machine_gun"], before - 1)
-        self.assertEqual(updated["army_reinforcements"]["N-1"]["machine_gun"], 1)
+        self.assertEqual(result["army_id"], "N-1")
+        self.assertEqual(result["unit_type"], "machine_gun")
+        self.assertEqual(result["count"], 1)
+        self.assertNotIn("N-1", updated["army_reinforcements"])
 
     def test_restore_snapshot_rehydrates_engine_state(self):
         engine = GameEngine(seed=5)
         snapshot = engine.capture_city("hankou", "N")["state"]
+        snapshot["players"]["N"]["army_reinforcements"] = {
+            "N-1": {"infantry": 5, "cavalry": 3}
+        }
         fresh = GameEngine(seed=8)
 
         restored = fresh.restore_snapshot(snapshot)
@@ -212,6 +261,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(restored["turn"], snapshot["turn"])
         self.assertEqual(restored["city_owners"]["hankou"], "N")
         self.assertEqual(restored["players"]["N"]["income"], snapshot["players"]["N"]["income"])
+        self.assertEqual(restored["players"]["N"]["army_reinforcements"], {})
 
     def test_diplomacy_and_deals_require_recipient_acceptance(self):
         engine = GameEngine(seed=5)
@@ -1352,7 +1402,7 @@ if __name__ == "__main__":
 
 
 class EventCardTests(unittest.TestCase):
-    """事件卡：每三回合發一份《民國報》，四張全部回應完才結算經濟。"""
+    """事件卡：每三回合發一則共享《民國報》，指定勢力回應後才結算經濟。"""
 
     def test_pool_holds_the_first_eight_sections(self):
         engine = GameEngine(seed=3)
@@ -1367,12 +1417,15 @@ class EventCardTests(unittest.TestCase):
         self.assertEqual(engine._event_eligible_players(engine._event_template("baird_television")),
                          list(engine.state["players"]))
 
-        engine.state["turn"] = 2
-        engine.state["event_pool"] = ["academia_sinica", "yinxu_first_spade"]
-        engine.next_turn(active_player="F")
-        drawers = {entry["card_id"]: entry["drawer"] for entry in engine.state["pending_events"]["cards"]}
-        self.assertEqual(drawers["academia_sinica"], "S")   # 排到奉系，但奉系不控江蘇
-        self.assertEqual(drawers["yinxu_first_spade"], "W")
+        for card_id, expected in (("academia_sinica", "S"), ("yinxu_first_spade", "W")):
+            engine = GameEngine(seed=3)
+            engine.state["turn"] = 2
+            engine.state["event_pool"] = [card_id]
+            engine.next_turn(active_player="F")
+            view = engine.pending_event_view()
+            self.assertEqual(view["card"]["id"], card_id)
+            self.assertEqual(view["drawer"], expected)
+            self.assertEqual(view["responders"], [expected])
 
     def test_drawer_scoped_cards_only_pay_the_drawer(self):
         engine = GameEngine(seed=3)
@@ -1587,8 +1640,10 @@ class EventCardTests(unittest.TestCase):
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["kellogg_briand_pact"]
         engine.next_turn(active_player="F")
-        for code in ("F", "W", "S", "N"):
-            engine.respond_event(code, choice="sign" if code == "F" else "ignore")
+        entry = engine.state["pending_events"]["cards"][0]
+        entry["drawer"] = "F"
+        entry["responders"] = ["F"]
+        engine.respond_event("F", choice="sign")
         signer = engine.state["players"]["F"]
         self.assertTrue(any(effect["kind"] == "ceasefire" for effect in signer["timed_effects"]))
         self.assertFalse(any(effect["kind"] == "ceasefire"
@@ -1619,36 +1674,36 @@ class EventCardTests(unittest.TestCase):
         self.assertEqual(engine.state["turn_log"][-1]["turn"], 2)
 
         view = engine.pending_event_view()
-        self.assertEqual(view["total"], 4)
+        self.assertEqual(view["total"], 1)
         self.assertEqual(view["index"], 0)
-        self.assertEqual(view["drawer"], "F")
+        self.assertEqual(view["responders"], [view["drawer"]])
         self.assertIn("headline", view["card"]["newspaper"])
-
-        drawers = [entry["drawer"] for entry in engine.state["pending_events"]["cards"]]
-        self.assertEqual(drawers, ["F", "W", "S", "N"])
 
         while engine.pending_event_view():
             current = engine.pending_event_view()
             resolution = current["card"].get("resolution") or {}
             choice = (resolution.get("options") or [{}])[0].get("id") if resolution.get("type") == "choice" else None
             engine.respond_event(current["waiting_for"], choice=choice)
-        # 四張結完，本回合的經濟才補跑。
+        # 唯一一則結完，本回合的經濟才補跑。
         self.assertEqual(engine.state["turn_log"][-1]["turn"], 3)
-        self.assertEqual(len(engine.state["event_history"]), 4)
-        self.assertEqual(len(engine.state["event_pool"]), 34)
+        self.assertEqual(len(engine.state["event_history"]), 1)
+        self.assertEqual(len(engine.state["event_pool"]), 37)
 
-    def test_choice_cards_poll_every_faction_starting_with_the_drawer(self):
-        """嚴格順序：抽到的人先答，其餘照 奉 → 直 → 五 → 國 輪流，效果各歸各家。"""
+    def test_choice_cards_only_ask_the_drawer(self):
+        """選擇事件只由本次抽中的勢力表態，效果只先落到那一家。"""
         engine = GameEngine(seed=3)
         card = engine._event_template("arcos_raid")
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["arcos_raid"]
         engine.next_turn(active_player="F")
+        entry = engine.state["pending_events"]["cards"][0]
+        entry["drawer"] = "F"
+        entry["responders"] = ["F"]
         view = engine.pending_event_view()
         self.assertEqual(view["card"]["id"], "arcos_raid")
-        self.assertEqual(view["responders"], ["F", "W", "S", "N"])
+        self.assertEqual(view["responders"], ["F"])
         self.assertTrue(view["strict_order"])
-        self.assertTrue(view["needs_every_faction"])
+        self.assertFalse(view["needs_every_faction"])
         self.assertEqual(card["resolution"]["type"], "choice")
 
         with self.assertRaisesRegex(ValueError, "現在輪到"):
@@ -1661,44 +1716,29 @@ class EventCardTests(unittest.TestCase):
         self.assertEqual(engine.state["players"]["F"]["foreign_relations"]["uk"], min(10, uk_before["F"] + 2))
         # 每家的選擇只作用在自己身上。
         self.assertEqual(engine.state["players"]["W"]["foreign_relations"]["uk"], uk_before["W"])
-        self.assertEqual(engine.pending_event_view()["waiting_for"], "W")
-
-        for code, pick in (("W", "back_soviets"), ("S", "back_britain"), ("N", "back_soviets")):
-            engine.respond_event(code, choice=pick)
         self.assertIsNone(engine.state["pending_events"])
-        self.assertEqual(engine.state["event_history"][-1]["responses"],
-                         {"F": "back_britain", "W": "back_soviets", "S": "back_britain", "N": "back_soviets"})
+        self.assertEqual(engine.state["event_history"][-1]["responses"], {"F": "back_britain"})
 
-    def test_choice_queue_starts_with_the_drawer_not_the_player_order(self):
-        """回應隊伍要照 responders（抽到的那一家排第一），不是 state.players 的鍵值順序。
-
-        前端曾經拿 Object.keys(players) 當隊伍，結果卡片由國民革命軍抽到時，
-        畫面卻指著奉系，點下去被後端擋回來，看起來就像卡住不動。
-        """
+    def test_choice_events_wait_for_the_drawer_not_the_player_order(self):
+        """前端應看 responders 裡的抽中勢力，而不是 state.players 的鍵值順序。"""
         engine = GameEngine(seed=3)
         engine.state["event_pool"] = ["arcos_raid"]
         engine.state["turn"] = 3           # _start_event_cycle 只在回合數是 3 的倍數時發報
-        # 讓第四順位的國民革命軍抽到這張卡。
+        # 強制模擬國民革命軍抽到這張卡。
         self.assertTrue(engine._start_event_cycle())
         entry = engine.state["pending_events"]["cards"][0]
         entry["drawer"] = "N"
-        entry["responders"] = ["N", "F", "W", "S"]
+        entry["responders"] = ["N"]
 
         view = engine.pending_event_view()
         self.assertEqual(view["waiting_for"], "N")
-        self.assertEqual(view["pending_responders"], ["N", "F", "W", "S"])
+        self.assertEqual(view["pending_responders"], ["N"])
         with self.assertRaisesRegex(ValueError, "現在輪到 N"):
             engine.respond_event("F", choice="back_britain")
 
         engine.respond_event("N", choice="back_britain")
-        self.assertEqual(engine.pending_event_view()["waiting_for"], "F")
-        for code in ("F", "W"):
-            engine.respond_event(code, choice="back_soviets")
-        self.assertEqual(engine.pending_event_view()["waiting_for"], "S")
-        engine.respond_event("S", choice="back_britain")
-        self.assertEqual(engine.state["event_history"][-1]["responses"],
-                         {"N": "back_britain", "F": "back_soviets",
-                          "W": "back_soviets", "S": "back_britain"})
+        self.assertIsNone(engine.pending_event_view())
+        self.assertEqual(engine.state["event_history"][-1]["responses"], {"N": "back_britain"})
 
     def test_plain_events_wait_for_the_faction_that_drew_them(self):
         """單純事件由抽到的那一家點閱；別家點會被擋下並說明輪到誰。"""

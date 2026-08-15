@@ -1,0 +1,70 @@
+{
+  "version": "experimental-0.1",
+  "move": {
+    "tiles_per_turn": 2,
+    "factory_cost": 10,
+    "factory_cost_per_gun_boat": 5,
+    "allowed_tile_kinds": ["river_port", "water", "rail_bridge", "sea_port"]
+  },
+  "units": {
+    "gun_boat": {
+      "name": "砲艇",
+      "hp": 30,
+      "inactive_below_hp": 15,
+      "attack": {
+        "artillery": 2,
+        "gun_boat": 5
+      }
+    },
+    "cargo_boat": {
+      "name": "運輸船",
+      "hp": 10,
+      "capacity_force_points": 20
+    }
+  },
+  "land_interaction": {
+    "artillery_attack_to_gun_boat": 1,
+    "land_retreat_when_no_artillery": true,
+    "navy_retreat_gun_boat_hp_loss_ratio": 0.5,
+    "pursuit": false,
+    "tactics": false
+  },
+  "repair": {
+    "factory_cost_per_hp": 2,
+    "harbor_only": true
+  },
+  "initial_divisions": [
+    {
+      "id": "F-NAVY-1",
+      "faction": "F",
+      "name": "奉系江海艦隊",
+      "start_city_id": "tianjin",
+      "gun_boats": 2,
+      "cargo_boats": 1
+    },
+    {
+      "id": "W-NAVY-1",
+      "faction": "W",
+      "name": "直系長江艦隊",
+      "start_city_id": "hankou",
+      "gun_boats": 2,
+      "cargo_boats": 1
+    },
+    {
+      "id": "S-NAVY-1",
+      "faction": "S",
+      "name": "五省聯軍江防艦隊",
+      "start_city_id": "shanghai",
+      "gun_boats": 2,
+      "cargo_boats": 1
+    },
+    {
+      "id": "N-NAVY-1",
+      "faction": "N",
+      "name": "國民革命軍海軍",
+      "start_city_id": "guangzhou",
+      "gun_boats": 2,
+      "cargo_boats": 1
+    }
+  ]
+}

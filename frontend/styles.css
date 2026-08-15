@@ -784,6 +784,16 @@ button, select, input, textarea {
   gap: 12px;
 }
 
+.navy-recruitment-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.panel-subtitle {
+  margin: 18px 0 10px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
 .unit-option {
   background: white;
   border: 2px solid var(--border);
@@ -2220,6 +2230,35 @@ button, select, input, textarea {
   background: rgba(128, 43, 34, 0.18);
 }
 
+.pending-report-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 2px 7px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pending-report-chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(241, 194, 107, 0.65);
+  background: rgba(78, 48, 34, 0.88);
+  color: #f8e8c4;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pending-report-chip[data-report-kind="navy"] {
+  border-color: rgba(118, 190, 218, 0.72);
+  background: rgba(28, 70, 86, 0.88);
+}
+
+.pending-report-chip.active {
+  box-shadow: 0 0 0 2px rgba(255, 248, 231, 0.25);
+  transform: translateY(-1px);
+}
+
 .pending-battle select {
   width: 100%;
   min-height: 28px;
@@ -2320,6 +2359,108 @@ button, select, input, textarea {
   color: #ddd3c5;
   cursor: pointer;
   font-size: 11px;
+}
+
+.navy-marker {
+  cursor: pointer;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.35));
+}
+
+.navy-marker.enemy {
+  opacity: 0.9;
+}
+
+.navy-marker.resolved {
+  opacity: 0.55;
+}
+
+.navy-marker.selected path {
+  stroke: #f2cf73;
+  stroke-width: 3;
+}
+
+.navy-profile-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #234756;
+  color: #e9f5f8;
+  font-weight: 800;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22);
+}
+
+.navy-composition {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.navy-composition span {
+  padding: 8px;
+  border: 1px solid rgba(231, 225, 215, 0.16);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #d8d0c1;
+  font-size: 12px;
+}
+
+.navy-composition b {
+  display: block;
+  color: #fff8e8;
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.navy-health-list {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 12px;
+}
+
+.navy-boat-health {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 7px;
+  color: #e7e1d7;
+  font-size: 12px;
+}
+
+.navy-boat-health.inactive {
+  opacity: 0.48;
+}
+
+.boat-health-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.boat-health-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #77b7c8, #f2cf73);
+}
+
+.navy-embark-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.navy-embark-list button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(231, 225, 215, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e7e1d7;
+  text-align: left;
 }
 
 .hold-command:hover {

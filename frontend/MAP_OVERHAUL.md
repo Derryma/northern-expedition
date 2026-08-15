@@ -1,5 +1,10 @@
 # Map Overhaul Plan - China-Focused with Civ6 Unit Cycling
 
+> **Archived design note.** The live game now uses the full playable hex map,
+> click-to-command movement, land and naval pieces, fog of war, city control,
+> railways, rivers, and shared multiplayer state. The mock schema and numbered
+> implementation steps below are retained only as design history.
+
 ## Map Requirements
 
 ### 1. Simplified China Map

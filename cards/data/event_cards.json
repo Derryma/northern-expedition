@@ -3,7 +3,7 @@
   "source": "事件卡工作日誌/1926-1928 全球大事事件卡設計稿_v3.md 第一至八區塊",
   "draw_rules": {
     "every_turns": 3,
-    "cards_per_cycle": 4,
+    "cards_per_cycle": 1,
     "response_order": [
       "F",
       "W",
@@ -12,7 +12,7 @@
     ],
     "reshuffle": false,
     "strict_response_order": true,
-    "strict_response_order_note": "照 response_order 依序回應：一般事件由抽到該卡的玩家回應，需要各自表態的卡以抽到者為第一個回覆者、其餘依序輪流。報紙右上角自帶陣營選擇欄，玩家切到該回應的陣營才點得下去；四張結完報紙收起，陣營切換回歸主畫面上方的選單。"
+    "strict_response_order_note": "每次事件週期只抽一則共享新聞；後端隨機指定一名適格玩家回應。報紙右上角自帶陣營選擇欄，玩家切到該回應的陣營才點得下去；該玩家讀完後報紙收起，陣營切換回歸主畫面上方的選單。"
   },
   "cards": [
     {

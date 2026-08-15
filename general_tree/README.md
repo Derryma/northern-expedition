@@ -36,9 +36,12 @@ one of them brings over only that one command. Their tree files set
 accepts that shape while still rejecting a stray `great_general` or `parent_id`
 inside it.
 
-Every other NPC faction hangs its whole roster off the leader, so capturing and
-recruiting the leader transfers the entire faction:
-西北軍 → 馮玉祥, 晉系 → 閻錫山, 馬家軍 → 馬麒, 滇系 → 唐繼堯.
+Ranked NPC factions hang lower commanders from a leader. Capturing that leader
+drops those subordinates to loyalty 1 but does not capture them immediately.
+Only after the leader is recruited do the still-active subordinates enter the
+recruiting faction's captive list. Their old links expire and each must be
+assigned separately to an open lieutenant slot. Flat-command 川軍 and 湘軍 do
+not perform any of these subordinate transitions.
 
 Events can increase slots with:
 
@@ -169,6 +172,13 @@ Values are clamped between `0` and `10`.
 
 ## Recruitment
 
+In the live game, a defeated captive costs five infantry reserves to recruit.
+He enters as a major general under an open lieutenant slot, receives the next
+available army designator, and returns with exactly five infantry battalions;
+his pre-capture army is not restored. If no slot exists, he remains captive.
+
+The helper library also exposes a generic data-construction function:
+
 Recruiting a new general creates a new army and must assign at least `5` force strength:
 
 ```python
@@ -188,7 +198,8 @@ recruit_general(
 )
 ```
 
-If recruited under the great general, the new commander defaults to `lieutenant_general`. If recruited under a lieutenant general, he defaults to `major_general`.
+The generic helper may create either rank, but the live captive workflow always
+installs the recruited commander as a major general.
 
 ## Affiliation Events
 
@@ -202,7 +213,7 @@ kill_general(tree, "he_yingqin")
 
 All major generals under him immediately drop to `loyalty: 0`.
 
-If a general defects:
+The standalone model still provides a branch-defection helper:
 
 ```python
 from general_tree import defect_general
@@ -210,7 +221,9 @@ from general_tree import defect_general
 defect_general(tree, "bai_chongxi", "桂系獨立")
 ```
 
-All subordinates in that branch defect with him and reset to `loyalty: 1`, so the branch remains unstable.
+The live map's paid defection action transfers only the selected general and
+army. It requires one open major-general slot; old subordinate links do not
+create a fourth hierarchy layer.
 
 ## Promotion
 

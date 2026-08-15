@@ -1,14 +1,11 @@
 # Frontend
 
-Static playtest UI for Northern Expedition.
+The live map-first client is `index.html` + `app.js` + `map.js` + `navy.js`.
 
-## Responsibilities
+It renders the shared hex map, army/navy markers, fog of war, pending-unit panel, battle reports, general tree, recruitment, loans, diplomacy, cards, and the single shared newspaper event. Movement is explicit: select a unit, press Move, then left-click the destination; ordinary left-click remains inspection.
 
-- Open on the playable PJ boardgame surface, with map/city/unit UI in the main stage.
-- Switch between the integrated board, strategic map, faction operation board, and event-card board.
-- Render compact turn state and function-card hands beside the board.
-- Draw event/function cards through the backend API.
-- Use function cards and display injected-event consequences.
-- Run quick combat simulations through `/api/combat`.
+`app.js` owns tactical state and publishes revisioned snapshots. `map.js` owns map geometry, cities, railways, rivers, and starting armies. `navy.js` contains isolated boat state and exchange helpers. Economic/card authority remains in the backend.
 
-The frontend shell does not own rules. It calls `backend/server.py` for turn/card/combat state and embeds the PJ boardgame HTML tools as the playable surface.
+The current client supports multiplayer polling. Conflicting revisions are pulled and rendered instead of silently overwriting another device. Debug-only force-next-turn is available only from localhost.
+
+Historical plans in this folder are retained for design history and are labeled archived; they are not implementation instructions.

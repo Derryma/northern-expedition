@@ -1,5 +1,10 @@
 # Map Integration Plan
 
+> **Archived design note.** This predates the current interactive hex map and is
+> not a current implementation plan. The live map is implemented by
+> `frontend/map.js`, `frontend/app.js`, and `scenario/data/strategic_map.json`.
+> See `frontend/STATUS.md` and the main rulebook for current behavior.
+
 ## Current Map Issues
 The existing map in `PJ Boardgame/北伐風雲_地圖.html` is overwhelming because:
 1. Shows ALL of East Asia (Japan, Korea, Soviet Far East, Mongolia, Tibet, Southeast Asia)
