@@ -783,6 +783,10 @@ class GameEngine:
     def _strategic_map_snapshot(self) -> Dict[str, Any]:
         strategic_map = deepcopy(self.data["strategic_map"])
         for city in strategic_map.get("cities", []):
+            # Placement must remain tied to the original scenario map. Current
+            # ownership is dynamic and must never make a captured city jump to
+            # the nearest tile controlled by its new owner on browser reload.
+            city["scenario_faction"] = city["faction"]
             bonus = self.state.get("city_development", {}).get(city["id"], {})
             cash, factory = self._adjusted_city_output(
                 city["id"],
@@ -791,7 +795,7 @@ class GameEngine:
             )
             city["cash"] = cash
             city["factory"] = factory
-            city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["faction"])
+            city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["scenario_faction"])
         return strategic_map
 
     def concession_override(self) -> Optional[Dict[str, Any]]:

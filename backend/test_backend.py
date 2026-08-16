@@ -735,6 +735,13 @@ class BackendTests(unittest.TestCase):
         qingdao = next(city for city in engine.data["strategic_map"]["cities"] if city["id"] == "qingdao")
         self.assertEqual(qingdao["port"], "sea")
 
+    def test_captured_city_keeps_its_scenario_faction_for_map_placement(self):
+        engine = GameEngine(seed=4)
+        engine.state["city_owners"]["tianjin"] = "S"
+        tianjin = next(city for city in engine.bootstrap()["strategic_map"]["cities"] if city["id"] == "tianjin")
+        self.assertEqual(tianjin["scenario_faction"], "F")
+        self.assertEqual(tianjin["faction"], "S")
+
     def test_inactive_faction_must_choose_its_own_discard(self):
         engine = GameEngine(seed=13)
         engine.state["players"]["W"]["hand"] = ["unit_promotion"]

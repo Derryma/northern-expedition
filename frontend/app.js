@@ -1113,7 +1113,8 @@ function indexScenarioCells() {
   const occupiedCityCells = new Set();
   for (const city of scenario.cities || []) {
     if (LAND_ONLY_CITY_IDS.has(city.id)) delete city.port;
-    INITIAL_CITY_FACTIONS[city.id] ||= city.faction;
+    const placementFaction = city.scenario_faction || city.faction;
+    INITIAL_CITY_FACTIONS[city.id] ||= placementFaction;
     const candidates = Object.values(cells).filter((cell) =>
       cell.land !== false
       &&
@@ -1121,7 +1122,7 @@ function indexScenarioCells() {
       && !cell.power                       // 列強租借地不能拿來擺中國城市
       && (!cell.river || cell.railBridge)
     );
-    const sameFaction = candidates.filter((cell) => cell.fac === city.faction);
+    const sameFaction = candidates.filter((cell) => cell.fac === placementFaction);
     const pool = sameFaction.length ? sameFaction : candidates;
     const cell = pool.reduce((nearest, candidate) => {
       const distance = (candidate.lon - city.lon) ** 2 + (candidate.lat - city.lat) ** 2;
