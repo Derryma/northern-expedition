@@ -3683,7 +3683,8 @@ function initMap() {
 
       // Draw faction-colored hex fill
       if (cell.coastalWater) {
-        ctx.fillStyle = "rgba(74, 128, 151, 0.62)";
+        // 近海：藍調再壓淡並摻一點灰，讓水面不會搶掉陸地與旗色。
+        ctx.fillStyle = "rgba(126, 158, 172, 0.46)";
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -3734,7 +3735,8 @@ function initMap() {
 
       // Highlight river hexes
       if (cell.river) {
-        ctx.fillStyle = '#92b6c1';
+        // 河道同樣調淡加灰，與近海保持同一個色系。
+        ctx.fillStyle = '#a8c2cb';
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -5269,6 +5271,25 @@ function navyHealthMarkup(navy) {
   return `<div class="navy-health-list">${gunMarkup}${cargoMarkup || '<small>無運輸船</small>'}</div>`;
 }
 
+// 只有 3 級以上的港口（河港、海港皆同）才有船塢與軍需倉庫：修得了船、補得了艦。
+// 2 級小港只能讓艦隊停靠與登陸卸兵。
+const NAVY_SERVICE_PORT_LEVEL = 3;
+
+function portServiceLevel(city) {
+  return city?.port ? Number(city.level || 0) : 0;
+}
+
+function isServicePort(city) {
+  return portServiceLevel(city) >= NAVY_SERVICE_PORT_LEVEL;
+}
+
+function portServiceNote(city) {
+  if (!city?.port) return "此處不是港口。";
+  return isServicePort(city)
+    ? ""
+    : `${city.name}是 ${city.level} 級小港，只能停靠與登陸；修理與編補艦隊要到 3 級以上的港口。`;
+}
+
 function carriedArmy(navy) {
   return navy?.carriedArmyId ? armyById(navy.carriedArmyId) : null;
 }
@@ -5276,6 +5297,9 @@ function carriedArmy(navy) {
 function navyReserveButtonsMarkup(navy, city, faction) {
   if (!city?.port || !cityControlledBy(city, faction)) {
     return `<div class="active-operation">海軍預備隊只能在己方港口編入艦隊。</div>`;
+  }
+  if (!isServicePort(city)) {
+    return `<div class="active-operation">${portServiceNote(city)}</div>`;
   }
   const reserves = state.players[faction]?.navy_reserves || {};
   return `
@@ -5312,7 +5336,7 @@ function renderNavyDetail(root, navy) {
   const canOrder = isOwnNavy && navyCanReceiveOrder(navy);
   const moveCost = navyMoveFactoryCost(navy);
   const inContact = navyInContact(navy);
-  const canRepair = isOwnNavy && city?.port && [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])]
+  const canRepair = isOwnNavy && isServicePort(city) && [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])]
     .some((boat) => Number(boat.hp || 0) < Number(boat.maxHp || 30));
   const embarkable = isOwnNavy && !carried ? embarkableArmies(navy) : [];
   root.hidden = false;
@@ -5430,6 +5454,10 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
       showNotice("艦艇只能在港口修理。");
       return;
     }
+    if (!isServicePort(cell.city)) {
+      showNotice(portServiceNote(cell.city));
+      return;
+    }
     const raw = window.prompt("將所有現存艦艇至少修到幾 HP？", String(navyRules().units?.gun_boat?.hp || 30));
     if (raw === null) return;
     const targetHp = Number(raw);
@@ -5492,6 +5520,10 @@ async function reinforceNavyFromReserve(navy, unitType, target) {
   }
   if (!city?.port || !cityControlledBy(city, faction)) {
     showNotice("海軍預備隊只能在己方港口編入艦隊。");
+    return;
+  }
+  if (!isServicePort(city)) {
+    showNotice(portServiceNote(city));
     return;
   }
   if (!Number(state.players[faction]?.navy_reserves?.[unitType] || 0)) {
