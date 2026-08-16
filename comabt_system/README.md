@@ -79,7 +79,7 @@ Current coarse battalion HP and force points:
 
 | Unit | HP | Force Points |
 |---|---:|---:|
-| infantry | 4 | 1 |
+| infantry | 3 | 1 |
 | cavalry | 3 | 1 |
 | artillery | 2 | 4 |
 | machine_gun | 3 | 2 |

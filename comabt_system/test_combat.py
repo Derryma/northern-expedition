@@ -111,8 +111,8 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 80.0)
-        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 80.0)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 57.0)
+        self.assertAlmostEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 57.0)
         artillery_attack = [
             attack
             for attack in result["log"][0]["attacks"]
@@ -136,8 +136,8 @@ class CombatSimulationTests(unittest.TestCase):
         )
 
         b_armies = {army["name"]: army for army in result["remaining"]["B"]["armies"]}
-        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 72.0)
-        self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 80.0)
+        self.assertAlmostEqual(b_armies["B Front"]["raw_hp"]["infantry"], 54.0)
+        self.assertEqual(b_armies["B Reserve"]["raw_hp"]["infantry"], 60.0)
 
         focused_attacks = [
             attack

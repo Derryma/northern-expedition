@@ -89,7 +89,7 @@ ATTACK_PRIORITY = {
 # playtested before becoming final board-game values. Attack values live only
 # in ATTACK_MATRIX because each source unit hits each target unit differently.
 BASE_STATS = {
-    "infantry": {"hp": 4.0, "force_points": 1.0},
+    "infantry": {"hp": 3.0, "force_points": 1.0},
     "cavalry": {"hp": 3.0, "force_points": 1.0},
     "artillery": {"hp": 2.0, "force_points": 4.0},
     "machine_gun": {"hp": 3.0, "force_points": 2.0},

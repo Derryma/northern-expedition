@@ -4186,9 +4186,25 @@ function battleSideForArmy(battle, army) {
 
 function activeBattleForArmy(army) {
   return activeBattles.find((battle) =>
-    ["pending", "ongoing"].includes(battle.status)
+    battleIsActive(battle)
     && battleParticipantIds(battle).includes(army?.id)
   ) || null;
+}
+
+function battleIsActive(battle) {
+  return ["pending", "ongoing"].includes(battle?.status);
+}
+
+function archiveTerminalBattles() {
+  const terminalBattles = activeBattles.filter((battle) => !battleIsActive(battle));
+  for (const battle of terminalBattles) {
+    if (!battleReports.some((report) => report.id === battle.id)) {
+      battleReports.push(battle);
+    }
+    const index = activeBattles.findIndex((item) => item.id === battle.id);
+    if (index >= 0) activeBattles.splice(index, 1);
+  }
+  return terminalBattles;
 }
 
 function armyIsResolvedThisTurn(army) {
@@ -4353,7 +4369,6 @@ function cellWithinRange(fromKey, toKey, range = 2) {
 
 function armyIsVisible(army, armyFaction, observer) {
   if (armyFaction === observer) return true;
-  if (activeBattles.some((battle) => battleParticipantIds(battle).includes(army.id))) return true;
   const nearbyArmy = allArmies().some((ownArmy) =>
     factionForArmy(ownArmy) === observer && cellWithinRange(ownArmy.cellKey, army.cellKey, 2)
   );
@@ -4641,13 +4656,15 @@ function queueCityOwnershipSync(cityId, faction) {
 }
 
 function renderBattleMarkers(svgOverlay) {
-  const markers = activeBattles.map((battle) => ({
-    id: battle.id,
-    status: battle.status,
-    cellKey: battle.cellKey,
-    label: "戰",
-    title: battle.status === 'pending' ? '戰鬥待決' : '查看戰果',
-  }));
+  const markers = activeBattles
+    .filter((battle) => reportVisibleToPlayer(battle))
+    .map((battle) => ({
+      id: battle.id,
+      status: battle.status,
+      cellKey: battle.cellKey,
+      label: "戰",
+      title: battle.status === 'pending' ? '戰鬥待決' : '查看戰果',
+    }));
   for (const report of navyBattleReports) {
     if (hiddenNavyBattleReportIds.has(report.id) || !reportVisibleToPlayer(report)) continue;
     const navy = navyById(report.navyId);
@@ -4690,8 +4707,19 @@ function renderBattleMarkers(svgOverlay) {
 }
 
 function selectBattle(battleId) {
+  const battle = [...activeBattles, ...battleReports].find((item) =>
+    item.id === battleId && reportVisibleToPlayer(item)
+  );
+  const navyBattle = navyBattleReports.find((item) =>
+    item.id === battleId && reportVisibleToPlayer(item)
+  );
+  if (!battle && !navyBattle) {
+    selectedBattleId = null;
+    renderBattlePanel();
+    renderMapUnits();
+    return;
+  }
   selectedBattleId = battleId;
-  const battle = activeBattles.find((item) => item.id === battleId);
   const participant = (battle ? battleParticipantIds(battle) : [])
     .map(armyById)
     .find((army) => factionForArmy(army) === currentPlayer);
@@ -4846,7 +4874,9 @@ function renderNavyBattlePanel(root, report) {
 
 function renderBattlePanel() {
   const root = $("battlePanel");
-  const reports = [...activeBattles, ...battleReports].filter((item) => !hiddenBattleReportIds.has(item.id));
+  const reports = [...activeBattles, ...battleReports]
+    .filter((item) => !hiddenBattleReportIds.has(item.id))
+    .filter((item) => reportVisibleToPlayer(item));
   const battle = reports.find((item) => item.id === selectedBattleId)
     || [...reports].reverse().find((item) =>
       item.attackerFaction === currentPlayer || item.defenderFaction === currentPlayer
@@ -5499,7 +5529,9 @@ async function reinforceNavyFromReserve(navy, unitType, target) {
 }
 
 function pendingArmies() {
-  const fightingIds = new Set(activeBattles.flatMap(battleParticipantIds));
+  const fightingIds = new Set(
+    activeBattles.filter(battleIsActive).flatMap(battleParticipantIds),
+  );
   return currentArmies().filter((army) => !armyIsResolvedThisTurn(army) && !fightingIds.has(army.id));
 }
 
@@ -6392,12 +6424,16 @@ async function respondToEvent(choice, followUp = null) {
       normalizeArmyForceCaps();
       refreshArmyLoyaltyBaselines();
       resolvedArmyIds.clear();
+      resolvedNavyIds.clear();
       replaceObject(turnReady, {});
       for (const army of allArmies()) {
         delete army.resolvedTurn;
         if (army.specialOperation) markArmyResolved(army);
       }
+      for (const navy of allNavies(true)) delete navy.resolvedTurn;
       armyOrderHistory.length = 0;
+      navyOrderHistory.length = 0;
+      archiveTerminalBattles();
       currentPhase = "military";
       updatePhaseBanner();
       updateFeatureVisibility();
@@ -7879,10 +7915,10 @@ async function advanceToNextTurn(force = false) {
     for (const navy of allNavies(true)) delete navy.resolvedTurn;
     armyOrderHistory.length = 0;
     navyOrderHistory.length = 0;
-    const terminalBattles = activeBattles.filter((battle) => !["pending", "ongoing"].includes(battle.status));
-    battleReports.push(...terminalBattles);
-    for (const battle of terminalBattles) activeBattles.splice(activeBattles.indexOf(battle), 1);
-    selectedBattleId = activeBattles.at(-1)?.id || battleReports.at(-1)?.id || null;
+    archiveTerminalBattles();
+    const visibleActiveBattles = activeBattles.filter((battle) => reportVisibleToPlayer(battle));
+    const visibleBattleReports = battleReports.filter((battle) => reportVisibleToPlayer(battle));
+    selectedBattleId = visibleActiveBattles.at(-1)?.id || visibleBattleReports.at(-1)?.id || null;
     selectedArmyId = currentArmies()[0]?.id || null;
     selectedNavyId = selectedArmyId ? null : currentNavies()[0]?.id || null;
     currentPhase = "military";
