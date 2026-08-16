@@ -730,6 +730,11 @@ class BackendTests(unittest.TestCase):
         engine = GameEngine(seed=4)
         self.assertNotIn("dalian", {city["id"] for city in engine.data["strategic_map"]["cities"]})
 
+    def test_qingdao_is_a_sea_harbor(self):
+        engine = GameEngine(seed=4)
+        qingdao = next(city for city in engine.data["strategic_map"]["cities"] if city["id"] == "qingdao")
+        self.assertEqual(qingdao["port"], "sea")
+
     def test_inactive_faction_must_choose_its_own_discard(self):
         engine = GameEngine(seed=13)
         engine.state["players"]["W"]["hand"] = ["unit_promotion"]
