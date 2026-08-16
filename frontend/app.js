@@ -3683,8 +3683,9 @@ function initMap() {
 
       // Draw faction-colored hex fill
       if (cell.coastalWater) {
-        // 近海：藍調再壓淡並摻一點灰，讓水面不會搶掉陸地與旗色。
-        ctx.fillStyle = "rgba(126, 158, 172, 0.46)";
+        // 近海：藍調壓淡摻灰之外再加一點黃，貼近底圖泛黃的海面，
+        // 但仍留得住藍，讓可遊玩的水域與背景分得開。
+        ctx.fillStyle = "rgba(152, 172, 164, 0.44)";
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -3735,8 +3736,8 @@ function initMap() {
 
       // Highlight river hexes
       if (cell.river) {
-        // 河道同樣調淡加灰，與近海保持同一個色系。
-        ctx.fillStyle = '#a8c2cb';
+        // 河道同樣調淡加灰泛黃，與近海保持同一個色系。
+        ctx.fillStyle = '#b4c6bd';
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
