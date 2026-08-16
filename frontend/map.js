@@ -411,7 +411,9 @@ export const ARMY_POSITIONS = {
   C: [
     { id: 'C-1', generalId: 'liu_xiang', general: '劉湘', designator: '第一軍', startCityId: 'chengdu', lon: 104.1, lat: 30.7, units: { infantry: 9, cavalry: 3, artillery: 1, machine_gun: 1 } },
     { id: 'C-2', generalId: 'liu_wenhui', general: '劉文輝', designator: '第二軍', startCityId: 'chongqing', lon: 106.5, lat: 29.6, units: { infantry: 8, cavalry: 3, artillery: 1, machine_gun: 1 } },
-    { id: 'C-3', generalId: 'yang_sen', general: '楊森', designator: '第三軍', startCityId: 'chongqing', lon: 106.5, lat: 29.6, units: { infantry: 7, cavalry: 2, artillery: 1, machine_gun: 1 } },
+    // 楊森與劉文輝同以重慶為起點，重慶只有一格；楊森指定落在萬縣一帶的陸地格，
+    // 免得被擠到長江的水域格上。
+    { id: 'C-3', generalId: 'yang_sen', general: '楊森', designator: '第三軍', startCityId: 'chongqing', startCellKey: '16,26', lon: 107.4, lat: 30.9, units: { infantry: 7, cavalry: 2, artillery: 1, machine_gun: 1 } },
   ],
   D: [
     { id: 'D-1', generalId: 'tang_jiyao', general: '唐繼堯', designator: '第一軍', startCityId: 'kunming', lon: 102.7, lat: 25.0, units: { infantry: 8, cavalry: 4, artillery: 1, machine_gun: 1 } },

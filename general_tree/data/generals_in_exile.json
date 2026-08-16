@@ -95,7 +95,7 @@
       "status": "in_exile",
       "recruit_value": 20,
       "background": "前山東督軍，1923 年去職。",
-      "ability": "齊魯宿將：騎兵承傷 -7%、砲兵攻擊力 +7%；同陣營若有張宗昌則忠誠 +1。可建造要塞。"
+      "ability": "齊魯宿將：騎兵承傷 -7%、砲兵攻擊力 +7%。可建造要塞。"
     },
     "wang_chengbin": {
       "id": "wang_chengbin",
@@ -125,7 +125,7 @@
       "status": "in_exile",
       "recruit_value": 22,
       "background": "直系宿將，1925 年失勢賦閒。",
-      "ability": "直系宿將：騎兵與砲兵攻擊力 +7%；同陣營若有吳佩孚則忠誠 +1。可建造要塞。"
+      "ability": "直系宿將：騎兵與砲兵攻擊力 +7%。可建造要塞。"
     },
     "li_houji": {
       "id": "li_houji",

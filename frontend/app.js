@@ -266,9 +266,9 @@ const TRAIT_DESCRIPTIONS = {
   anticommunist_vanguard: "何鍵的剿共招牌。與對蘇關係 6 以上的勢力交戰時所部全體攻擊 +10%，鎮壓紅軍起義只需一回合；但自己所屬陣營對蘇關係達 6 以上時本技能失效，且何鍵忠誠 -5。",
   former_overlord: "段祺瑞帶得動北洋最正統的步砲部隊。",
   anhui_veteran: "盧永祥的皖系舊部。步兵與機槍攻擊 +8%；與段祺瑞同一場戰鬥的同一邊時，所部全體生命 +10%（戰鬥結束即恢復）。五省聯軍不可延攬。",
-  zhili_veteran: "王承斌的直系班底。騎兵與砲兵攻擊 +7%；同陣營若有吳佩孚則忠誠 +1。",
+  zhili_veteran: "王承斌的直系班底。騎兵與砲兵攻擊 +7%。",
   old_cantonese_army: "陳炯明的粵軍元老。砲兵攻擊 +12%，鎮壓紅軍起義只需一回合。國民革命軍不可延攬。",
-  qilu_veteran: "田中玉的山東舊部。騎兵承傷 -7%、砲兵攻擊 +7%；同陣營若有張宗昌則忠誠 +1。",
+  qilu_veteran: "田中玉的山東舊部。騎兵承傷 -7%、砲兵攻擊 +7%。",
   northwest_overlord: "馮玉祥的統御。所部全體生命 +10%；宋哲元或鹿鍾麟在同一場戰鬥中作為友軍出現時，他們的部隊生命也 +10%（戰鬥結束即恢復）。",
   dodging_drift: "韓復榘的看家本領。部隊極難被咬住，但也不願打硬仗。",
   broadsword_corps: "宋哲元的大刀隊。步兵近身突擊凌厲，代價是挨得更多。",
@@ -363,11 +363,6 @@ const RELATION_DISABLED_TRAITS = {
 };
 
 // 同陣營有指定將領時忠誠 +1。
-const ALLY_LOYALTY_TRAITS = {
-  zhili_veteran: { ally: "wu_peifu", delta: 1 },
-  qilu_veteran: { ally: "zhang_zongchang", delta: 1 },
-};
-
 // 被策反時對方成功率的額外修正（唐生智的〈佛教將軍〉）。
 const DEFECTION_RESISTANCE_TRAITS = { buddhist_general: 0.05 };
 
@@ -1185,18 +1180,24 @@ function pointSegmentDistance(x, y, [ax, ay], [bx, by]) {
   return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
 }
 
+// 擠不進起點城市時的備位格。畫成水面的地格（河道、近海）一律先跳過，
+// 陸軍不該一開局就站在水裡；真的找不到乾地才退而求其次。
 function nearestFreeCell(origin, occupied) {
-  let best = null;
-  let bestDistance = Infinity;
-  for (const cell of Object.values(cells)) {
-    if (!cell.land || occupied.has(cell.key) || cell.city) continue;
-    const distance = (cell.lon - origin.lon) ** 2 + (cell.lat - origin.lat) ** 2;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = cell;
+  const pick = (allowWater) => {
+    let best = null;
+    let bestDistance = Infinity;
+    for (const cell of Object.values(cells)) {
+      if (!cell.land || occupied.has(cell.key) || cell.city) continue;
+      if (!allowWater && (cell.river || cell.coastalWater)) continue;
+      const distance = (cell.lon - origin.lon) ** 2 + (cell.lat - origin.lat) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = cell;
+      }
     }
-  }
-  return best;
+    return best;
+  };
+  return pick(false) || pick(true);
 }
 
 function snapArmiesToStartCities() {
@@ -1207,6 +1208,18 @@ function snapArmiesToStartCities() {
       const city = cityById.get(army.startCityId);
       const home = city?.cellKey ? cells[city.cellKey] : null;
       if (!home) continue;
+      // 指定了起始地格的部隊直接放上去，不參與搶城市格。
+      const assigned = army.startCellKey ? cells[army.startCellKey] : null;
+      if (assigned && !occupied.has(assigned.key)) {
+        army.cellKey = assigned.key;
+        army.lon = assigned.lon;
+        army.lat = assigned.lat;
+        if (INITIAL_ARMY_CELLS[army.id]) {
+          INITIAL_ARMY_CELLS[army.id] = { cellKey: assigned.key, lon: assigned.lon, lat: assigned.lat };
+        }
+        occupied.add(assigned.key);
+        continue;
+      }
       // Two armies can share a start city (e.g. 馬家軍 after 導河 left the map);
       // the second one falls back to the nearest free land cell rather than
       // being dropped without a position.
@@ -2410,8 +2423,7 @@ function factionHoldingGeneral(generalId) {
 }
 
 // 技能帶來的忠誠增減（回傳的 amount 已經是帶正負號的總和）：
-// 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5），
-// 以及同陣營有指定將領時的加成（王承斌配吳佩孚、田中玉配張宗昌各 +1）。
+// 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5）。
 function traitLoyaltyAdjustment(general) {
   const faction = factionHoldingGeneral(general.id);
   if (!faction) return { amount: 0, note: "" };
@@ -2422,12 +2434,6 @@ function traitLoyaltyAdjustment(general) {
     if (rule?.loyalty_penalty && traitDisabledByRelations(trait, faction)) {
       amount -= rule.loyalty_penalty;
       reasons.push(`〈${TRAIT_LABELS[trait] || trait}〉失效: -${rule.loyalty_penalty}`);
-    }
-    const ally = ALLY_LOYALTY_TRAITS[trait];
-    if (ally && generalTrees[faction]?.generals?.[ally.ally]) {
-      const allyName = generalTrees[faction].generals[ally.ally].name;
-      amount += ally.delta;
-      reasons.push(`同陣營有${allyName}: +${ally.delta}`);
     }
   }
   return { amount, note: reasons.length ? `\n${reasons.join("\n")}` : "" };
@@ -3028,21 +3034,7 @@ function bodyGuardTargets() {
 // 規則沿用 general_tree.kill_general：本人陣亡，麾下少將忠誠歸零。
 function applyAssassination(outcome) {
   if (!outcome?.success) return;
-  const generalId = outcome.target_general_id;
-  const owner = generalOwners[generalId];
-  const tree = generalTrees[owner];
-  const general = tree?.generals?.[generalId];
-  if (!general) return;
-  general.status = "killed";
-  for (const army of allArmies(true)) {
-    if (army.generalId === generalId) army.status = "killed";
-  }
-  for (const childId of descendantGeneralIds(tree, generalId)) {
-    const child = tree.generals?.[childId];
-    if (!child || child.role !== "major_general") continue;
-    if (generalAbsoluteLoyaltyActive(child) || child.loyalty_exempt || child.loyalty === null) continue;
-    loyaltyOverrides[childId] = 0;
-  }
+  applyGeneralDeath(outcome.target_general_id);
 }
 
 // ── 在野將領 ────────────────────────────────────────────────────────────
@@ -5697,6 +5689,10 @@ function beginNavyOrder(navy, type) {
       lat: carried.lat,
       embarkedOn: carried.embarkedOn || null,
       resolvedTurn: carried.resolvedTurn ?? null,
+      // 海戰可能把船上的部隊打掉甚至連人帶船沉掉，撤銷時要一併還原。
+      units: JSON.parse(JSON.stringify(armyUnits(carried))),
+      status: carried.status || null,
+      generalStatus: generalById(carried.generalId)?.status || null,
     } : null,
   };
   navyOrderHistory.push(action);
@@ -5742,6 +5738,84 @@ function navyDamageSummary(damage) {
   return `，擊沉${labels.join("、")}`;
 }
 
+// 將領陣亡的共同處理：本人與其直屬部隊標記陣亡，直屬中將忠誠歸零。
+// 暗殺得手與運兵船連人帶船沉沒都走這條路。
+function applyGeneralDeath(generalId, owner = null) {
+  const faction = owner || generalOwners[generalId] || null;
+  const tree = generalTrees[faction];
+  const general = tree?.generals?.[generalId];
+  if (!general) return false;
+  general.status = "killed";
+  for (const army of allArmies(true)) {
+    if (army.generalId === generalId) army.status = "killed";
+  }
+  for (const childId of descendantGeneralIds(tree, generalId)) {
+    const child = tree.generals?.[childId];
+    if (!child || child.role !== "major_general") continue;
+    if (generalAbsoluteLoyaltyActive(child) || child.loyalty_exempt || child.loyalty === null) continue;
+    loyaltyOverrides[childId] = 0;
+  }
+  return true;
+}
+
+// 整支艦隊被打光時，運兵船上的陸軍隨船覆沒：部隊全滅，將領比照暗殺得手處理。
+function sinkCarriedArmyWithNavy(navy) {
+  const army = carriedArmy(navy);
+  navy.carriedArmyId = null;
+  if (!army) return null;
+  const owner = generalOwners[army.generalId] || factionForArmy(army);
+  const reinforcementLedger = state.players[owner]?.army_reinforcements;
+  if (reinforcementLedger) delete reinforcementLedger[army.id];
+  army.units = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
+  const general = generalById(army.generalId);
+  if (general) general.units = { ...army.units };
+  delete army.embarkedOn;
+  army.status = "killed";
+  applyGeneralDeath(army.generalId, owner);
+  markArmyResolved(army);
+  return army;
+}
+
+// 運輸船被擊沉之後，可載運量可能已經低於船上陸軍的戰力。
+// 超出的部分隨機挑兵種裁撤，直到剩下的戰力不超過現有容量。
+function enforceNavyCargoCapacity(navy) {
+  const army = carriedArmy(navy);
+  if (!army) return null;
+  const capacity = navyCapacity(navy, navyRules());
+  const before = armyUnits(army);
+  const units = { ...before };
+  if (forcePoints(units) <= capacity) return null;
+  const lost = {};
+  while (forcePoints(units) > capacity) {
+    const available = Object.keys(UNIT_META).filter((type) => Number(units[type] || 0) > 0);
+    if (!available.length) break;
+    const type = available[Math.floor(Math.random() * available.length)];
+    units[type] -= 1;
+    lost[type] = (lost[type] || 0) + 1;
+  }
+  setArmyTotalUnits(army, units, { capAtCurrent: true, currentUnits: before });
+  return { army, capacity, lost };
+}
+
+// 每次海戰結束後結算船上的陸軍：艦隊全滅就連人帶船沉沒，
+// 艦隊還在但運輸船有損失就把超出容量的部隊裁掉。
+function settleNavyCarriedLosses(navy) {
+  if (!navy) return;
+  normalizeNavyDivision(navy, navyRules());
+  const wipedOut = !(navy.gunBoats || []).length && !(navy.cargoBoatHp || []).length;
+  if (wipedOut) {
+    const army = sinkCarriedArmyWithNavy(navy);
+    if (army) uiNotice = `${uiNotice || ""}${navy.name}遭全數擊沉，船上的${army.general}部隊隨船覆沒，${army.general}陣亡。`;
+    return;
+  }
+  const trimmed = enforceNavyCargoCapacity(navy);
+  if (!trimmed) return;
+  const detail = Object.entries(trimmed.lost)
+    .map(([type, count]) => `${UNIT_META[type]?.name || type} ${count}`)
+    .join("、");
+  uiNotice = `${uiNotice || ""}${navy.name}運輸船折損，可載運量降為 ${trimmed.capacity} 戰力點，${trimmed.army.general}部隊被迫減至容量以內${detail ? `（損失 ${detail}）` : ""}。`;
+}
+
 function applyArmyNavyContact(army, navy) {
   const before = armyUnits(army);
   const result = resolveArmyNavyContact(before, navy, navyRules());
@@ -5755,6 +5829,7 @@ function applyArmyNavyContact(army, navy) {
     result,
     message: `${armyCombatLabel(army)}砲兵與${navy.name}交火：艦艇受損 ${Math.round(result.boatDamage)} HP${navyDamageSummary(result.boatDamageDetail)}，砲兵損失 ${result.artilleryLost} 營。${result.navyFired ? "砲艇完成還擊。" : "砲艇均已失能，未能還擊。"}${result.landRetreat ? "陸軍已無砲兵，被迫退出接觸。" : "陸軍仍有砲兵，繼續據守。"}${result.navyRetreat ? "艦隊達退卻條件。" : ""}`,
   });
+  settleNavyCarriedLosses(navy);
   return result;
 }
 
@@ -5769,6 +5844,8 @@ function applyNavyDuel(attacker, defender) {
     result,
     message: `${attacker.name}與${defender.name}交火：敵方受損 ${Math.round(result.attackerDamage)} HP${navyDamageSummary(result.attackerDamageDetail)}，我方受損 ${Math.round(result.defenderDamage)} HP${navyDamageSummary(result.defenderDamageDetail)}。${result.attackerActiveGunBoats ? "攻方完成射擊" : "攻方無可戰砲艇"}；${result.defenderActiveGunBoats ? "守方完成射擊" : "守方無可戰砲艇"}。`,
   });
+  settleNavyCarriedLosses(attacker);
+  settleNavyCarriedLosses(defender);
   return result;
 }
 
@@ -6014,6 +6091,15 @@ function undoLastNavyOrder() {
         lon: action.carriedArmyBefore.lon,
         lat: action.carriedArmyBefore.lat,
       });
+      if (action.carriedArmyBefore.units) {
+        army.units = { ...action.carriedArmyBefore.units };
+        const general = generalById(army.generalId);
+        if (general) {
+          general.units = { ...army.units };
+          if (action.carriedArmyBefore.generalStatus) general.status = action.carriedArmyBefore.generalStatus;
+        }
+      }
+      if (action.carriedArmyBefore.status) army.status = action.carriedArmyBefore.status;
       if (action.carriedArmyBefore.embarkedOn) army.embarkedOn = action.carriedArmyBefore.embarkedOn;
       else delete army.embarkedOn;
       if (action.carriedArmyBefore.resolvedTurn === null) clearArmyResolved(army);
@@ -8020,6 +8106,15 @@ window.__neDebug = {
   FOREIGN_RAILWAY_RELATION_MIN,
   armyCanBeCaptured,
   annihilateArmy,
+  applyGeneralDeath,
+  settleNavyCarriedLosses,
+  sinkCarriedArmyWithNavy,
+  enforceNavyCargoCapacity,
+  carriedArmy,
+  navyById,
+  allNavies,
+  navyRules,
+  navyCapacity,
   NO_CAPTURE_FACTIONS,
   applyNpcReinforcements,
   npcMarshalArmyIds,
