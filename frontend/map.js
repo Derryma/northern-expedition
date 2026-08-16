@@ -152,9 +152,17 @@ function coastalWaterAllowed(lon, lat) {
 const FORCED_COASTAL_WATER = new Set([
   // 天津、渤海灣缺口：讓天津港真正貼近可航行水域，並補掉水面中的陸地洞。
   '30,16', '30,17', '31,18', '32,18',
+  // 渤海灣中央的兩個空洞：一圈近海水域繞不到，補上才連得成一片海。
+  '33,16', '34,16',
+  // 青島右下方：膠州灣外的一格，補上讓青島港南面也連得出去。
+  '34,21',
   // 香港外側繞行水道：租借地本身不可通過，旁邊多給兩格讓艦隊繞行。
   '25,37', '26,37',
 ]);
+
+// 海南島南側多生出來的三格近海：正下方兩格與最南端陸地格的右下一格，
+// 都在南海深處，海圖上不該有格子。
+const REMOVED_COASTAL_WATER = new Set(['18,40', '19,40', '21,40']);
 
 const FORCED_LAND_CELLS = new Set([
   // 膠濟鐵路沿線：濟南往青島改走陸上路廊，不再把鐵路橋畫進海格。
@@ -220,6 +228,7 @@ for (const cell of Object.values({ ...cells })) {
 }
 for (const key of FORCED_COASTAL_WATER) markCoastalWaterCell(key);
 for (const key of FORCED_LAND_CELLS) markForcedLandCell(key);
+for (const key of REMOVED_COASTAL_WATER) delete cells[key];
 
 // 多邊形之外、但規則上需要的額外地格。
 // 香港在珠江口右下（英國屬地）；瓊州海峽是連接海南島與大陸的水道。
