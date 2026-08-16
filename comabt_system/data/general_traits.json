@@ -140,7 +140,7 @@
     },
     "zhili_veteran": {
       "name": "直系宿將",
-      "background": "王承斌。直系老班底，吳佩孚在的陣營他才待得安心。",
+      "background": "王承斌。直系老班底，帶騎兵與砲兵是他的老本行。",
       "modifiers": [
         {
           "stat": "attack",
@@ -167,7 +167,7 @@
     },
     "qilu_veteran": {
       "name": "齊魯宿將",
-      "background": "田中玉。山東舊督軍，張宗昌在的陣營他才肯真心用命。",
+      "background": "田中玉。山東舊督軍，練的是騎砲並重的一套。",
       "modifiers": [
         {
           "stat": "harm_taken",

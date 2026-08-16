@@ -245,9 +245,9 @@ The 22 named generals each carry one signature skill (張宗昌 carries two):
 | `anticommunist_vanguard` 剿共先鋒 | 何鍵 | attack +10% against a faction whose Soviet relation is 6 or higher, and red army uprisings need only one garrison turn; disabled (and -5 loyalty) while his own faction's Soviet relation is 6 or higher |
 | `former_overlord` 前代梟雄 | 段祺瑞 | infantry and artillery attack +12% |
 | `anhui_veteran` 皖系舊部 | 盧永祥 | infantry and machine gun attack +8%; whole command HP +10% while 段祺瑞 is on the same side. 五省聯軍 cannot recruit him |
-| `zhili_veteran` 直系宿將 | 王承斌 | cavalry and artillery attack +7%; +1 loyalty while 吳佩孚 is in the same faction |
+| `zhili_veteran` 直系宿將 | 王承斌 | cavalry and artillery attack +7% |
 | `old_cantonese_army` 老粵軍 | 陳炯明 | artillery attack +12%; red army uprisings need only one garrison turn. 國民革命軍 cannot recruit him |
-| `qilu_veteran` 齊魯宿將 | 田中玉 | cavalry harm taken -7%, artillery attack +7%; +1 loyalty while 張宗昌 is in the same faction |
+| `qilu_veteran` 齊魯宿將 | 田中玉 | cavalry harm taken -7%, artillery attack +7% |
 
 Aura, province and relation conditions cannot be expressed as plain modifiers, so
 they live in `frontend/app.js` (`AURA_TRAITS`, `PROVINCE_CONDITIONAL_TRAITS`,
