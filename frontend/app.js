@@ -6392,6 +6392,21 @@ const NPC_GROWTH = {
   heavyUnits: ["machine_gun", "cavalry", "artillery"],
 };
 
+// 大帥被俘或陣亡的陣營。後端沒有將領資料，內閣卡的失效條件要靠這份回報。
+function fallenMarshals() {
+  const fallen = [];
+  for (const faction of TURN_PLAYERS) {
+    const marshalId = generalTrees[faction]?.great_general_id;
+    if (!marshalId) continue;
+    const general = generalTrees[faction]?.generals?.[marshalId];
+    const army = allArmies(true).find((item) => item.generalId === marshalId);
+    const captured = army?.status === "jailed" || general?.status === "captured";
+    const killed = general?.status === "killed" || army?.status === "killed";
+    if (captured || killed) fallen.push(faction);
+  }
+  return fallen;
+}
+
 // 川軍與湘軍所有將領平行、沒有大帥，所以沒有五回合的重武器成長。
 function npcMarshalArmyIds() {
   const ids = [];
@@ -7357,6 +7372,13 @@ function setupPendingActions() {
     else if (resolveButton) resolveArmy(resolveButton.dataset.resolveArmy);
     else if (focusButton) selectArmy(focusButton.dataset.focusArmy);
   });
+  $("cabinetList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-focus-cabinet]");
+    if (!button) return;
+    const cardId = button.dataset.focusCabinet;
+    selectedCabinetCardId = selectedCabinetCardId === cardId ? null : cardId;
+    renderCabinet();
+  });
   $("pendingList").addEventListener("contextmenu", (event) => {
     const report = event.target.closest("[data-focus-report]");
     if (!report) return;
@@ -7871,6 +7893,64 @@ function unreadNotifications(payload = state.players[currentPlayer]) {
     .filter((item) => !readNotifications.has(item.key));
 }
 
+// ── 政府內閣 ──────────────────────────────────────────────────────────
+// 五張單一玩家卡打出後，對應的人物就掛在陣營操作版最下方，與部隊分開。
+// 卡片失效時人物離開，這一區也跟著消失。
+let selectedCabinetCardId = null;
+
+function cabinetEntries(faction = currentPlayer) {
+  return Object.values(state?.cabinet || {}).filter((entry) => entry.owner === faction);
+}
+
+function cabinetPortraitMarkup(entry, className = "cabinet-portrait") {
+  const name = entry.portrait || entry.person || "";
+  return `<img class="${className}" src="/assets/portraits/${encodeURIComponent(name)}.jpg" alt="${entry.person}"
+    onerror="this.replaceWith(Object.assign(document.createElement('div'), { className: '${className} portrait-placeholder', textContent: '${(entry.person || "?").charAt(0)}' }))">`;
+}
+
+function renderCabinetDetail() {
+  const root = $("cabinetDetail");
+  if (!root) return;
+  const entry = cabinetEntries().find((item) => item.card_id === selectedCabinetCardId);
+  if (!entry) {
+    root.hidden = true;
+    root.innerHTML = "";
+    return;
+  }
+  root.hidden = false;
+  root.innerHTML = `
+    <div class="army-profile cabinet-profile">
+      ${cabinetPortraitMarkup(entry)}
+      <div><b>${entry.person}</b><span>${entry.card_name}</span></div>
+    </div>
+    <div class="cabinet-text">
+      <b>效果說明</b>
+      <p>${entry.effect || "（無）"}</p>
+      <b>失效條件</b>
+      <p>${entry.lapse_text || "（無）"}</p>
+    </div>`;
+}
+
+function renderCabinet() {
+  const section = $("cabinetSection");
+  if (!section) return;
+  const entries = cabinetEntries();
+  if (selectedCabinetCardId && !entries.some((entry) => entry.card_id === selectedCabinetCardId)) {
+    selectedCabinetCardId = null;
+  }
+  section.hidden = entries.length === 0;
+  $("cabinetCount").textContent = String(entries.length);
+  $("cabinetList").innerHTML = entries.map((entry) => `
+    <div class="pending-unit cabinet-unit ${selectedCabinetCardId === entry.card_id ? "active" : ""}">
+      <button class="pending-unit-main" data-focus-cabinet="${entry.card_id}">
+        <span class="pending-unit-number">閣</span>
+        <span><b>${entry.person}</b><small>${entry.card_name}</small></span>
+      </button>
+    </div>
+  `).join("");
+  renderCabinetDetail();
+}
+
 function renderPendingActions() {
   const pending = pendingArmies();
   const navyPending = pendingNavies();
@@ -7921,6 +8001,7 @@ function renderPendingActions() {
   $("pendingList").innerHTML = fightingMarkup + armyMarkup + navyMarkup + completeMarkup;
 
   renderArmyDetail();
+  renderCabinet();
   renderBattlePanel();
   renderTileInfo();
 
@@ -8139,6 +8220,7 @@ async function advanceToNextTurn(force = false) {
       riot_garrisons: qingGangRiotGarrisons(),
       city_garrisons: uprisingCityGarrisons(),
       contested_provinces: contestedProvinces(),
+      fallen_marshals: fallenMarshals(),
     });
     state = result.state;
     syncStrategicCitiesFromState();
