@@ -114,6 +114,7 @@ FUNCTION_CARD_COPIES = {
     "sound_film_studio": 3,
     "state_radio_station": 3,
     "mechanized_division": 2,
+    "harbor_demolition": 3,
     "national_shame": 0,
 }
 # 與 foreign_powers/data/foreign_powers.json 同一組切點：友好 >= 6、交惡 <= -4。
@@ -325,6 +326,8 @@ class GameEngine:
             # 汪精衛復出這類卡片對單位生產成本的固定加減，單位是現金。
             profile["recruit_cost_adjustment"] = {}
             profile["notifications"] = []
+            # 大港開炸：當下付不出來的港口修復費，之後每回合從收入自動扣繳。
+            profile["port_repair_due"] = {"cash": 0, "factory": 0}
             profile["debt"] = 0
             return profile
 
@@ -336,6 +339,8 @@ class GameEngine:
             "city_output_effects": [],
             # 崩鐵玩家癱瘓中的鐵路。
             "railway_effects": [],
+            # 大港開炸癱瘓中的港口。
+            "port_effects": [],
             # 事件卡：抽剩的池子、已發生的歷史、正在等待回應的那一輪。
             "event_pool": [card["id"] for card in (self.data.get("event_cards") or {}).get("cards", [])],
             "event_history": [],
@@ -658,6 +663,7 @@ class GameEngine:
             net_factory = max(0, int(payload.get("factory_income", 0)) - penalty_factory)
             payload["treasury"] += net_income
             payload["factory_points"] += net_factory
+            port_repair = self._collect_port_repair_due(player)
             payload["debt"] = LOANS.total_outstanding(loans)
             service = {
                 "gross_income": gross_income,
@@ -677,6 +683,7 @@ class GameEngine:
                 "penalty_cash": penalty_cash,
                 "penalty_factory": penalty_factory,
                 "penalties": penalty_entries,
+                "port_repair": port_repair,
                 "cash_effects": [],
             }
             payload["last_debt_service"] = service
@@ -767,6 +774,7 @@ class GameEngine:
         for player in self.state["players"]:
             self._expire_relation_locked_effects(player)
         self._tick_railway_effects()
+        self._tick_port_effects()
         active_city_effects = []
         for effect in self.state.get("city_output_effects", []):
             # 這兩種暴動沒有回合上限，解除條件是駐軍而不是時間。
@@ -1092,6 +1100,7 @@ class GameEngine:
         city_development: Optional[Dict[str, Any]] = None
         city_developments: list[Dict[str, Any]] = []
         permanent_output_delta: Optional[Dict[str, Any]] = None
+        port_demolition: Optional[Dict[str, Any]] = None
         cash_delta = 0
         debt_delta = 0
         foreign_relation_delta: Optional[Dict[str, Any]] = None
@@ -1646,6 +1655,74 @@ class GameEngine:
                     f"你分攤搶修工業點 −{railway_effect['repair_charges'][code]}。",
                 )
             self.state.setdefault("railway_effects", []).append(deepcopy(railway_effect))
+        elif mechanic == "port_demolition":
+            # 大港開炸：任選兩座敵方港口城市（河港、海港皆可，可同勢力也可分屬兩方），
+            # 癱瘓 2 回合；每個被炸到的勢力各出 $10 與工業點 10 修復，
+            # 當下付不出來的部分記成欠款，之後每回合從收入自動扣繳。
+            wanted = int(card.get("target_city_count", 2))
+            chosen_ids = [str(item) for item in (target_city_ids or []) if str(item).strip()]
+            if len(set(chosen_ids)) != wanted:
+                raise ValueError(f"{card.get('name', card_id)}需要指定 {wanted} 座不同的敵方港口城市")
+            ports = {
+                city["id"]: city
+                for city in self.data["strategic_map"]["cities"]
+                if city.get("port")
+            }
+            downed = set(self.disabled_ports())
+            selected = []
+            for city_id in chosen_ids:
+                city = ports.get(city_id)
+                if city is None:
+                    raise ValueError(f"{city_id} 不是港口城市")
+                owner = self.state["city_owners"].get(city_id, city["faction"])
+                if owner == player:
+                    raise ValueError(f"{city['name']}是己方港口，不能自己炸")
+                if owner not in self.state["players"]:
+                    raise ValueError(f"{city['name']}目前不屬於任何可操作勢力")
+                if city_id in downed:
+                    raise ValueError(f"{city['name']}已經在搶修中")
+                selected.append((city, owner))
+            duration = int(card.get("duration_turns", 2))
+            repair_cash = int(card.get("repair_cash_cost", 10))
+            repair_factory = int(card.get("repair_factory_cost", 10))
+            port_entries = []
+            for city, owner in selected:
+                effect = {
+                    "id": f"{card_id}:{self.state['turn']}:{player}:{city['id']}",
+                    "card_id": card_id,
+                    "name": card.get("name", card_id),
+                    "initiator": player,
+                    "city_id": city["id"],
+                    "city_name": city["name"],
+                    "port": city.get("port"),
+                    "owner": owner,
+                    "remaining_turns": duration,
+                }
+                self.state.setdefault("port_effects", []).append(deepcopy(effect))
+                port_entries.append(effect)
+            # 修復費按港口算：同一勢力被炸兩座港口就付兩份。
+            charges = []
+            for city, owner in selected:
+                charged = self._charge_port_repair(owner, repair_cash, repair_factory)
+                charged["city_id"] = city["id"]
+                charged["city_name"] = city["name"]
+                charges.append(charged)
+                shortfall = charged["due"]["cash"] + charged["due"]["factory"]
+                self._notify(
+                    owner,
+                    f"{card.get('name', card_id)}：{city['name']}港務癱瘓 {duration} 回合，"
+                    f"修復支出 ${charged['paid']['cash']}、工業點 {charged['paid']['factory']}。"
+                    + (f"累計不足的 ${charged['due']['cash']} 與工業點 {charged['due']['factory']} 由之後回合收入扣繳。"
+                       if shortfall else ""),
+                )
+            port_demolition = {
+                "ports": [
+                    {"city_id": entry["city_id"], "city_name": entry["city_name"],
+                     "owner": entry["owner"], "remaining_turns": entry["remaining_turns"]}
+                    for entry in port_entries
+                ],
+                "charges": charges,
+            }
         elif mechanic == "faction_unlock":
             # 汪精衛復出：持久狀態，解鎖卡片並改變生產。
             unlock_key = str(card.get("unlock_key") or card_id)
@@ -1916,6 +1993,7 @@ class GameEngine:
             "recurring_effect": recurring_effect,
             "city_disruption": city_disruption,
             "railway_effect": railway_effect,
+            "port_demolition": port_demolition,
             "unlock_effect": unlock_effect,
             "assassination": assassination,
             "body_guard": body_guard,
@@ -1946,6 +2024,7 @@ class GameEngine:
             "recurring_effect": recurring_effect,
             "city_disruption": city_disruption,
             "railway_effect": railway_effect,
+            "port_demolition": port_demolition,
             "unlock_effect": unlock_effect,
             "assassination": assassination,
             "body_guard": body_guard,
@@ -2755,6 +2834,54 @@ class GameEngine:
                 effect["remaining_turns"] = remaining
                 active.append(effect)
         self.state["railway_effects"] = active
+
+    def _charge_port_repair(self, owner: str, cash: int, factory: int) -> Dict[str, Any]:
+        """先從手頭扣，扣不完的掛成欠款，之後每回合結算時再扣。"""
+        payload = self._player(owner)
+        paid_cash = min(int(payload.get("treasury", 0)), int(cash))
+        paid_factory = min(int(payload.get("factory_points", 0)), int(factory))
+        payload["treasury"] = int(payload.get("treasury", 0)) - paid_cash
+        payload["factory_points"] = int(payload.get("factory_points", 0)) - paid_factory
+        due = payload.setdefault("port_repair_due", {"cash": 0, "factory": 0})
+        due["cash"] = int(due.get("cash", 0)) + int(cash) - paid_cash
+        due["factory"] = int(due.get("factory", 0)) + int(factory) - paid_factory
+        return {
+            "owner": owner,
+            "paid": {"cash": paid_cash, "factory": paid_factory},
+            "due": {"cash": int(due["cash"]), "factory": int(due["factory"])},
+        }
+
+    def _collect_port_repair_due(self, owner: str) -> Dict[str, int]:
+        """結算時把積欠的港口修復費從當期收入裡扣掉。"""
+        payload = self._player(owner)
+        due = payload.setdefault("port_repair_due", {"cash": 0, "factory": 0})
+        cash = min(int(payload.get("treasury", 0)), int(due.get("cash", 0)))
+        factory = min(int(payload.get("factory_points", 0)), int(due.get("factory", 0)))
+        if cash:
+            payload["treasury"] = int(payload["treasury"]) - cash
+            due["cash"] = int(due["cash"]) - cash
+        if factory:
+            payload["factory_points"] = int(payload["factory_points"]) - factory
+            due["factory"] = int(due["factory"]) - factory
+        return {"cash": cash, "factory": factory,
+                "remaining_cash": int(due["cash"]), "remaining_factory": int(due["factory"])}
+
+    def _tick_port_effects(self) -> None:
+        active = []
+        for effect in self.state.get("port_effects", []):
+            remaining = int(effect.get("remaining_turns", 0)) - 1
+            if remaining > 0:
+                effect["remaining_turns"] = remaining
+                active.append(effect)
+        self.state["port_effects"] = active
+
+    def disabled_ports(self) -> list:
+        """遭大港開炸癱瘓的港口城市 id，前端據此關閉停靠、通行與各項港口作業。"""
+        return [
+            str(effect.get("city_id"))
+            for effect in self.state.get("port_effects", [])
+            if int(effect.get("remaining_turns", 0)) > 0
+        ]
 
     def disabled_railways(self) -> list:
         """搶修中的鐵路名稱，前端據此關閉該線的鐵路運輸。"""

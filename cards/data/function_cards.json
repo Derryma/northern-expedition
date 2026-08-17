@@ -1518,6 +1518,21 @@
       "duration_turns": 1,
       "ignores_counter_intelligence": true,
       "story": "飛艇浮在雲上，慢得像一朵不肯走的雲。艙裡的相機每隔十秒喀一聲，把底下的營盤、砲位與行軍縱隊一一收進膠捲。"
+    },
+    {
+      "id": "harbor_demolition",
+      "name": "大港開炸",
+      "deck_type": "function",
+      "category": "sabotage",
+      "holdable": true,
+      "mechanic": "port_demolition",
+      "cost": 0,
+      "effect": "任選兩座敵方港口城市（河港、海港皆可），兩座可屬於同一勢力，也可分屬兩個不同勢力。該兩座港口癱瘓 2 回合：期間艦隊不得停靠與通行，也不得在該港修理艦艇、登陸部隊、載運部隊或編補艦隊；癱瘓只擋艦隊，陸軍的通行與佔領完全不受影響。搶修期間停在港內的艦隊不會受損，但整支被鎖在港裡，兩回合內不能有任何動作。每座被炸的港口須付 $10 與工業點 10 修復，同一勢力被炸兩座就付兩份，當下不足的部分由之後回合的收入自動扣繳。",
+      "target_city_count": 2,
+      "duration_turns": 2,
+      "repair_cash_cost": 10,
+      "repair_factory_cost": 10,
+      "story": "人生的敵後作戰"
     }
   ]
 }

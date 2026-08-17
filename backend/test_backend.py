@@ -1325,8 +1325,8 @@ class BackendTests(unittest.TestCase):
         cards = load_game_data()["function_cards"]["cards"]
         with_story = [card for card in cards if card.get("story")]
         # 再補 22 張：三張德商卡、四張技術／油源新卡，以及原本沒有文案的
-        # 十五張列強友好卡 → 66；公費留學生、進口盤尼西林、德國飛艇偵查再 +3 → 69。
-        self.assertEqual(len(with_story), 66)
+        # 十五張列強友好卡 → 66；大港開炸再 +1 → 67。
+        self.assertEqual(len(with_story), 67)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -3852,6 +3852,88 @@ class RemainingEventCardTests(unittest.TestCase):
             advance_turn(engine, "F")
         self.assertEqual([e for e in engine.state["players"]["F"]["timed_effects"]
                           if e.get("kind") == "field_hospital_window"], [])
+
+
+class HarborDemolitionTests(unittest.TestCase):
+    """大港開炸：兩座敵方港口癱瘓兩回合，被炸的勢力各攤一份修復費。"""
+
+    @staticmethod
+    def _ports(engine, owner):
+        return [
+            city["id"] for city in engine.data["strategic_map"]["cities"]
+            if city.get("port") and engine.state["city_owners"].get(city["id"], city["faction"]) == owner
+        ]
+
+    def test_three_copies_in_every_starting_deck(self):
+        engine = GameEngine(seed=11)
+        for code in engine.state["players"]:
+            self.assertEqual(engine.state["players"][code]["function_deck"].count("harbor_demolition"), 3, code)
+
+    def test_two_ports_go_down_and_both_owners_pay(self):
+        engine = GameEngine(seed=11)
+        first = self._ports(engine, "F")[0]
+        second = self._ports(engine, "S")[0]
+        for code in ("F", "S"):
+            engine.state["players"][code]["treasury"] = 100
+            engine.state["players"][code]["factory_points"] = 100
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        result = engine.use_function("N", "harbor_demolition", target_city_ids=[first, second])
+        self.assertEqual(sorted(engine.disabled_ports()), sorted([first, second]))
+        self.assertEqual(len(result["port_demolition"]["ports"]), 2)
+        for code in ("F", "S"):
+            self.assertEqual(engine.state["players"][code]["treasury"], 90, code)
+            self.assertEqual(engine.state["players"][code]["factory_points"], 90, code)
+            self.assertEqual(engine.state["players"][code]["port_repair_due"], {"cash": 0, "factory": 0}, code)
+
+    def test_two_ports_of_one_faction_cost_two_repair_shares(self):
+        # 修復費按港口算，同一勢力被炸兩座就付雙倍。
+        engine = GameEngine(seed=11)
+        ports = self._ports(engine, "S")[:2]
+        engine.state["players"]["S"]["treasury"] = 100
+        engine.state["players"]["S"]["factory_points"] = 100
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        result = engine.use_function("N", "harbor_demolition", target_city_ids=ports)
+        self.assertEqual(engine.state["players"]["S"]["treasury"], 80)
+        self.assertEqual(engine.state["players"]["S"]["factory_points"], 80)
+        self.assertEqual([charge["city_id"] for charge in result["port_demolition"]["charges"]], ports)
+
+    def test_shortfall_is_collected_from_later_income(self):
+        engine = GameEngine(seed=11)
+        port = self._ports(engine, "S")[0]
+        engine.state["players"]["S"]["treasury"] = 4
+        engine.state["players"]["S"]["factory_points"] = 0
+        other = self._ports(engine, "F")[0]
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        engine.use_function("N", "harbor_demolition", target_city_ids=[port, other])
+        payload = engine.state["players"]["S"]
+        self.assertEqual(payload["treasury"], 0)
+        self.assertEqual(payload["port_repair_due"], {"cash": 6, "factory": 10})
+        for _ in range(3):
+            advance_turn(engine, active_player="S")
+            if payload["port_repair_due"] == {"cash": 0, "factory": 0}:
+                break
+        self.assertEqual(payload["port_repair_due"], {"cash": 0, "factory": 0})
+
+    def test_the_paralysis_expires_after_two_turns(self):
+        engine = GameEngine(seed=11)
+        targets = [self._ports(engine, "F")[0], self._ports(engine, "S")[0]]
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        engine.use_function("N", "harbor_demolition", target_city_ids=targets)
+        advance_turn(engine, active_player="N")
+        self.assertEqual(len(engine.disabled_ports()), 2)
+        advance_turn(engine, active_player="N")
+        self.assertEqual(engine.disabled_ports(), [])
+
+    def test_own_ports_and_repeats_are_rejected(self):
+        engine = GameEngine(seed=11)
+        mine = self._ports(engine, "N")[0]
+        theirs = self._ports(engine, "F")[0]
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        with self.assertRaises(ValueError):
+            engine.use_function("N", "harbor_demolition", target_city_ids=[mine, theirs])
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        with self.assertRaises(ValueError):
+            engine.use_function("N", "harbor_demolition", target_city_ids=[theirs, theirs])
 
 
 class EventCardCoverageTest(unittest.TestCase):
