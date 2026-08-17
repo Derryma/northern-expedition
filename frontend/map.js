@@ -142,6 +142,17 @@ function neighborCoordKeys(c, r) {
   ];
 }
 
+// 近海地格按實際海域命名，地格資訊會顯示成「水域 · 渤海」這樣。
+// 分界照一般的中國海域劃法：渤海海峽分渤海與黃海，長江口分黃海與東海，
+// 平潭—富貴角一線分東海與臺灣海峽，南澳島一線分臺灣海峽與南海。
+function coastalSeaName(lon, lat) {
+  if (lat >= 37.6 && lon <= 122.3) return '渤海';
+  if (lat >= 31.8) return '黃海';
+  if (lat >= 25.4) return '東海';
+  if (lat >= 23.6 && lon >= 116.5) return '臺灣海峽';
+  return '南海';
+}
+
 function coastalWaterAllowed(lon, lat) {
   const northernCoast = lon >= 116.1 && lon <= 123.4 && lat >= 36.0 && lat <= 42.8;
   const easternCoast = lon >= 118.0 && lat >= 27.5 && lat <= 36.6;
@@ -181,7 +192,7 @@ function markCoastalWaterCell(key) {
     lat,
     land: false,
     fac: null,
-    river: '近海',
+    river: coastalSeaName(lon, lat),
     coastalWater: true,
     coastalWaterDepth: 1,
   };
@@ -220,7 +231,7 @@ for (const cell of Object.values({ ...cells })) {
       lat,
       land: false,
       fac: null,
-      river: '近海',
+      river: coastalSeaName(lon, lat),
       coastalWater: true,
       coastalWaterDepth: 1,
     };

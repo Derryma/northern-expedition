@@ -253,8 +253,11 @@ const TRAIT_LABELS = {
   foreign_gunnery_advisor: "外籍砲術顧問",
 };
 
+// 何應欽的光環說明，兩個版本的技能說明共用同一句。
+const CHIANG_AURA_NOTE = "何應欽在同一場戰鬥中作為友軍出現時，他的部隊生命也 +10%（戰鬥結束即恢復）。";
+
 const TRAIT_DESCRIPTIONS = {
-  advantage_is_ours: "蔣介石的總司令威望。所部全體生命 +10%；何應欽在同一場戰鬥中作為友軍出現時，他的部隊生命也 +10%（戰鬥結束即恢復）。",
+  advantage_is_ours: `八十萬對六十萬，優勢在我。${CHIANG_AURA_NOTE}`,
   whampoa_spirit: "何應欽的黃埔部隊。步兵與機槍攻擊 +15%，代價是這兩種兵承傷 +5%。",
   precision_barrage: "白崇禧的砲兵指揮。彈著點算得極準，對各兵種都吃得開。",
   mountain_division: "擅長南方山地作戰。於廣東、廣西、雲南、貴州、四川、湖南境內任何地格作戰時，所部全體承傷 -10%。",
@@ -380,8 +383,30 @@ function traitModifiers(trait) {
   return bootstrap?.general_traits?.traits?.[trait]?.modifiers || [];
 }
 
-function traitDescription(trait) {
-  const base = TRAIT_DESCRIPTIONS[trait]
+// 蔣介石不再屬於國民革命軍時，〈優勢在我〉改個名字與說明，效果一字不動。
+const CHIANG_LOST_CAUSE_TRAIT = {
+  trait: "advantage_is_ours",
+  general: "chiang_kai_shek",
+  faction: "N",
+  label: "我不明白",
+  description: `我不明白，為什麼大家都在談論著項羽被困垓下，仿佛這中原古戰場對於我們注定了凶多吉少。${CHIANG_AURA_NOTE}`,
+};
+
+function chiangLostCause(trait, generalId) {
+  if (trait !== CHIANG_LOST_CAUSE_TRAIT.trait || generalId !== CHIANG_LOST_CAUSE_TRAIT.general) return false;
+  const owner = factionHoldingGeneral(CHIANG_LOST_CAUSE_TRAIT.general);
+  return Boolean(owner) && owner !== CHIANG_LOST_CAUSE_TRAIT.faction;
+}
+
+function traitLabel(trait, generalId = null) {
+  if (chiangLostCause(trait, generalId)) return CHIANG_LOST_CAUSE_TRAIT.label;
+  return TRAIT_LABELS[trait] || trait;
+}
+
+function traitDescription(trait, generalId = null) {
+  const base = chiangLostCause(trait, generalId)
+    ? CHIANG_LOST_CAUSE_TRAIT.description
+    : TRAIT_DESCRIPTIONS[trait]
     || bootstrap?.general_traits?.traits?.[trait]?.background
     || "此特質目前沒有補充說明。";
   // 光環與省份條件加成不列進「戰鬥效果」，因為說明文字已經寫清楚
@@ -418,9 +443,9 @@ function modifierDescription(modifier) {
   return `${unit}${target}${stat}`;
 }
 
-function traitChip(trait) {
-  const description = traitDescription(trait);
-  return `<span class="trait-chip" tabindex="0" data-tooltip="${description}">${TRAIT_LABELS[trait] || trait}</span>`;
+function traitChip(trait, generalId = null) {
+  const description = traitDescription(trait, generalId);
+  return `<span class="trait-chip" tabindex="0" data-tooltip="${description}">${traitLabel(trait, generalId)}</span>`;
 }
 
 const ENGINEERING_OPERATIONS = {
@@ -1608,10 +1633,15 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
   );
   const railways = (state.railway_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
+  const ports = (state.port_effects || []).filter((effect) =>
+    Number(effect.remaining_turns || 0) > 0
+    && (effect.initiator === currentPlayer || effect.owner === currentPlayer)
+  );
   const economyFlags = Boolean(payload?.loan_penalties?.length || payload?.soong_patronage
     || Number(payload?.loan_ban_until_turn || 0) > Number(state?.turn || 0)
     || payload?.loan_interest_override);
-  if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length && !economyFlags) return "";
+  if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length
+    && !ports.length && !economyFlags) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
       const label = effect.kind === "police_system"
@@ -1634,6 +1664,10 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
       return `<span>${effect.name || "紅軍起義"}(${role})：${names}，需駐 ${effect.required_battalions || 5} 營</span>`;
     }).join("")}
     ${railways.map((effect) => `<span>${effect.railway} 搶修中，剩餘 ${effect.remaining_turns} 回合</span>`).join("")}
+    ${ports.map((effect) => {
+      const role = effect.initiator === currentPlayer ? "發動" : "受害";
+      return `<span>${effect.name || "大港開炸"}(${role})：${effect.city_name}港務癱瘓，剩餘 ${effect.remaining_turns} 回合</span>`;
+    }).join("")}
     ${(payload?.loan_penalties || []).map((clause) => `<span>${clause.label || "貸款違約條款"}${
       clause.remaining_turns === null || clause.remaining_turns === undefined
         ? "（永久）" : `，剩餘 ${clause.remaining_turns} 回合`}</span>`).join("")}
@@ -2361,7 +2395,7 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
         <div class="tree-faction">${general.faction || "在野"}</div>
         <div class="tree-units">${unitsText}</div>
         ${hasArmy ? forceMeterMarkup(armyUnits(fieldArmy), { compact: true }) : hasCapturedUnits ? forceMeterMarkup(capturedUnits, { compact: true }) : ""}
-        <div class="tree-traits">${(general.traits || []).map(traitChip).join("")}</div>
+        <div class="tree-traits">${(general.traits || []).map((trait) => traitChip(trait, general.id)).join("")}</div>
       </div>
       ${general.loyalty !== null ? `
           <div class="tree-loyalty" data-tooltip="${loyalty.tooltip}">
@@ -2433,7 +2467,7 @@ function traitLoyaltyAdjustment(general) {
     const rule = RELATION_DISABLED_TRAITS[trait];
     if (rule?.loyalty_penalty && traitDisabledByRelations(trait, faction)) {
       amount -= rule.loyalty_penalty;
-      reasons.push(`〈${TRAIT_LABELS[trait] || trait}〉失效: -${rule.loyalty_penalty}`);
+      reasons.push(`〈${traitLabel(trait, general.id)}〉失效: -${rule.loyalty_penalty}`);
     }
   }
   return { amount, note: reasons.length ? `\n${reasons.join("\n")}` : "" };
@@ -3179,6 +3213,20 @@ function provinceOptionMarkup(provinces) {
   return provinces.map((province) => `<option value="${province}">${province}</option>`).join("");
 }
 
+// 大港開炸可以炸的目標：他方勢力控制、且還沒在搶修中的港口城市。
+function enemyPortCityOptions() {
+  const downed = paralysedPorts();
+  const options = [];
+  for (const cell of Object.values(cells)) {
+    const city = cell.city;
+    if (!city?.port || downed.has(String(city.id))) continue;
+    const owner = city.faction || cell.fac;
+    if (!owner || owner === currentPlayer || !FACTIONS[owner] || FACTIONS[owner].type !== "player") continue;
+    options.push({ id: city.id, name: city.name, owner, port: city.port });
+  }
+  return options.sort((a, b) => a.owner.localeCompare(b.owner) || a.name.localeCompare(b.name));
+}
+
 function functionCardTargetMarkup(card) {
   if (card.mechanic === "qing_gang_riot") {
     const entries = gangRiotTargets(card);
@@ -3258,6 +3306,19 @@ function functionCardTargetMarkup(card) {
       .join("");
     return Array.from({ length: wanted }, (unused, index) =>
       `<label class="card-target">第 ${index + 1} 座城市<select data-card-target-cities="${card.id}">${options(index)}</select></label>`
+    ).join("");
+  }
+  if (card.mechanic === "port_demolition") {
+    const cities = enemyPortCityOptions();
+    const wanted = Number(card.target_city_count || 2);
+    if (cities.length < wanted) {
+      return `<div class="card-target-note">可炸的敵方港口不足 ${wanted} 座（目前 ${cities.length} 座）</div>`;
+    }
+    const options = (selectedIndex) => cities
+      .map((city, index) => `<option value="${city.id}"${index === selectedIndex ? " selected" : ""}>${FACTIONS[city.owner]?.shortName || city.owner} · ${city.name}（${city.port === "sea" ? "海港" : "河港"}）</option>`)
+      .join("");
+    return Array.from({ length: wanted }, (unused, index) =>
+      `<label class="card-target">第 ${index + 1} 座港口<select data-card-target-cities="${card.id}">${options(index)}</select></label>`
     ).join("");
   }
   if (card.mechanic === "aerial_recon") {
@@ -4038,7 +4099,7 @@ function clearNavyResolved(navy) {
 }
 
 function navyCanReceiveOrder(navy) {
-  return Boolean(navy) && !navyIsResolvedThisTurn(navy);
+  return Boolean(navy) && !navyIsResolvedThisTurn(navy) && !navyLockedInPort(navy);
 }
 
 function navyAtCell(cellKey, owner = null) {
@@ -5009,6 +5070,7 @@ function renderTileInfo() {
   const tags = [];
   if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
   if (city?.port === "sea") tags.push('<span class="tile-tag tile-tag-port">海港</span>');
+  if (portParalysed(city)) tags.push('<span class="tile-tag tile-tag-port">港務搶修中</span>');
   if (concessionPowers.length) {
     tags.push(`<span class="tile-tag tile-tag-concession">租界</span>` + concessionPowers.map((key) => `
       <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
@@ -5134,7 +5196,7 @@ function renderArmyDetail() {
       ${city ? `<small>${city.name} · ${city.province}</small>` : `<small>野外駐軍</small>`}
     </div>
     <div class="trait-list">${traits.length
-      ? traits.map(traitChip).join("")
+      ? traits.map((trait) => traitChip(trait, army.generalId)).join("")
       : '<span>無已知特質</span>'}</div>
     ${showComposition ? `
       <div class="army-composition">
@@ -5264,6 +5326,38 @@ function navyHealthMarkup(navy) {
   return `<div class="navy-health-list">${gunMarkup}${cargoMarkup || '<small>無運輸船</small>'}</div>`;
 }
 
+// 大港開炸炸掉的港口：停靠、通行、修理、登陸、載運、編補全部停擺，直到搶修完成。
+function paralysedPorts() {
+  return new Set((state?.port_effects || [])
+    .filter((effect) => Number(effect.remaining_turns || 0) > 0)
+    .map((effect) => String(effect.city_id)));
+}
+
+function portParalysed(city) {
+  return Boolean(city?.id) && paralysedPorts().has(String(city.id));
+}
+
+// 港務搶修期間，停在港內的艦隊不會受損也不會被趕走，但整支被鎖住，什麼都不能做。
+function navyLockedInPort(navy) {
+  const city = cells[navy?.cellKey]?.city;
+  if (!portParalysed(city)) return null;
+  return (state?.port_effects || []).find((effect) =>
+    String(effect.city_id) === String(city.id) && Number(effect.remaining_turns || 0) > 0) || null;
+}
+
+function navyLockedNote(navy) {
+  const effect = navyLockedInPort(navy);
+  if (!effect) return "";
+  return `${navy.name}被封在${effect.city_name}港內，搶修還有 ${effect.remaining_turns} 回合，期間不能有任何動作。`;
+}
+
+function portParalysedNote(city) {
+  const effect = (state?.port_effects || [])
+    .find((item) => String(item.city_id) === String(city?.id) && Number(item.remaining_turns || 0) > 0);
+  if (!effect) return "";
+  return `${city.name}港務遭破壞，搶修中，還有 ${effect.remaining_turns} 回合；期間不能停靠、通行、修理、登陸、載運與編補。`;
+}
+
 // 只有 3 級以上的港口（河港、海港皆同）才有船塢與軍需倉庫：修得了船、補得了艦。
 // 2 級小港只能讓艦隊停靠與登陸卸兵。
 const NAVY_SERVICE_PORT_LEVEL = 3;
@@ -5290,6 +5384,9 @@ function carriedArmy(navy) {
 function navyReserveButtonsMarkup(navy, city, faction) {
   if (!city?.port || !cityControlledBy(city, faction)) {
     return `<div class="active-operation">海軍預備隊只能在己方港口編入艦隊。</div>`;
+  }
+  if (portParalysed(city)) {
+    return `<div class="active-operation">${portParalysedNote(city)}</div>`;
   }
   if (!isServicePort(city)) {
     return `<div class="active-operation">${portServiceNote(city)}</div>`;
@@ -5326,6 +5423,7 @@ function renderNavyDetail(root, navy) {
   const cell = cells[navy.cellKey];
   const city = cell?.city || null;
   const carried = carriedArmy(navy);
+  const lockedInPort = navyLockedInPort(navy);
   const canOrder = isOwnNavy && navyCanReceiveOrder(navy);
   const moveCost = navyMoveFactoryCost(navy);
   const inContact = navyInContact(navy);
@@ -5345,10 +5443,11 @@ function renderNavyDetail(root, navy) {
       <span>運載 <b>${carried ? armyCombatLabel(carried) : `${navyCapacity(navy, navyRules())} 戰力容量`}</b></span>
     </div>
     ${navyHealthMarkup(navy)}
+    ${lockedInPort ? `<div class="active-operation">${navyLockedNote(navy)}</div>` : ""}
     ${inContact ? `<div class="active-operation">交戰中：${navyContactEstimate(navy)}</div>` : ""}
     ${isOwnNavy ? `
       <div class="army-operations navy-operations">
-        ${!canOrder ? `<button disabled>${navyIsResolvedThisTurn(navy) ? "本回合已行動" : "不可行動"}</button>${inContact ? `<button data-navy-operation="retreat">撤退</button>` : ""}` : `
+        ${!canOrder ? `<button disabled>${lockedInPort ? "封港中" : navyIsResolvedThisTurn(navy) ? "本回合已行動" : "不可行動"}</button>${inContact && !lockedInPort ? `<button data-navy-operation="retreat">撤退</button>` : ""}` : `
           <button class="${navyMoveMode ? "active" : ""}" data-navy-operation="move" title="沿可航行水道最多 ${navyRules().move?.tiles_per_turn || 2} 格；${navyMoveCostText(navy)}">移動（${moveCost ? `工${moveCost}` : "工0"}）</button>
           <button data-navy-operation="hold">待命</button>
           ${canRepair ? `<button data-navy-operation="repair">修理</button>` : ""}
@@ -5366,6 +5465,10 @@ function renderNavyDetail(root, navy) {
 }
 
 async function handleNavyOperation(navy, operation, embarkArmyId, target, reinforceUnitType = null) {
+  if (navyLockedInPort(navy)) {
+    showNotice(navyLockedNote(navy));
+    return;
+  }
   if (reinforceUnitType) {
     await reinforceNavyFromReserve(navy, reinforceUnitType, target);
     return;
@@ -5401,6 +5504,10 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
     const army = armyById(embarkArmyId);
     if (!army || army.cellKey !== navy.cellKey) {
       showNotice("可搭載陸軍不在本艦隊所在港口。");
+      return;
+    }
+    if (portParalysed(cells[navy.cellKey]?.city)) {
+      showNotice(portParalysedNote(cells[navy.cellKey].city));
       return;
     }
     if (forcePoints(armyUnits(army)) > navyCapacity(navy, navyRules())) {
@@ -5447,6 +5554,10 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
       showNotice("艦艇只能在港口修理。");
       return;
     }
+    if (portParalysed(cell.city)) {
+      showNotice(portParalysedNote(cell.city));
+      return;
+    }
     if (!isServicePort(cell.city)) {
       showNotice(portServiceNote(cell.city));
       return;
@@ -5490,6 +5601,10 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
       showNotice("登陸必須在港口，且艦隊需要載有陸軍。");
       return;
     }
+    if (portParalysed(cell.city)) {
+      showNotice(portParalysedNote(cell.city));
+      return;
+    }
     beginNavyOrder(navy, "disembark");
     delete army.embarkedOn;
     moveArmyToCell(army, cell);
@@ -5513,6 +5628,10 @@ async function reinforceNavyFromReserve(navy, unitType, target) {
   }
   if (!city?.port || !cityControlledBy(city, faction)) {
     showNotice("海軍預備隊只能在己方港口編入艦隊。");
+    return;
+  }
+  if (portParalysed(city)) {
+    showNotice(portParalysedNote(city));
     return;
   }
   if (!isServicePort(city)) {
@@ -5562,7 +5681,8 @@ function pendingArmies() {
 }
 
 function pendingNavies() {
-  return currentNavies().filter((navy) => !navyIsResolvedThisTurn(navy));
+  // 鎖在港裡的艦隊不算待命：它本回合本來就動不了，不該卡住結束回合。
+  return currentNavies().filter((navy) => !navyIsResolvedThisTurn(navy) && !navyLockedInPort(navy));
 }
 
 function joinBattle(army, battle) {
@@ -7541,9 +7661,19 @@ async function handleNavyDestination(destination) {
     showNotice(`目前與${FACTIONS[destinationOwner]?.shortName || destinationOwner}和平，艦隊不能駛入其港口。`);
     return;
   }
+  if (portParalysed(destination.city)) {
+    showNotice(portParalysedNote(destination.city));
+    return;
+  }
   const path = navyPath(source, destination, cellNeighbors, navyRules());
   if (!path) {
     showNotice(`艦隊一回合最多沿可航行水道移動 ${navyRules().move?.tiles_per_turn || 2} 格。`);
+    return;
+  }
+  // 炸壞的港口連通行都不行，航線經過也算，得繞開。
+  const blockedPort = path.find((cell) => cell.key !== source.key && portParalysed(cell.city));
+  if (blockedPort) {
+    showNotice(portParalysedNote(blockedPort.city));
     return;
   }
   const ownNavy = navyAtCell(destination.key, currentPlayer);
@@ -8111,6 +8241,15 @@ window.__neDebug = {
   sinkCarriedArmyWithNavy,
   enforceNavyCargoCapacity,
   carriedArmy,
+  paralysedPorts,
+  portParalysed,
+  navyLockedInPort,
+  navyLockedNote,
+  navyCanReceiveOrder,
+  pendingNavies,
+  traitLabel,
+  traitDescription,
+  enemyPortCityOptions,
   navyById,
   allNavies,
   navyRules,
