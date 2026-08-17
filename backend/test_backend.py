@@ -835,21 +835,23 @@ class BackendTests(unittest.TestCase):
         self.assertFalse([e for e in engine.state["city_output_effects"] if e.get("kind") == "red_army_uprising"])
         self.assertEqual(engine.state["players"]["S"]["income"], before_cash)
 
-    def test_wang_jingwei_return_unlocks_the_united_front_and_cheapens_infantry(self):
+    def test_wang_jingwei_return_unlocks_the_united_front_and_cheapens_infantry_and_guns(self):
         engine = GameEngine(seed=11)
         player = engine.state["players"]["N"]
         self.assertEqual(player["function_deck"].count("wang_jingwei_return"), 1)
         self.assertEqual(player["function_deck"].count("first_united_front"), 0)
 
-        cash_before, _ = engine._unit_cost_for("N", "infantry")
+        infantry_before, _ = engine._unit_cost_for("N", "infantry")
+        machine_gun_before, _ = engine._unit_cost_for("N", "machine_gun")
         factory_before = player["factory_income"]
         player["hand"].append("wang_jingwei_return")
         engine.use_function("N", "wang_jingwei_return")
 
         self.assertIn("wang_jingwei_return", player["unlocks"])
         self.assertEqual(player["function_deck"].count("first_united_front"), 1)
-        self.assertEqual(engine._unit_cost_for("N", "infantry")[0], cash_before - 1)
-        self.assertEqual(player["factory_income"], factory_before + 1)
+        self.assertEqual(engine._unit_cost_for("N", "infantry")[0], infantry_before - 2)
+        self.assertEqual(engine._unit_cost_for("N", "machine_gun")[0], machine_gun_before - 2)
+        self.assertEqual(player["factory_income"], factory_before + 2)
 
     def test_wang_jingwei_return_is_nationalist_only_and_single_use(self):
         engine = GameEngine(seed=11)
@@ -1228,7 +1230,7 @@ class BackendTests(unittest.TestCase):
         while engine.state["turn"] % 3 or not engine.state["turn"]:
             advance_turn(engine, "S")
         paid = [item for item in player["last_debt_service"]["cash_effects"] if item["name"] == "上海宋家支持"]
-        self.assertEqual(paid, [{"name": "上海宋家支持", "amount": 5, "factory": 3, "cities": ["上海"]}])
+        self.assertEqual(paid, [{"name": "上海宋家支持", "amount": 10, "factory": 5, "cities": ["上海"]}])
 
         rival = engine.state["players"]["W"]
         rival["hand"].append("du_yuesheng_gamble")
@@ -3969,13 +3971,14 @@ class CabinetCardTests(unittest.TestCase):
         payload["hand"].append("wang_jingwei_return")
         engine.use_function("N", "wang_jingwei_return")
         self.assertIn("wang_jingwei_return", payload["unlocks"])
-        self.assertEqual(payload["permanent_output_bonus"]["factory"], 1)
+        self.assertEqual(payload["permanent_output_bonus"]["factory"], 2)
         payload["foreign_relations"]["su"] = 5
         advance_turn(engine, "N")
         self.assertIsNone(engine.cabinet_holder("wang_jingwei_return"))
         self.assertNotIn("wang_jingwei_return", payload["unlocks"])
         self.assertEqual(payload["permanent_output_bonus"]["factory"], 0)
         self.assertEqual(payload["recruit_cost_adjustment"]["infantry"]["cash"], 0)
+        self.assertEqual(payload["recruit_cost_adjustment"]["machine_gun"]["cash"], 0)
         self.assertEqual(self._zones(engine, "first_united_front", "N"), 0)
 
     def test_soong_lapses_when_shanghai_is_lost(self):
