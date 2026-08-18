@@ -3003,6 +3003,19 @@ button, select, input, textarea {
   grid-template-columns: 46px 1fr;
 }
 
+/* 人名與功能卡名同一行：卡名靠最右，字級與原本的副標一致。 */
+.cabinet-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cabinet-card-name {
+  flex: none;
+  text-align: right;
+}
+
 .cabinet-portrait,
 .cabinet-profile .portrait-placeholder {
   width: 46px;
