@@ -7921,7 +7921,13 @@ function renderCabinetDetail() {
   root.innerHTML = `
     <div class="army-profile cabinet-profile">
       ${cabinetPortraitMarkup(entry)}
-      <div><b>${entry.person}</b><span>${entry.card_name}</span></div>
+      <div class="cabinet-identity">
+        <div class="cabinet-name-row">
+          <b>${entry.person}</b>
+          <span class="cabinet-card-name">${entry.card_name}</span>
+        </div>
+        <span>${entry.skill || ""}</span>
+      </div>
     </div>
     <div class="cabinet-text">
       <b>效果說明</b>

@@ -418,6 +418,7 @@
       "requires_relation_min": 6,
       "cabinet": {
         "person": "汪精衛",
+        "skill": "工農動員",
         "portrait": "汪精衛",
         "lapse": {
           "relation": {
@@ -1140,6 +1141,7 @@
       "story": "張作霖說服王永江重新出山，重組東北軍財政體系並加碼投資重工業。",
       "cabinet": {
         "person": "王永江",
+        "skill": "工業經濟",
         "portrait": "王永江",
         "lapse": {
           "marshal_lost": true
@@ -1254,6 +1256,7 @@
       "story": "上海宋家決定押注你方勢力，宋美齡在大世界的秘密包廂會晤杜月笙與黃金榮，宋子文也入閣助你籌組財政部。在這風雲際會的上海灘，沒有什麼是不可能的。",
       "cabinet": {
         "person": "宋子文",
+        "skill": "財政部長",
         "portrait": "宋子文",
         "lapse": {
           "lose_city": "shanghai",
@@ -1282,6 +1285,7 @@
       "story": "孔祥熙入閣主政，組建中央銀行並穩定金融體系。",
       "cabinet": {
         "person": "孔祥熙",
+        "skill": "中央銀行",
         "portrait": "孔祥熙",
         "lapse": {
           "relation": {
@@ -1609,6 +1613,7 @@
       "story": "法租界弄堂裡的二樓，窗簾整天拉著。他白天是報館編輯，晚上抄名單、對暗號、排交通，每條線只有他一個人接得起來。有人勸他離開上海太險，他說城裡二十萬工人，我走了誰跟他們說話。",
       "cabinet": {
         "person": "周恩來",
+        "skill": "中共中央軍委",
         "portrait": "周恩來",
         "lapse": {
           "relation": {

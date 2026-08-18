@@ -4218,6 +4218,7 @@ class GameEngine:
             "card_name": card.get("name", card["id"]),
             "owner": player,
             "person": spec.get("person", card.get("name", card["id"])),
+            "skill": spec.get("skill", ""),
             "portrait": spec.get("portrait") or spec.get("person"),
             "effect": card.get("effect", ""),
             "lapse_text": spec.get("lapse_text", ""),
