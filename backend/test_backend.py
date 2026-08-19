@@ -438,7 +438,8 @@ class BackendTests(unittest.TestCase):
 
     def test_foreign_perk_is_blocked_if_relation_falls(self):
         engine = GameEngine(seed=4)
-        engine.state["players"]["N"]["foreign_relations"]["su"] = 7
+        # 列強友好卡的門檻統一改成 6，所以這裡要壓到 6 以下才擋得住。
+        engine.state["players"]["N"]["foreign_relations"]["su"] = 5
         engine.state["players"]["N"]["hand"] = ["su_rifle_shipment"]
 
         # 訊息改成中文並帶出實際關係值，因為這條錯誤現在也會出現在一般卡片上。
@@ -730,6 +731,18 @@ class BackendTests(unittest.TestCase):
         engine = GameEngine(seed=4)
         self.assertNotIn("dalian", {city["id"] for city in engine.data["strategic_map"]["cities"]})
 
+    def test_qingdao_is_a_sea_harbor(self):
+        engine = GameEngine(seed=4)
+        qingdao = next(city for city in engine.data["strategic_map"]["cities"] if city["id"] == "qingdao")
+        self.assertEqual(qingdao["port"], "sea")
+
+    def test_captured_city_keeps_its_scenario_faction_for_map_placement(self):
+        engine = GameEngine(seed=4)
+        engine.state["city_owners"]["tianjin"] = "S"
+        tianjin = next(city for city in engine.bootstrap()["strategic_map"]["cities"] if city["id"] == "tianjin")
+        self.assertEqual(tianjin["scenario_faction"], "F")
+        self.assertEqual(tianjin["faction"], "S")
+
     def test_inactive_faction_must_choose_its_own_discard(self):
         engine = GameEngine(seed=13)
         engine.state["players"]["W"]["hand"] = ["unit_promotion"]
@@ -822,21 +835,23 @@ class BackendTests(unittest.TestCase):
         self.assertFalse([e for e in engine.state["city_output_effects"] if e.get("kind") == "red_army_uprising"])
         self.assertEqual(engine.state["players"]["S"]["income"], before_cash)
 
-    def test_wang_jingwei_return_unlocks_the_united_front_and_cheapens_infantry(self):
+    def test_wang_jingwei_return_unlocks_the_united_front_and_cheapens_infantry_and_guns(self):
         engine = GameEngine(seed=11)
         player = engine.state["players"]["N"]
         self.assertEqual(player["function_deck"].count("wang_jingwei_return"), 1)
         self.assertEqual(player["function_deck"].count("first_united_front"), 0)
 
-        cash_before, _ = engine._unit_cost_for("N", "infantry")
+        infantry_before, _ = engine._unit_cost_for("N", "infantry")
+        machine_gun_before, _ = engine._unit_cost_for("N", "machine_gun")
         factory_before = player["factory_income"]
         player["hand"].append("wang_jingwei_return")
         engine.use_function("N", "wang_jingwei_return")
 
         self.assertIn("wang_jingwei_return", player["unlocks"])
         self.assertEqual(player["function_deck"].count("first_united_front"), 1)
-        self.assertEqual(engine._unit_cost_for("N", "infantry")[0], cash_before - 1)
-        self.assertEqual(player["factory_income"], factory_before + 1)
+        self.assertEqual(engine._unit_cost_for("N", "infantry")[0], infantry_before - 2)
+        self.assertEqual(engine._unit_cost_for("N", "machine_gun")[0], machine_gun_before - 2)
+        self.assertEqual(player["factory_income"], factory_before + 2)
 
     def test_wang_jingwei_return_is_nationalist_only_and_single_use(self):
         engine = GameEngine(seed=11)
@@ -1215,7 +1230,7 @@ class BackendTests(unittest.TestCase):
         while engine.state["turn"] % 3 or not engine.state["turn"]:
             advance_turn(engine, "S")
         paid = [item for item in player["last_debt_service"]["cash_effects"] if item["name"] == "上海宋家支持"]
-        self.assertEqual(paid, [{"name": "上海宋家支持", "amount": 5, "factory": 3, "cities": ["上海"]}])
+        self.assertEqual(paid, [{"name": "上海宋家支持", "amount": 10, "factory": 5, "cities": ["上海"]}])
 
         rival = engine.state["players"]["W"]
         rival["hand"].append("du_yuesheng_gamble")
@@ -1314,8 +1329,8 @@ class BackendTests(unittest.TestCase):
         with_story = [card for card in cards if card.get("story")]
         # 再補 22 張：三張德商卡、四張技術／油源新卡，以及原本沒有文案的
         # 十五張列強友好卡 → 66；公費留學生、進口盤尼西林、德國飛艇偵查再 +3 → 69。
-        # 再 +1：票號金融網。
-        self.assertEqual(len(with_story), 67)
+        # 再 +1：票號金融網 → 70。
+        self.assertEqual(len(with_story), 70)
         for card in with_story:
             self.assertTrue(card["story"].strip(), card["id"])
 
@@ -1323,7 +1338,9 @@ class BackendTests(unittest.TestCase):
         """這五張的敘事原本混在效果文字裡，現在只應該出現在 story。"""
         index = load_game_data()["indexes"]["function_cards"]
         moved = {
-            "wang_jingwei_return": "汪精衛返華",
+            # 汪精衛復出的故事後來擴寫過，這裡改抓新稿裡的字眼，測的還是同一件事：
+            # 敘事只能出現在 story，不能混進 effect。
+            "wang_jingwei_return": "黃浦江",
             "soong_patronage": "宋家",
             "kong_xiangxi_office": "孔祥熙",
         }
@@ -1791,13 +1808,15 @@ class EventCardTests(unittest.TestCase):
         engine.state["event_pool"] = ["amsterdam_olympics"]
         engine.next_turn(active_player="F")
         view = engine.pending_event_view()
-        self.assertEqual(view["drawer"], "F")
-        self.assertEqual(view["waiting_for"], "F")
-        with self.assertRaisesRegex(ValueError, "現在輪到 F"):
-            engine.respond_event("N")
-        engine.respond_event("F")
+        # 抽到哪一家由引擎的亂數決定，測的是「只有抽到的那家點得動」。
+        drawer = view["drawer"]
+        self.assertEqual(view["waiting_for"], drawer)
+        other = next(code for code in engine.state["players"] if code != drawer)
+        with self.assertRaisesRegex(ValueError, f"現在輪到 {drawer}"):
+            engine.respond_event(other)
+        engine.respond_event(drawer)
         self.assertIsNone(engine.state["pending_events"])
-        self.assertEqual(engine.state["event_history"][-1]["responses"], {"F": "acknowledged"})
+        self.assertEqual(engine.state["event_history"][-1]["responses"], {drawer: "acknowledged"})
 
     def test_relaxed_mode_still_available_behind_the_flag(self):
         """把旗標關掉就回到寬鬆模式：單純事件任何一家點閱都算數。"""
@@ -1818,7 +1837,7 @@ class EventCardTests(unittest.TestCase):
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["sound_film"]
         engine.next_turn(active_player="F")
-        engine.respond_event("F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
         for code in engine.state["players"]:
             self.assertIn("event_sound_film", engine.state["players"][code]["unlocks"])
         self.assertIsNone(engine.state["pending_events"])
@@ -1833,7 +1852,7 @@ class EventCardTests(unittest.TestCase):
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["showa_financial_panic"]
         engine.next_turn(active_player="F")
-        engine.respond_event("F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
         self.assertEqual(payload["function_deck"].count("jp_yokohama_specie_loan"), 0)
         with self.assertRaisesRegex(ValueError, "橫濱正金"):
             engine.take_loan("F", "yokohama_specie", 10)
@@ -1844,7 +1863,7 @@ class EventCardTests(unittest.TestCase):
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["bird_in_space_case"]
         engine.next_turn(active_player="F")
-        engine.respond_event("F")
+        engine.respond_event(engine.pending_event_view()["waiting_for"])
         card = engine._card_template("artifact_smuggling")
         self.assertEqual((card["payout_min"], card["payout_max"], card["shame_copies_per_use"]), (30, 60, 4))
 
@@ -2408,6 +2427,11 @@ class CardBatchTests(unittest.TestCase):
 
     def test_government_scholars_pays_off_five_turns_later(self):
         engine = GameEngine(seed=5)
+        # 這條要連推五回合，正好會撞上第三回合的事件卡。抽到什麼是亂數決定的，
+        # 而牌庫組成一變（多一張功能卡就夠了）抽到的那張就跟著換人——
+        # 曾經抽到〈全國經濟會議與裁兵之議〉，它的裁兵給工廠 +4，
+        # 這條測的工廠 +2 就被蓋掉了。清空事件卡池，讓它只測自己那件事。
+        engine.state["event_pool"] = []
         payload = engine.state["players"]["F"]
         payload["treasury"] = 100
         payload.setdefault("unlocks", []).append("event_government_scholars")
@@ -3254,13 +3278,14 @@ class NewEventCardTests(unittest.TestCase):
 
     def test_disarmament_disbands_two_infantry_and_one_cavalry(self):
         engine = GameEngine(seed=3)
-        payload = engine.state["players"]["F"]
-        payload["unit_reserves"]["infantry"] = 9
-        payload["unit_reserves"]["cavalry"] = 4
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["national_economic_conference"]
         engine.next_turn(active_player="F")
         view = engine.pending_event_view()
+        # 這張卡指定誰由引擎抽，預備隊就設在被指到的那家身上。
+        payload = engine.state["players"][view["waiting_for"]]
+        payload["unit_reserves"]["infantry"] = 9
+        payload["unit_reserves"]["cavalry"] = 4
         self.assertEqual(view["card"]["resolution"]["type"], "choice")
         engine.respond_event(view["waiting_for"], choice="disarm")
         self.assertEqual(payload["unit_reserves"]["infantry"], 7)
@@ -3270,12 +3295,12 @@ class NewEventCardTests(unittest.TestCase):
     def test_disarmament_falls_back_to_keeping_the_army_when_short(self):
         """預備隊湊不出步兵 2＋騎兵 1 時，自動改為不裁並吃下懲罰。"""
         engine = GameEngine(seed=3)
-        payload = engine.state["players"]["F"]
-        payload["unit_reserves"]["infantry"] = 1     # 不夠
-        payload["unit_reserves"]["cavalry"] = 4
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["national_economic_conference"]
         engine.next_turn(active_player="F")
+        payload = engine.state["players"][engine.pending_event_view()["waiting_for"]]
+        payload["unit_reserves"]["infantry"] = 1     # 不夠
+        payload["unit_reserves"]["cavalry"] = 4
         result = engine.respond_event(engine.pending_event_view()["waiting_for"], choice="disarm")
         skipped = [e for e in (result.get("applied") or [])
                    if e.get("kind") == "reserve_delta_skipped"]
@@ -3292,10 +3317,11 @@ class NewEventCardTests(unittest.TestCase):
         engine.state["turn"] = 2
         engine.state["event_pool"] = ["national_economic_conference"]
         engine.next_turn(active_player="F")
-        engine.respond_event(engine.pending_event_view()["waiting_for"], choice="keep_army")
-        payload = engine.state["players"]["F"]
+        punished = engine.pending_event_view()["waiting_for"]
+        engine.respond_event(punished, choice="keep_army")
+        payload = engine.state["players"][punished]
         payload["hand"].append("function_軍閥公債")
-        engine.use_function("F", "function_軍閥公債")
+        engine.use_function(punished, "function_軍閥公債")
         bond = [loan for loan in payload["loans"] if loan["principal"] == 25][-1]
         self.assertEqual(bond["interest_per_turn"], 0.12)
 
@@ -3606,7 +3632,9 @@ class ScheduledEventPathTests(unittest.TestCase):
         engine.state["turn"] = 2
         engine.state["event_pool"] = [card_id]
         engine.next_turn(active_player="F")
-        result = engine.respond_event(engine.pending_event_view()["waiting_for"], choice=choice)
+        # 被指定的那家記下來，測試才知道效果該落在誰身上。
+        self.responder = engine.pending_event_view()["waiting_for"]
+        result = engine.respond_event(self.responder, choice=choice)
         engine.state["event_pool"] = []      # 清空，免得後面幾回合又抽到別的卡干擾
         return result
 
@@ -3653,17 +3681,17 @@ class ScheduledEventPathTests(unittest.TestCase):
     def test_disarmament_bonus_expires_after_three_turns(self):
         """11.3 裁兵：三回合紅利到期後，加成要真的收回去。"""
         engine = GameEngine(seed=3)
-        payload = engine.state["players"]["F"]
-        payload["unit_reserves"]["infantry"] = 9
-        payload["unit_reserves"]["cavalry"] = 4
+        for payload in engine.state["players"].values():
+            payload["unit_reserves"]["infantry"] = 9
+            payload["unit_reserves"]["cavalry"] = 4
         base = engine._delayed_output_bonus("F")
         self._fire(engine, "national_economic_conference", choice="disarm")
-        during = engine._delayed_output_bonus("F")
+        during = engine._delayed_output_bonus(self.responder)
         self.assertEqual(during["cash"] - base["cash"], 8)
         self.assertEqual(during["factory"] - base["factory"], 4)
         for _ in range(3):
             advance_turn(engine, "F")
-        after = engine._delayed_output_bonus("F")
+        after = engine._delayed_output_bonus(self.responder)
         self.assertEqual(after["cash"], base["cash"])
         self.assertEqual(after["factory"], base["factory"])
 
@@ -3911,6 +3939,260 @@ class RemainingEventCardTests(unittest.TestCase):
             advance_turn(engine, "F")
         self.assertEqual([e for e in engine.state["players"]["F"]["timed_effects"]
                           if e.get("kind") == "field_hospital_window"], [])
+
+
+class SovietGatedNationalistCardsTests(unittest.TestCase):
+    """汪精衛復出與國共合作：對蘇關係 6 以上才進得了國民革命軍的牌庫。"""
+
+    @staticmethod
+    def _zones(engine, card_id, player="N"):
+        payload = engine.state["players"][player]
+        return (payload["function_deck"] + payload["hand"] + payload["discard"]).count(card_id)
+
+    def test_wang_jingwei_is_in_the_deck_while_moscow_is_close(self):
+        engine = GameEngine(seed=3)
+        # 國民革命軍開局對蘇 9，門檻是 6。
+        self.assertGreaterEqual(engine.state["players"]["N"]["foreign_relations"]["su"], 6)
+        self.assertEqual(self._zones(engine, "wang_jingwei_return"), 1)
+
+    def test_relations_below_six_pull_it_out_and_recovery_puts_it_back(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["N"]["foreign_relations"]["su"] = 5
+        engine._sync_conditional_deck_cards("N")
+        self.assertEqual(self._zones(engine, "wang_jingwei_return"), 0)
+        engine.state["players"]["N"]["foreign_relations"]["su"] = 6
+        engine._sync_conditional_deck_cards("N")
+        self.assertEqual(self._zones(engine, "wang_jingwei_return"), 1)
+
+    def test_the_united_front_follows_the_same_gate_after_it_is_unlocked(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["N"]
+        payload["foreign_relations"]["su"] = 8
+        payload["hand"].append("wang_jingwei_return")
+        engine.use_function("N", "wang_jingwei_return")
+        self.assertEqual(self._zones(engine, "first_united_front"), 1)
+        # 關係跌破門檻：還沒抽到的那張收回。
+        payload["foreign_relations"]["su"] = 4
+        engine._sync_conditional_deck_cards("N")
+        self.assertEqual(self._zones(engine, "first_united_front"), 0)
+        # 關係回升：解鎖仍在，牌洗回去。
+        payload["foreign_relations"]["su"] = 7
+        engine._sync_conditional_deck_cards("N")
+        self.assertEqual(self._zones(engine, "first_united_front"), 1)
+
+    def test_both_cards_stay_exclusive_to_the_nationalists(self):
+        index = load_game_data()["indexes"]["function_cards"]
+        for card_id in ("wang_jingwei_return", "first_united_front"):
+            self.assertEqual(index[card_id]["allowed_players"], ["N"], card_id)
+            self.assertEqual(index[card_id]["foreign_power_key"], "su", card_id)
+            self.assertEqual(index[card_id]["requires_relation_min"], 6, card_id)
+        engine = GameEngine(seed=3)
+        for code in ("F", "W", "S"):
+            self.assertEqual(self._zones(engine, "wang_jingwei_return", code), 0, code)
+            self.assertEqual(self._zones(engine, "first_united_front", code), 0, code)
+
+
+class CabinetCardTests(unittest.TestCase):
+    """政府內閣：五張單一玩家卡的獨佔、失效與人物去留。"""
+
+    CARDS = ("soong_patronage", "kong_xiangxi_office", "wang_jingwei_return",
+             "wang_yongjiang_financial_reform", "zhou_enlai_underground")
+
+    @staticmethod
+    def _zones(engine, card_id, player):
+        payload = engine.state["players"][player]
+        return (payload["function_deck"] + payload["hand"] + payload["discard"]).count(card_id)
+
+    def test_every_cabinet_card_declares_a_person_and_a_lapse_rule(self):
+        index = load_game_data()["indexes"]["function_cards"]
+        for card_id in self.CARDS:
+            spec = index[card_id].get("cabinet")
+            self.assertIsNotNone(spec, card_id)
+            self.assertTrue(spec.get("person"), card_id)
+            self.assertTrue(spec.get("lapse_text"), card_id)
+            self.assertTrue(spec.get("lapse"), card_id)
+
+    def test_playing_one_locks_every_other_player_out(self):
+        engine = GameEngine(seed=5)
+        # 孔祥熙沒有陣營限制，兩家都先拿到江浙財團的解鎖。
+        for code in ("F", "W"):
+            payload = engine.state["players"][code]
+            payload["unlocks"].append("jiangzhe_financiers")
+            payload["foreign_relations"]["su"] = 2
+        engine.state["players"]["F"]["hand"].append("kong_xiangxi_office")
+        engine.use_function("F", "kong_xiangxi_office")
+        self.assertEqual(engine.cabinet_holder("kong_xiangxi_office"), "F")
+        # 別家的卡池被清空，手上那張也打不出來。
+        for code in ("W", "S", "N"):
+            self.assertEqual(self._zones(engine, "kong_xiangxi_office", code), 0, code)
+        engine.state["players"]["W"]["hand"].append("kong_xiangxi_office")
+        with self.assertRaisesRegex(ValueError, "只能有一位持有者"):
+            engine.use_function("W", "kong_xiangxi_office")
+
+    def test_a_fallen_marshal_sends_the_person_home(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["F"]
+        payload["hand"].append("wang_yongjiang_financial_reform")
+        engine.use_function("F", "wang_yongjiang_financial_reform")
+        bonus = dict(payload["permanent_output_bonus"])
+        self.assertEqual((bonus["cash"], bonus["factory"]), (5, 2))
+        advance_turn(engine, "F", fallen_marshals=["F"])
+        self.assertIsNone(engine.cabinet_holder("wang_yongjiang_financial_reform"))
+        self.assertEqual(payload["permanent_output_bonus"], {"cash": 0, "factory": 0})
+
+    def test_wang_jingwei_lapses_when_moscow_cools_and_takes_his_bonuses(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["N"]
+        payload["foreign_relations"]["su"] = 8
+        payload["hand"].append("wang_jingwei_return")
+        engine.use_function("N", "wang_jingwei_return")
+        self.assertIn("wang_jingwei_return", payload["unlocks"])
+        self.assertEqual(payload["permanent_output_bonus"]["factory"], 2)
+        payload["foreign_relations"]["su"] = 5
+        advance_turn(engine, "N")
+        self.assertIsNone(engine.cabinet_holder("wang_jingwei_return"))
+        self.assertNotIn("wang_jingwei_return", payload["unlocks"])
+        self.assertEqual(payload["permanent_output_bonus"]["factory"], 0)
+        self.assertEqual(payload["recruit_cost_adjustment"]["infantry"]["cash"], 0)
+        self.assertEqual(payload["recruit_cost_adjustment"]["machine_gun"]["cash"], 0)
+        self.assertEqual(self._zones(engine, "first_united_front", "N"), 0)
+
+    def test_soong_lapses_when_shanghai_is_lost(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["S"]
+        payload["foreign_relations"]["su"] = 2
+        payload["unlocks"].append("jiangzhe_financiers")
+        engine.state["city_owners"]["shanghai"] = "S"
+        payload["hand"].append("soong_patronage")
+        engine.use_function("S", "soong_patronage")
+        self.assertIsNotNone(payload.get("soong_patronage"))
+        engine.state["city_owners"]["shanghai"] = "N"
+        advance_turn(engine, "S")
+        self.assertIsNone(engine.cabinet_holder("soong_patronage"))
+        self.assertIsNone(payload.get("soong_patronage"))
+
+    def test_kong_lapses_when_moscow_warms_up(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["S"]
+        payload["foreign_relations"]["su"] = 2
+        payload["unlocks"].append("jiangzhe_financiers")
+        payload["hand"].append("kong_xiangxi_office")
+        engine.use_function("S", "kong_xiangxi_office")
+        self.assertEqual(payload["loan_interest_override"], 0.03)
+        payload["foreign_relations"]["su"] = 6
+        advance_turn(engine, "S")
+        self.assertIsNone(engine.cabinet_holder("kong_xiangxi_office"))
+        self.assertIsNone(payload["loan_interest_override"])
+        self.assertEqual(payload["loan_term_bonus"], 0)
+
+    def test_zhou_enlai_raises_both_riot_cards_to_six_and_gives_them_back(self):
+        engine = GameEngine(seed=5)
+        payload = engine.state["players"]["N"]
+        payload["foreign_relations"]["su"] = 8
+        engine._sync_foreign_deck_cards("N")
+        self.assertEqual(self._zones(engine, "communist_riot", "N"), 3)
+        payload["hand"].append("zhou_enlai_underground")
+        engine.use_function("N", "zhou_enlai_underground")
+        self.assertEqual(self._zones(engine, "communist_riot", "N"), 6)
+        self.assertEqual(self._zones(engine, "red_army_uprising", "N"), 6)
+        payload["foreign_relations"]["su"] = 5
+        advance_turn(engine, "N")
+        self.assertIsNone(engine.cabinet_holder("zhou_enlai_underground"))
+        # 關係跌破 6，友好卡本來就整批收回。
+        self.assertEqual(self._zones(engine, "communist_riot", "N"), 0)
+        payload["foreign_relations"]["su"] = 8
+        engine._sync_foreign_deck_cards("N")
+        self.assertEqual(self._zones(engine, "communist_riot", "N"), 3)
+
+    def test_the_card_comes_back_to_everyone_once_it_lapses(self):
+        engine = GameEngine(seed=5)
+        engine.state["players"]["F"]["hand"].append("wang_yongjiang_financial_reform")
+        engine.use_function("F", "wang_yongjiang_financial_reform")
+        advance_turn(engine, "F", fallen_marshals=["F"])
+        # 這張只有奉系拿得到，張學良接手後仍在同一副牌庫裡。
+        self.assertEqual(self._zones(engine, "wang_yongjiang_financial_reform", "F"), 1)
+
+
+class HarborDemolitionTests(unittest.TestCase):
+    """大港開炸：兩座敵方港口癱瘓兩回合，被炸的勢力各攤一份修復費。"""
+
+    @staticmethod
+    def _ports(engine, owner):
+        return [
+            city["id"] for city in engine.data["strategic_map"]["cities"]
+            if city.get("port") and engine.state["city_owners"].get(city["id"], city["faction"]) == owner
+        ]
+
+    def test_three_copies_in_every_starting_deck(self):
+        engine = GameEngine(seed=11)
+        for code in engine.state["players"]:
+            self.assertEqual(engine.state["players"][code]["function_deck"].count("harbor_demolition"), 3, code)
+
+    def test_two_ports_go_down_and_both_owners_pay(self):
+        engine = GameEngine(seed=11)
+        first = self._ports(engine, "F")[0]
+        second = self._ports(engine, "S")[0]
+        for code in ("F", "S"):
+            engine.state["players"][code]["treasury"] = 100
+            engine.state["players"][code]["factory_points"] = 100
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        result = engine.use_function("N", "harbor_demolition", target_city_ids=[first, second])
+        self.assertEqual(sorted(engine.disabled_ports()), sorted([first, second]))
+        self.assertEqual(len(result["port_demolition"]["ports"]), 2)
+        for code in ("F", "S"):
+            self.assertEqual(engine.state["players"][code]["treasury"], 90, code)
+            self.assertEqual(engine.state["players"][code]["factory_points"], 90, code)
+            self.assertEqual(engine.state["players"][code]["port_repair_due"], {"cash": 0, "factory": 0}, code)
+
+    def test_two_ports_of_one_faction_cost_two_repair_shares(self):
+        # 修復費按港口算，同一勢力被炸兩座就付雙倍。
+        engine = GameEngine(seed=11)
+        ports = self._ports(engine, "S")[:2]
+        engine.state["players"]["S"]["treasury"] = 100
+        engine.state["players"]["S"]["factory_points"] = 100
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        result = engine.use_function("N", "harbor_demolition", target_city_ids=ports)
+        self.assertEqual(engine.state["players"]["S"]["treasury"], 80)
+        self.assertEqual(engine.state["players"]["S"]["factory_points"], 80)
+        self.assertEqual([charge["city_id"] for charge in result["port_demolition"]["charges"]], ports)
+
+    def test_shortfall_is_collected_from_later_income(self):
+        engine = GameEngine(seed=11)
+        port = self._ports(engine, "S")[0]
+        engine.state["players"]["S"]["treasury"] = 4
+        engine.state["players"]["S"]["factory_points"] = 0
+        other = self._ports(engine, "F")[0]
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        engine.use_function("N", "harbor_demolition", target_city_ids=[port, other])
+        payload = engine.state["players"]["S"]
+        self.assertEqual(payload["treasury"], 0)
+        self.assertEqual(payload["port_repair_due"], {"cash": 6, "factory": 10})
+        for _ in range(3):
+            advance_turn(engine, active_player="S")
+            if payload["port_repair_due"] == {"cash": 0, "factory": 0}:
+                break
+        self.assertEqual(payload["port_repair_due"], {"cash": 0, "factory": 0})
+
+    def test_the_paralysis_expires_after_two_turns(self):
+        engine = GameEngine(seed=11)
+        targets = [self._ports(engine, "F")[0], self._ports(engine, "S")[0]]
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        engine.use_function("N", "harbor_demolition", target_city_ids=targets)
+        advance_turn(engine, active_player="N")
+        self.assertEqual(len(engine.disabled_ports()), 2)
+        advance_turn(engine, active_player="N")
+        self.assertEqual(engine.disabled_ports(), [])
+
+    def test_own_ports_and_repeats_are_rejected(self):
+        engine = GameEngine(seed=11)
+        mine = self._ports(engine, "N")[0]
+        theirs = self._ports(engine, "F")[0]
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        with self.assertRaises(ValueError):
+            engine.use_function("N", "harbor_demolition", target_city_ids=[mine, theirs])
+        engine.state["players"]["N"]["hand"].append("harbor_demolition")
+        with self.assertRaises(ValueError):
+            engine.use_function("N", "harbor_demolition", target_city_ids=[theirs, theirs])
 
 
 class EventCardCoverageTest(unittest.TestCase):
@@ -4862,6 +5144,168 @@ class PiaohaoNetworkTests(unittest.TestCase):
                                    else server)
         for name in ("exchange_direction", "exchange_amount"):
             self.assertIn(name, source, f"server.py 沒有把 {name} 傳下去")
+
+
+
+class CabinetSovietGateTests(unittest.TestCase):
+    """上海灘宋貴人與孔祥熙從政：除了〈結盟江浙財團〉，還要對蘇關係 5 以下。
+
+    這兩張是江浙財團路線的內閣卡，與親蘇路線（汪精衛、周恩來，需對蘇 ≥6）互斥。
+    門檻同時擋兩件事：條件不成立時不會洗進牌庫，硬要打也會被 _validate_card_use 擋下。
+    """
+
+    CARDS = ("soong_patronage", "kong_xiangxi_office")
+
+    def _zones(self, engine, card_id, player="S"):
+        payload = engine.state["players"][player]
+        return (payload["function_deck"] + payload["hand"] + payload["discard"]).count(card_id)
+
+    def _unlock(self, engine, player="S"):
+        """照規則打出〈結盟江浙財團〉，不直接塞 unlocks。"""
+        payload = engine.state["players"][player]
+        payload["treasury"] = 500
+        for city in engine.data["strategic_map"]["cities"]:
+            if city.get("province") in ("江蘇", "浙江"):
+                engine.state["city_owners"][city["id"]] = player
+        payload["foreign_relations"]["su"] = 2
+        engine._sync_conditional_deck_cards(player)
+        payload["hand"].append("jiangzhe_financiers")
+        engine.use_function(player, "jiangzhe_financiers")
+        engine._sync_conditional_deck_cards(player)
+
+    def test_both_cards_declare_the_gate(self):
+        engine = GameEngine(seed=3)
+        for cid in self.CARDS:
+            card = engine._card_template(cid)
+            self.assertEqual(card.get("requires_relation_max"),
+                             {"power": "su", "value": 5}, cid)
+
+    def test_they_reach_the_deck_when_moscow_is_cold(self):
+        engine = GameEngine(seed=3)
+        self._unlock(engine)
+        for cid in self.CARDS:
+            self.assertEqual(self._zones(engine, cid), 1, cid)
+
+    def test_warm_soviet_relations_pull_them_back_out(self):
+        engine = GameEngine(seed=3)
+        self._unlock(engine)
+        engine.state["players"]["S"]["foreign_relations"]["su"] = 6
+        engine._sync_conditional_deck_cards("S")
+        for cid in self.CARDS:
+            self.assertEqual(self._zones(engine, cid), 0, cid)
+        # 降回 5 又洗回來
+        engine.state["players"]["S"]["foreign_relations"]["su"] = 5
+        engine._sync_conditional_deck_cards("S")
+        for cid in self.CARDS:
+            self.assertEqual(self._zones(engine, cid), 1, cid)
+
+    def test_five_is_in_and_six_is_out(self):
+        """「對蘇 < 6」＝ 5 以下可用，6 就不行——邊界釘死，免得日後寫成 ≤6。"""
+        engine = GameEngine(seed=3)
+        self._unlock(engine)
+        payload = engine.state["players"]["S"]
+        for value, allowed in ((5, True), (6, False)):
+            payload["foreign_relations"]["su"] = value
+            for cid in self.CARDS:
+                card = engine._card_template(cid)
+                if allowed:
+                    engine._validate_card_use("S", card)
+                else:
+                    with self.assertRaisesRegex(ValueError, "5 以下"):
+                        engine._validate_card_use("S", card)
+
+    def test_playing_it_is_blocked_once_relations_warm_up(self):
+        """已經在手上的牌不會消失，但打不出去。"""
+        engine = GameEngine(seed=3)
+        self._unlock(engine)
+        payload = engine.state["players"]["S"]
+        payload["hand"].append("soong_patronage")
+        payload["foreign_relations"]["su"] = 7
+        with self.assertRaisesRegex(ValueError, "5 以下"):
+            engine.use_function("S", "soong_patronage")
+        self.assertIn("soong_patronage", payload["hand"], "被擋下的牌不該被吃掉")
+
+    def test_the_unlock_is_still_required_on_its_own(self):
+        """關係達標但沒觸發〈結盟江浙財團〉一樣不行——兩個條件是且，不是或。"""
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["S"]
+        payload["foreign_relations"]["su"] = 2
+        engine._sync_conditional_deck_cards("S")
+        for cid in self.CARDS:
+            self.assertEqual(self._zones(engine, cid), 0, cid)
+            payload["hand"].append(cid)
+            with self.assertRaisesRegex(ValueError, "結盟江浙財團"):
+                engine.use_function("S", cid)
+            payload["hand"].remove(cid)
+
+    def test_the_pro_soviet_and_financier_routes_stay_mutually_exclusive(self):
+        """江浙路線需對蘇 ≤5、親蘇內閣需對蘇 ≥6：同一家不可能兩邊都拿。"""
+        engine = GameEngine(seed=3)
+        for cid in self.CARDS + ("jiangzhe_financiers",):
+            self.assertEqual(engine._card_template(cid)["requires_relation_max"]["value"], 5, cid)
+        for cid in ("wang_jingwei_return", "zhou_enlai_underground"):
+            self.assertEqual(engine._card_template(cid)["requires_relation_min"], 6, cid)
+
+
+
+class EventCardTableTests(unittest.TestCase):
+    """cards/README.md 的「五九張事件卡逐張明細」由 event_cards.json 產生，兩邊必須同步。
+
+    這一節是給人看的說明文件，最容易在改卡片時被忘記更新——一旦文件寫的和
+    引擎實際跑的不一樣，比沒有文件更糟。這條測試把兩邊釘在一起。
+    """
+
+    @staticmethod
+    def _builder():
+        import importlib.util
+        import pathlib
+        path = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "build_event_card_table.py"
+        spec = importlib.util.spec_from_file_location("build_event_card_table", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_event_card_table_matches_the_data(self):
+        builder = self._builder()
+        readme = builder.README.read_text(encoding="utf-8")
+        self.assertIn(builder.BEGIN, readme, "README 少了事件卡明細的起始標記")
+        self.assertIn(builder.END, readme, "README 少了事件卡明細的結束標記")
+        head, rest = readme.split(builder.BEGIN, 1)
+        _, tail = rest.split(builder.END, 1)
+        self.assertEqual(
+            head + builder.build() + tail, readme,
+            "README 的事件卡明細與 event_cards.json 不同步，"
+            "請跑 python3 scripts/build_event_card_table.py")
+
+    def test_every_card_appears_exactly_once(self):
+        builder = self._builder()
+        table = builder.build()
+        for card in load_game_data()["event_cards"]["cards"]:
+            self.assertEqual(table.count(f'| {card["ref"]} | '), 1,
+                             f'{card["ref"]} {card["name"]} 沒有剛好出現一次')
+
+    def test_cards_needing_manual_play_are_flagged(self):
+        """有 apply.notes 的卡，表格一定要標出來要玩家自己遵守——不能悄悄寫「全自動」。"""
+        builder = self._builder()
+        table = builder.build()
+        for card in load_game_data()["event_cards"]["cards"]:
+            if not (card.get("apply") or {}).get("notes"):
+                continue
+            row = next(line for line in table.splitlines()
+                       if line.startswith(f'| {card["ref"]} | '))
+            if card["id"] in builder.FRONTEND_CARDS:
+                self.assertIn("由前端", row,
+                              f'{card["ref"]} {card["name"]} 是前端補完，應該這樣標')
+            else:
+                self.assertIn("需玩家自行遵守", row,
+                              f'{card["ref"]} {card["name"]} 有 apply.notes 卻沒被標出來')
+
+    def test_no_internal_ids_leak_into_the_table(self):
+        """表格是給人看的，不該印出 beijing / shanghai 這種內部代號。"""
+        builder = self._builder()
+        table = builder.build()
+        for city_id in builder.CITY_NAMES:
+            self.assertNotIn(f'控制{city_id}', table, f'{city_id} 應該印中文名')
 
 
 if __name__ == "__main__":
