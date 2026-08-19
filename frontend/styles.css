@@ -2912,6 +2912,8 @@ button, select, input, textarea {
   font-size: 16px;
   text-indent: 2em;
   text-align: justify;
+  overflow-wrap: break-word;
+  line-break: strict;
 }
 .newspaper-effect {
   border: 1px solid #8a7a5c;
@@ -2920,12 +2922,57 @@ button, select, input, textarea {
   margin: 14px 0 6px;
   font-size: 15px;
 }
-.newspaper-effect b {
+/* 欄位標題。過去這條寫成 `.newspaper-effect b`，結果效果文字裡由 **粗體** 轉出來的
+   每一個 <b> 都跟著變成整行區塊、還各自帶一條底線——句子被攔腰切斷，
+   欄位中央莫名多出橫線。標題改用自己的 class，行內粗體就只是粗體。 */
+.newspaper-effect-title {
   display: block;
+  font-weight: 700;
   letter-spacing: 4px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   border-bottom: 1px solid #b4a482;
   padding-bottom: 3px;
+}
+/* 行內粗體：只加粗，不換行、不加字距、不加線。 */
+.newspaper-effect b {
+  display: inline;
+  font-weight: 700;
+  letter-spacing: normal;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.newspaper-effect-line {
+  margin: 0;
+  line-height: 1.85;
+  /* 這一欄夾雜中文與 $20～40、≥6 之類不可斷開的西文串，一旦兩端對齊，
+     排不下的西文串會被推到下一行、留下一整排空隙——看起來就像字跳掉。
+     所以效果欄靠左排，讓行尾自然參差。 */
+  text-align: left;
+  overflow-wrap: break-word;
+  line-break: strict;
+}
+.newspaper-effect-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.newspaper-effect-list > li {
+  position: relative;
+  margin: 0 0 5px;
+  padding-left: 1.5em;
+  line-height: 1.85;
+  text-align: left;
+  overflow-wrap: break-word;
+  line-break: strict;
+}
+.newspaper-effect-list > li:last-child { margin-bottom: 0; }
+.newspaper-effect-list > li::before {
+  content: "・";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #6b5d44;
 }
 .newspaper-effect .newspaper-note {
   display: block;
@@ -2970,82 +3017,4 @@ button, select, input, textarea {
   color: #5a4b36;
   margin-top: 6px;
   text-align: right;
-}
-
-/* 政府內閣：陣營操作版最下方，與部隊分成兩區。 */
-.dock-section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(231, 225, 215, 0.16);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.cabinet-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.cabinet-unit {
-  grid-template-columns: 1fr;
-}
-
-.cabinet-detail {
-  padding: 10px;
-  border: 1px solid rgba(212, 165, 116, 0.38);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.cabinet-profile {
-  grid-template-columns: 46px 1fr;
-}
-
-/* 人名與功能卡名同一行：卡名靠最右，字級與原本的副標一致。 */
-.cabinet-name-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.cabinet-card-name {
-  flex: none;
-  text-align: right;
-}
-
-.cabinet-portrait,
-.cabinet-profile .portrait-placeholder {
-  width: 46px;
-  height: 54px;
-  object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 18px;
-}
-
-.cabinet-text {
-  margin-top: 9px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.cabinet-text b {
-  color: #d8bd92;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-}
-
-.cabinet-text p {
-  margin: 0 0 4px;
-  color: #cfc6b8;
-  font-size: 11px;
-  line-height: 1.6;
 }
