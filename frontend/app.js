@@ -253,8 +253,11 @@ const TRAIT_LABELS = {
   foreign_gunnery_advisor: "外籍砲術顧問",
 };
 
+// 何應欽的光環說明，兩個版本的技能說明共用同一句。
+const CHIANG_AURA_NOTE = "何應欽在同一場戰鬥中作為友軍出現時，他的部隊生命也 +10%（戰鬥結束即恢復）。";
+
 const TRAIT_DESCRIPTIONS = {
-  advantage_is_ours: "蔣介石的總司令威望。所部全體生命 +10%；何應欽在同一場戰鬥中作為友軍出現時，他的部隊生命也 +10%（戰鬥結束即恢復）。",
+  advantage_is_ours: `八十萬對六十萬，優勢在我。${CHIANG_AURA_NOTE}`,
   whampoa_spirit: "何應欽的黃埔部隊。步兵與機槍攻擊 +15%，代價是這兩種兵承傷 +5%。",
   precision_barrage: "白崇禧的砲兵指揮。彈著點算得極準，對各兵種都吃得開。",
   mountain_division: "擅長南方山地作戰。於廣東、廣西、雲南、貴州、四川、湖南境內任何地格作戰時，所部全體承傷 -10%。",
@@ -266,9 +269,9 @@ const TRAIT_DESCRIPTIONS = {
   anticommunist_vanguard: "何鍵的剿共招牌。與對蘇關係 6 以上的勢力交戰時所部全體攻擊 +10%，鎮壓紅軍起義只需一回合；但自己所屬陣營對蘇關係達 6 以上時本技能失效，且何鍵忠誠 -5。",
   former_overlord: "段祺瑞帶得動北洋最正統的步砲部隊。",
   anhui_veteran: "盧永祥的皖系舊部。步兵與機槍攻擊 +8%；與段祺瑞同一場戰鬥的同一邊時，所部全體生命 +10%（戰鬥結束即恢復）。五省聯軍不可延攬。",
-  zhili_veteran: "王承斌的直系班底。騎兵與砲兵攻擊 +7%；同陣營若有吳佩孚則忠誠 +1。",
+  zhili_veteran: "王承斌的直系班底。騎兵與砲兵攻擊 +7%。",
   old_cantonese_army: "陳炯明的粵軍元老。砲兵攻擊 +12%，鎮壓紅軍起義只需一回合。國民革命軍不可延攬。",
-  qilu_veteran: "田中玉的山東舊部。騎兵承傷 -7%、砲兵攻擊 +7%；同陣營若有張宗昌則忠誠 +1。",
+  qilu_veteran: "田中玉的山東舊部。騎兵承傷 -7%、砲兵攻擊 +7%。",
   northwest_overlord: "馮玉祥的統御。所部全體生命 +10%；宋哲元或鹿鍾麟在同一場戰鬥中作為友軍出現時，他們的部隊生命也 +10%（戰鬥結束即恢復）。",
   dodging_drift: "韓復榘的看家本領。部隊極難被咬住，但也不願打硬仗。",
   broadsword_corps: "宋哲元的大刀隊。步兵近身突擊凌厲，代價是挨得更多。",
@@ -363,11 +366,6 @@ const RELATION_DISABLED_TRAITS = {
 };
 
 // 同陣營有指定將領時忠誠 +1。
-const ALLY_LOYALTY_TRAITS = {
-  zhili_veteran: { ally: "wu_peifu", delta: 1 },
-  qilu_veteran: { ally: "zhang_zongchang", delta: 1 },
-};
-
 // 被策反時對方成功率的額外修正（唐生智的〈佛教將軍〉）。
 const DEFECTION_RESISTANCE_TRAITS = { buddhist_general: 0.05 };
 
@@ -385,8 +383,30 @@ function traitModifiers(trait) {
   return bootstrap?.general_traits?.traits?.[trait]?.modifiers || [];
 }
 
-function traitDescription(trait) {
-  const base = TRAIT_DESCRIPTIONS[trait]
+// 蔣介石不再屬於國民革命軍時，〈優勢在我〉改個名字與說明，效果一字不動。
+const CHIANG_LOST_CAUSE_TRAIT = {
+  trait: "advantage_is_ours",
+  general: "chiang_kai_shek",
+  faction: "N",
+  label: "我不明白",
+  description: `我不明白，為什麼大家都在談論著項羽被困垓下，仿佛這中原古戰場對於我們注定了凶多吉少。${CHIANG_AURA_NOTE}`,
+};
+
+function chiangLostCause(trait, generalId) {
+  if (trait !== CHIANG_LOST_CAUSE_TRAIT.trait || generalId !== CHIANG_LOST_CAUSE_TRAIT.general) return false;
+  const owner = factionHoldingGeneral(CHIANG_LOST_CAUSE_TRAIT.general);
+  return Boolean(owner) && owner !== CHIANG_LOST_CAUSE_TRAIT.faction;
+}
+
+function traitLabel(trait, generalId = null) {
+  if (chiangLostCause(trait, generalId)) return CHIANG_LOST_CAUSE_TRAIT.label;
+  return TRAIT_LABELS[trait] || trait;
+}
+
+function traitDescription(trait, generalId = null) {
+  const base = chiangLostCause(trait, generalId)
+    ? CHIANG_LOST_CAUSE_TRAIT.description
+    : TRAIT_DESCRIPTIONS[trait]
     || bootstrap?.general_traits?.traits?.[trait]?.background
     || "此特質目前沒有補充說明。";
   // 光環與省份條件加成不列進「戰鬥效果」，因為說明文字已經寫清楚
@@ -423,9 +443,9 @@ function modifierDescription(modifier) {
   return `${unit}${target}${stat}`;
 }
 
-function traitChip(trait) {
-  const description = traitDescription(trait);
-  return `<span class="trait-chip" tabindex="0" data-tooltip="${description}">${TRAIT_LABELS[trait] || trait}</span>`;
+function traitChip(trait, generalId = null) {
+  const description = traitDescription(trait, generalId);
+  return `<span class="trait-chip" tabindex="0" data-tooltip="${description}">${traitLabel(trait, generalId)}</span>`;
 }
 
 const ENGINEERING_OPERATIONS = {
@@ -1113,7 +1133,8 @@ function indexScenarioCells() {
   const occupiedCityCells = new Set();
   for (const city of scenario.cities || []) {
     if (LAND_ONLY_CITY_IDS.has(city.id)) delete city.port;
-    INITIAL_CITY_FACTIONS[city.id] ||= city.faction;
+    const placementFaction = city.scenario_faction || city.faction;
+    INITIAL_CITY_FACTIONS[city.id] ||= placementFaction;
     const candidates = Object.values(cells).filter((cell) =>
       cell.land !== false
       &&
@@ -1121,7 +1142,7 @@ function indexScenarioCells() {
       && !cell.power                       // 列強租借地不能拿來擺中國城市
       && (!cell.river || cell.railBridge)
     );
-    const sameFaction = candidates.filter((cell) => cell.fac === city.faction);
+    const sameFaction = candidates.filter((cell) => cell.fac === placementFaction);
     const pool = sameFaction.length ? sameFaction : candidates;
     const cell = pool.reduce((nearest, candidate) => {
       const distance = (candidate.lon - city.lon) ** 2 + (candidate.lat - city.lat) ** 2;
@@ -1184,18 +1205,24 @@ function pointSegmentDistance(x, y, [ax, ay], [bx, by]) {
   return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
 }
 
+// 擠不進起點城市時的備位格。畫成水面的地格（河道、近海）一律先跳過，
+// 陸軍不該一開局就站在水裡；真的找不到乾地才退而求其次。
 function nearestFreeCell(origin, occupied) {
-  let best = null;
-  let bestDistance = Infinity;
-  for (const cell of Object.values(cells)) {
-    if (!cell.land || occupied.has(cell.key) || cell.city) continue;
-    const distance = (cell.lon - origin.lon) ** 2 + (cell.lat - origin.lat) ** 2;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = cell;
+  const pick = (allowWater) => {
+    let best = null;
+    let bestDistance = Infinity;
+    for (const cell of Object.values(cells)) {
+      if (!cell.land || occupied.has(cell.key) || cell.city) continue;
+      if (!allowWater && (cell.river || cell.coastalWater)) continue;
+      const distance = (cell.lon - origin.lon) ** 2 + (cell.lat - origin.lat) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = cell;
+      }
     }
-  }
-  return best;
+    return best;
+  };
+  return pick(false) || pick(true);
 }
 
 function snapArmiesToStartCities() {
@@ -1206,6 +1233,18 @@ function snapArmiesToStartCities() {
       const city = cityById.get(army.startCityId);
       const home = city?.cellKey ? cells[city.cellKey] : null;
       if (!home) continue;
+      // 指定了起始地格的部隊直接放上去，不參與搶城市格。
+      const assigned = army.startCellKey ? cells[army.startCellKey] : null;
+      if (assigned && !occupied.has(assigned.key)) {
+        army.cellKey = assigned.key;
+        army.lon = assigned.lon;
+        army.lat = assigned.lat;
+        if (INITIAL_ARMY_CELLS[army.id]) {
+          INITIAL_ARMY_CELLS[army.id] = { cellKey: assigned.key, lon: assigned.lon, lat: assigned.lat };
+        }
+        occupied.add(assigned.key);
+        continue;
+      }
       // Two armies can share a start city (e.g. 馬家軍 after 導河 left the map);
       // the second one falls back to the nearest free land cell rather than
       // being dropped without a position.
@@ -1594,10 +1633,15 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
   );
   const railways = (state.railway_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
+  const ports = (state.port_effects || []).filter((effect) =>
+    Number(effect.remaining_turns || 0) > 0
+    && (effect.initiator === currentPlayer || effect.owner === currentPlayer)
+  );
   const economyFlags = Boolean(payload?.loan_penalties?.length || payload?.soong_patronage
     || Number(payload?.loan_ban_until_turn || 0) > Number(state?.turn || 0)
     || payload?.loan_interest_override);
-  if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length && !economyFlags) return "";
+  if (!effects.length && !cityEffects.length && !uprisings.length && !railways.length
+    && !ports.length && !economyFlags) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
       const label = effect.kind === "police_system"
@@ -1620,6 +1664,10 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
       return `<span>${effect.name || "紅軍起義"}(${role})：${names}，需駐 ${effect.required_battalions || 5} 營</span>`;
     }).join("")}
     ${railways.map((effect) => `<span>${effect.railway} 搶修中，剩餘 ${effect.remaining_turns} 回合</span>`).join("")}
+    ${ports.map((effect) => {
+      const role = effect.initiator === currentPlayer ? "發動" : "受害";
+      return `<span>${effect.name || "大港開炸"}(${role})：${effect.city_name}港務癱瘓，剩餘 ${effect.remaining_turns} 回合</span>`;
+    }).join("")}
     ${(payload?.loan_penalties || []).map((clause) => `<span>${clause.label || "貸款違約條款"}${
       clause.remaining_turns === null || clause.remaining_turns === undefined
         ? "（永久）" : `，剩餘 ${clause.remaining_turns} 回合`}</span>`).join("")}
@@ -2355,7 +2403,7 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
         <div class="tree-faction">${general.faction || "在野"}</div>
         <div class="tree-units">${unitsText}</div>
         ${hasArmy ? forceMeterMarkup(armyUnits(fieldArmy), { compact: true }) : hasCapturedUnits ? forceMeterMarkup(capturedUnits, { compact: true }) : ""}
-        <div class="tree-traits">${(general.traits || []).map(traitChip).join("")}</div>
+        <div class="tree-traits">${(general.traits || []).map((trait) => traitChip(trait, general.id)).join("")}</div>
       </div>
       ${general.loyalty !== null ? `
           <div class="tree-loyalty" data-tooltip="${loyalty.tooltip}">
@@ -2417,8 +2465,7 @@ function factionHoldingGeneral(generalId) {
 }
 
 // 技能帶來的忠誠增減（回傳的 amount 已經是帶正負號的總和）：
-// 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5），
-// 以及同陣營有指定將領時的加成（王承斌配吳佩孚、田中玉配張宗昌各 +1）。
+// 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5）。
 function traitLoyaltyAdjustment(general) {
   const faction = factionHoldingGeneral(general.id);
   if (!faction) return { amount: 0, note: "" };
@@ -2428,13 +2475,7 @@ function traitLoyaltyAdjustment(general) {
     const rule = RELATION_DISABLED_TRAITS[trait];
     if (rule?.loyalty_penalty && traitDisabledByRelations(trait, faction)) {
       amount -= rule.loyalty_penalty;
-      reasons.push(`〈${TRAIT_LABELS[trait] || trait}〉失效: -${rule.loyalty_penalty}`);
-    }
-    const ally = ALLY_LOYALTY_TRAITS[trait];
-    if (ally && generalTrees[faction]?.generals?.[ally.ally]) {
-      const allyName = generalTrees[faction].generals[ally.ally].name;
-      amount += ally.delta;
-      reasons.push(`同陣營有${allyName}: +${ally.delta}`);
+      reasons.push(`〈${traitLabel(trait, general.id)}〉失效: -${rule.loyalty_penalty}`);
     }
   }
   return { amount, note: reasons.length ? `\n${reasons.join("\n")}` : "" };
@@ -3040,21 +3081,7 @@ function bodyGuardTargets() {
 // 規則沿用 general_tree.kill_general：本人陣亡，麾下少將忠誠歸零。
 function applyAssassination(outcome) {
   if (!outcome?.success) return;
-  const generalId = outcome.target_general_id;
-  const owner = generalOwners[generalId];
-  const tree = generalTrees[owner];
-  const general = tree?.generals?.[generalId];
-  if (!general) return;
-  general.status = "killed";
-  for (const army of allArmies(true)) {
-    if (army.generalId === generalId) army.status = "killed";
-  }
-  for (const childId of descendantGeneralIds(tree, generalId)) {
-    const child = tree.generals?.[childId];
-    if (!child || child.role !== "major_general") continue;
-    if (generalAbsoluteLoyaltyActive(child) || child.loyalty_exempt || child.loyalty === null) continue;
-    loyaltyOverrides[childId] = 0;
-  }
+  applyGeneralDeath(outcome.target_general_id);
 }
 
 // ── 在野將領 ────────────────────────────────────────────────────────────
@@ -3199,6 +3226,20 @@ function provinceOptionMarkup(provinces) {
   return provinces.map((province) => `<option value="${province}">${province}</option>`).join("");
 }
 
+// 大港開炸可以炸的目標：他方勢力控制、且還沒在搶修中的港口城市。
+function enemyPortCityOptions() {
+  const downed = paralysedPorts();
+  const options = [];
+  for (const cell of Object.values(cells)) {
+    const city = cell.city;
+    if (!city?.port || downed.has(String(city.id))) continue;
+    const owner = city.faction || cell.fac;
+    if (!owner || owner === currentPlayer || !FACTIONS[owner] || FACTIONS[owner].type !== "player") continue;
+    options.push({ id: city.id, name: city.name, owner, port: city.port });
+  }
+  return options.sort((a, b) => a.owner.localeCompare(b.owner) || a.name.localeCompare(b.name));
+}
+
 function functionCardTargetMarkup(card) {
   if (card.mechanic === "qing_gang_riot") {
     const entries = gangRiotTargets(card);
@@ -3294,6 +3335,19 @@ function functionCardTargetMarkup(card) {
       .join("");
     return Array.from({ length: wanted }, (unused, index) =>
       `<label class="card-target">第 ${index + 1} 座城市<select data-card-target-cities="${card.id}">${options(index)}</select></label>`
+    ).join("");
+  }
+  if (card.mechanic === "port_demolition") {
+    const cities = enemyPortCityOptions();
+    const wanted = Number(card.target_city_count || 2);
+    if (cities.length < wanted) {
+      return `<div class="card-target-note">可炸的敵方港口不足 ${wanted} 座（目前 ${cities.length} 座）</div>`;
+    }
+    const options = (selectedIndex) => cities
+      .map((city, index) => `<option value="${city.id}"${index === selectedIndex ? " selected" : ""}>${FACTIONS[city.owner]?.shortName || city.owner} · ${city.name}（${city.port === "sea" ? "海港" : "河港"}）</option>`)
+      .join("");
+    return Array.from({ length: wanted }, (unused, index) =>
+      `<label class="card-target">第 ${index + 1} 座港口<select data-card-target-cities="${card.id}">${options(index)}</select></label>`
     ).join("");
   }
   if (card.mechanic === "aerial_recon") {
@@ -3711,7 +3765,9 @@ function initMap() {
 
       // Draw faction-colored hex fill
       if (cell.coastalWater) {
-        ctx.fillStyle = "rgba(74, 128, 151, 0.62)";
+        // 近海：藍調壓淡摻灰之外再加一點黃，貼近底圖泛黃的海面，
+        // 但仍留得住藍，讓可遊玩的水域與背景分得開。
+        ctx.fillStyle = "rgba(152, 172, 164, 0.44)";
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -3762,7 +3818,8 @@ function initMap() {
 
       // Highlight river hexes
       if (cell.river) {
-        ctx.fillStyle = '#92b6c1';
+        // 河道同樣調淡加灰泛黃，與近海保持同一個色系。
+        ctx.fillStyle = '#b4c6bd';
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = Math.PI / 180 * (60 * i);
@@ -4071,7 +4128,7 @@ function clearNavyResolved(navy) {
 }
 
 function navyCanReceiveOrder(navy) {
-  return Boolean(navy) && !navyIsResolvedThisTurn(navy);
+  return Boolean(navy) && !navyIsResolvedThisTurn(navy) && !navyLockedInPort(navy);
 }
 
 function navyAtCell(cellKey, owner = null) {
@@ -4215,9 +4272,25 @@ function battleSideForArmy(battle, army) {
 
 function activeBattleForArmy(army) {
   return activeBattles.find((battle) =>
-    ["pending", "ongoing"].includes(battle.status)
+    battleIsActive(battle)
     && battleParticipantIds(battle).includes(army?.id)
   ) || null;
+}
+
+function battleIsActive(battle) {
+  return ["pending", "ongoing"].includes(battle?.status);
+}
+
+function archiveTerminalBattles() {
+  const terminalBattles = activeBattles.filter((battle) => !battleIsActive(battle));
+  for (const battle of terminalBattles) {
+    if (!battleReports.some((report) => report.id === battle.id)) {
+      battleReports.push(battle);
+    }
+    const index = activeBattles.findIndex((item) => item.id === battle.id);
+    if (index >= 0) activeBattles.splice(index, 1);
+  }
+  return terminalBattles;
 }
 
 function armyIsResolvedThisTurn(army) {
@@ -4382,7 +4455,6 @@ function cellWithinRange(fromKey, toKey, range = 2) {
 
 function armyIsVisible(army, armyFaction, observer) {
   if (armyFaction === observer) return true;
-  if (activeBattles.some((battle) => battleParticipantIds(battle).includes(army.id))) return true;
   const nearbyArmy = allArmies().some((ownArmy) =>
     factionForArmy(ownArmy) === observer && cellWithinRange(ownArmy.cellKey, army.cellKey, 2)
   );
@@ -4670,13 +4742,15 @@ function queueCityOwnershipSync(cityId, faction) {
 }
 
 function renderBattleMarkers(svgOverlay) {
-  const markers = activeBattles.map((battle) => ({
-    id: battle.id,
-    status: battle.status,
-    cellKey: battle.cellKey,
-    label: "戰",
-    title: battle.status === 'pending' ? '戰鬥待決' : '查看戰果',
-  }));
+  const markers = activeBattles
+    .filter((battle) => reportVisibleToPlayer(battle))
+    .map((battle) => ({
+      id: battle.id,
+      status: battle.status,
+      cellKey: battle.cellKey,
+      label: "戰",
+      title: battle.status === 'pending' ? '戰鬥待決' : '查看戰果',
+    }));
   for (const report of navyBattleReports) {
     if (hiddenNavyBattleReportIds.has(report.id) || !reportVisibleToPlayer(report)) continue;
     const navy = navyById(report.navyId);
@@ -4719,8 +4793,19 @@ function renderBattleMarkers(svgOverlay) {
 }
 
 function selectBattle(battleId) {
+  const battle = [...activeBattles, ...battleReports].find((item) =>
+    item.id === battleId && reportVisibleToPlayer(item)
+  );
+  const navyBattle = navyBattleReports.find((item) =>
+    item.id === battleId && reportVisibleToPlayer(item)
+  );
+  if (!battle && !navyBattle) {
+    selectedBattleId = null;
+    renderBattlePanel();
+    renderMapUnits();
+    return;
+  }
   selectedBattleId = battleId;
-  const battle = activeBattles.find((item) => item.id === battleId);
   const participant = (battle ? battleParticipantIds(battle) : [])
     .map(armyById)
     .find((army) => factionForArmy(army) === currentPlayer);
@@ -4875,7 +4960,9 @@ function renderNavyBattlePanel(root, report) {
 
 function renderBattlePanel() {
   const root = $("battlePanel");
-  const reports = [...activeBattles, ...battleReports].filter((item) => !hiddenBattleReportIds.has(item.id));
+  const reports = [...activeBattles, ...battleReports]
+    .filter((item) => !hiddenBattleReportIds.has(item.id))
+    .filter((item) => reportVisibleToPlayer(item));
   const battle = reports.find((item) => item.id === selectedBattleId)
     || [...reports].reverse().find((item) =>
       item.attackerFaction === currentPlayer || item.defenderFaction === currentPlayer
@@ -5012,6 +5099,7 @@ function renderTileInfo() {
   const tags = [];
   if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
   if (city?.port === "sea") tags.push('<span class="tile-tag tile-tag-port">海港</span>');
+  if (portParalysed(city)) tags.push('<span class="tile-tag tile-tag-port">港務搶修中</span>');
   if (concessionPowers.length) {
     tags.push(`<span class="tile-tag tile-tag-concession">租界</span>` + concessionPowers.map((key) => `
       <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
@@ -5137,7 +5225,7 @@ function renderArmyDetail() {
       ${city ? `<small>${city.name} · ${city.province}</small>` : `<small>野外駐軍</small>`}
     </div>
     <div class="trait-list">${traits.length
-      ? traits.map(traitChip).join("")
+      ? traits.map((trait) => traitChip(trait, army.generalId)).join("")
       : '<span>無已知特質</span>'}</div>
     ${showComposition ? `
       <div class="army-composition">
@@ -5267,6 +5355,57 @@ function navyHealthMarkup(navy) {
   return `<div class="navy-health-list">${gunMarkup}${cargoMarkup || '<small>無運輸船</small>'}</div>`;
 }
 
+// 大港開炸炸掉的港口：停靠、通行、修理、登陸、載運、編補全部停擺，直到搶修完成。
+function paralysedPorts() {
+  return new Set((state?.port_effects || [])
+    .filter((effect) => Number(effect.remaining_turns || 0) > 0)
+    .map((effect) => String(effect.city_id)));
+}
+
+function portParalysed(city) {
+  return Boolean(city?.id) && paralysedPorts().has(String(city.id));
+}
+
+// 港務搶修期間，停在港內的艦隊不會受損也不會被趕走，但整支被鎖住，什麼都不能做。
+function navyLockedInPort(navy) {
+  const city = cells[navy?.cellKey]?.city;
+  if (!portParalysed(city)) return null;
+  return (state?.port_effects || []).find((effect) =>
+    String(effect.city_id) === String(city.id) && Number(effect.remaining_turns || 0) > 0) || null;
+}
+
+function navyLockedNote(navy) {
+  const effect = navyLockedInPort(navy);
+  if (!effect) return "";
+  return `${navy.name}被封在${effect.city_name}港內，搶修還有 ${effect.remaining_turns} 回合，期間不能有任何動作。`;
+}
+
+function portParalysedNote(city) {
+  const effect = (state?.port_effects || [])
+    .find((item) => String(item.city_id) === String(city?.id) && Number(item.remaining_turns || 0) > 0);
+  if (!effect) return "";
+  return `${city.name}港務遭破壞，搶修中，還有 ${effect.remaining_turns} 回合；期間不能停靠、通行、修理、登陸、載運與編補。`;
+}
+
+// 只有 3 級以上的港口（河港、海港皆同）才有船塢與軍需倉庫：修得了船、補得了艦。
+// 2 級小港只能讓艦隊停靠與登陸卸兵。
+const NAVY_SERVICE_PORT_LEVEL = 3;
+
+function portServiceLevel(city) {
+  return city?.port ? Number(city.level || 0) : 0;
+}
+
+function isServicePort(city) {
+  return portServiceLevel(city) >= NAVY_SERVICE_PORT_LEVEL;
+}
+
+function portServiceNote(city) {
+  if (!city?.port) return "此處不是港口。";
+  return isServicePort(city)
+    ? ""
+    : `${city.name}是 ${city.level} 級小港，只能停靠與登陸；修理與編補艦隊要到 3 級以上的港口。`;
+}
+
 function carriedArmy(navy) {
   return navy?.carriedArmyId ? armyById(navy.carriedArmyId) : null;
 }
@@ -5274,6 +5413,12 @@ function carriedArmy(navy) {
 function navyReserveButtonsMarkup(navy, city, faction) {
   if (!city?.port || !cityControlledBy(city, faction)) {
     return `<div class="active-operation">海軍預備隊只能在己方港口編入艦隊。</div>`;
+  }
+  if (portParalysed(city)) {
+    return `<div class="active-operation">${portParalysedNote(city)}</div>`;
+  }
+  if (!isServicePort(city)) {
+    return `<div class="active-operation">${portServiceNote(city)}</div>`;
   }
   const reserves = state.players[faction]?.navy_reserves || {};
   return `
@@ -5307,10 +5452,11 @@ function renderNavyDetail(root, navy) {
   const cell = cells[navy.cellKey];
   const city = cell?.city || null;
   const carried = carriedArmy(navy);
+  const lockedInPort = navyLockedInPort(navy);
   const canOrder = isOwnNavy && navyCanReceiveOrder(navy);
   const moveCost = navyMoveFactoryCost(navy);
   const inContact = navyInContact(navy);
-  const canRepair = isOwnNavy && city?.port && [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])]
+  const canRepair = isOwnNavy && isServicePort(city) && [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])]
     .some((boat) => Number(boat.hp || 0) < Number(boat.maxHp || 30));
   const embarkable = isOwnNavy && !carried ? embarkableArmies(navy) : [];
   root.hidden = false;
@@ -5326,10 +5472,11 @@ function renderNavyDetail(root, navy) {
       <span>運載 <b>${carried ? armyCombatLabel(carried) : `${navyCapacity(navy, navyRules())} 戰力容量`}</b></span>
     </div>
     ${navyHealthMarkup(navy)}
+    ${lockedInPort ? `<div class="active-operation">${navyLockedNote(navy)}</div>` : ""}
     ${inContact ? `<div class="active-operation">交戰中：${navyContactEstimate(navy)}</div>` : ""}
     ${isOwnNavy ? `
       <div class="army-operations navy-operations">
-        ${!canOrder ? `<button disabled>${navyIsResolvedThisTurn(navy) ? "本回合已行動" : "不可行動"}</button>${inContact ? `<button data-navy-operation="retreat">撤退</button>` : ""}` : `
+        ${!canOrder ? `<button disabled>${lockedInPort ? "封港中" : navyIsResolvedThisTurn(navy) ? "本回合已行動" : "不可行動"}</button>${inContact && !lockedInPort ? `<button data-navy-operation="retreat">撤退</button>` : ""}` : `
           <button class="${navyMoveMode ? "active" : ""}" data-navy-operation="move" title="沿可航行水道最多 ${navyRules().move?.tiles_per_turn || 2} 格；${navyMoveCostText(navy)}">移動（${moveCost ? `工${moveCost}` : "工0"}）</button>
           <button data-navy-operation="hold">待命</button>
           ${canRepair ? `<button data-navy-operation="repair">修理</button>` : ""}
@@ -5347,6 +5494,10 @@ function renderNavyDetail(root, navy) {
 }
 
 async function handleNavyOperation(navy, operation, embarkArmyId, target, reinforceUnitType = null) {
+  if (navyLockedInPort(navy)) {
+    showNotice(navyLockedNote(navy));
+    return;
+  }
   if (reinforceUnitType) {
     await reinforceNavyFromReserve(navy, reinforceUnitType, target);
     return;
@@ -5382,6 +5533,10 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
     const army = armyById(embarkArmyId);
     if (!army || army.cellKey !== navy.cellKey) {
       showNotice("可搭載陸軍不在本艦隊所在港口。");
+      return;
+    }
+    if (portParalysed(cells[navy.cellKey]?.city)) {
+      showNotice(portParalysedNote(cells[navy.cellKey].city));
       return;
     }
     if (forcePoints(armyUnits(army)) > navyCapacity(navy, navyRules())) {
@@ -5428,6 +5583,14 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
       showNotice("艦艇只能在港口修理。");
       return;
     }
+    if (portParalysed(cell.city)) {
+      showNotice(portParalysedNote(cell.city));
+      return;
+    }
+    if (!isServicePort(cell.city)) {
+      showNotice(portServiceNote(cell.city));
+      return;
+    }
     const raw = window.prompt("將所有現存艦艇至少修到幾 HP？", String(navyRules().units?.gun_boat?.hp || 30));
     if (raw === null) return;
     const targetHp = Number(raw);
@@ -5467,6 +5630,10 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
       showNotice("登陸必須在港口，且艦隊需要載有陸軍。");
       return;
     }
+    if (portParalysed(cell.city)) {
+      showNotice(portParalysedNote(cell.city));
+      return;
+    }
     beginNavyOrder(navy, "disembark");
     delete army.embarkedOn;
     moveArmyToCell(army, cell);
@@ -5490,6 +5657,14 @@ async function reinforceNavyFromReserve(navy, unitType, target) {
   }
   if (!city?.port || !cityControlledBy(city, faction)) {
     showNotice("海軍預備隊只能在己方港口編入艦隊。");
+    return;
+  }
+  if (portParalysed(city)) {
+    showNotice(portParalysedNote(city));
+    return;
+  }
+  if (!isServicePort(city)) {
+    showNotice(portServiceNote(city));
     return;
   }
   if (!Number(state.players[faction]?.navy_reserves?.[unitType] || 0)) {
@@ -5528,12 +5703,15 @@ async function reinforceNavyFromReserve(navy, unitType, target) {
 }
 
 function pendingArmies() {
-  const fightingIds = new Set(activeBattles.flatMap(battleParticipantIds));
+  const fightingIds = new Set(
+    activeBattles.filter(battleIsActive).flatMap(battleParticipantIds),
+  );
   return currentArmies().filter((army) => !armyIsResolvedThisTurn(army) && !fightingIds.has(army.id));
 }
 
 function pendingNavies() {
-  return currentNavies().filter((navy) => !navyIsResolvedThisTurn(navy));
+  // 鎖在港裡的艦隊不算待命：它本回合本來就動不了，不該卡住結束回合。
+  return currentNavies().filter((navy) => !navyIsResolvedThisTurn(navy) && !navyLockedInPort(navy));
 }
 
 function joinBattle(army, battle) {
@@ -5660,6 +5838,10 @@ function beginNavyOrder(navy, type) {
       lat: carried.lat,
       embarkedOn: carried.embarkedOn || null,
       resolvedTurn: carried.resolvedTurn ?? null,
+      // 海戰可能把船上的部隊打掉甚至連人帶船沉掉，撤銷時要一併還原。
+      units: JSON.parse(JSON.stringify(armyUnits(carried))),
+      status: carried.status || null,
+      generalStatus: generalById(carried.generalId)?.status || null,
     } : null,
   };
   navyOrderHistory.push(action);
@@ -5705,6 +5887,84 @@ function navyDamageSummary(damage) {
   return `，擊沉${labels.join("、")}`;
 }
 
+// 將領陣亡的共同處理：本人與其直屬部隊標記陣亡，直屬中將忠誠歸零。
+// 暗殺得手與運兵船連人帶船沉沒都走這條路。
+function applyGeneralDeath(generalId, owner = null) {
+  const faction = owner || generalOwners[generalId] || null;
+  const tree = generalTrees[faction];
+  const general = tree?.generals?.[generalId];
+  if (!general) return false;
+  general.status = "killed";
+  for (const army of allArmies(true)) {
+    if (army.generalId === generalId) army.status = "killed";
+  }
+  for (const childId of descendantGeneralIds(tree, generalId)) {
+    const child = tree.generals?.[childId];
+    if (!child || child.role !== "major_general") continue;
+    if (generalAbsoluteLoyaltyActive(child) || child.loyalty_exempt || child.loyalty === null) continue;
+    loyaltyOverrides[childId] = 0;
+  }
+  return true;
+}
+
+// 整支艦隊被打光時，運兵船上的陸軍隨船覆沒：部隊全滅，將領比照暗殺得手處理。
+function sinkCarriedArmyWithNavy(navy) {
+  const army = carriedArmy(navy);
+  navy.carriedArmyId = null;
+  if (!army) return null;
+  const owner = generalOwners[army.generalId] || factionForArmy(army);
+  const reinforcementLedger = state.players[owner]?.army_reinforcements;
+  if (reinforcementLedger) delete reinforcementLedger[army.id];
+  army.units = Object.fromEntries(Object.keys(UNIT_META).map((type) => [type, 0]));
+  const general = generalById(army.generalId);
+  if (general) general.units = { ...army.units };
+  delete army.embarkedOn;
+  army.status = "killed";
+  applyGeneralDeath(army.generalId, owner);
+  markArmyResolved(army);
+  return army;
+}
+
+// 運輸船被擊沉之後，可載運量可能已經低於船上陸軍的戰力。
+// 超出的部分隨機挑兵種裁撤，直到剩下的戰力不超過現有容量。
+function enforceNavyCargoCapacity(navy) {
+  const army = carriedArmy(navy);
+  if (!army) return null;
+  const capacity = navyCapacity(navy, navyRules());
+  const before = armyUnits(army);
+  const units = { ...before };
+  if (forcePoints(units) <= capacity) return null;
+  const lost = {};
+  while (forcePoints(units) > capacity) {
+    const available = Object.keys(UNIT_META).filter((type) => Number(units[type] || 0) > 0);
+    if (!available.length) break;
+    const type = available[Math.floor(Math.random() * available.length)];
+    units[type] -= 1;
+    lost[type] = (lost[type] || 0) + 1;
+  }
+  setArmyTotalUnits(army, units, { capAtCurrent: true, currentUnits: before });
+  return { army, capacity, lost };
+}
+
+// 每次海戰結束後結算船上的陸軍：艦隊全滅就連人帶船沉沒，
+// 艦隊還在但運輸船有損失就把超出容量的部隊裁掉。
+function settleNavyCarriedLosses(navy) {
+  if (!navy) return;
+  normalizeNavyDivision(navy, navyRules());
+  const wipedOut = !(navy.gunBoats || []).length && !(navy.cargoBoatHp || []).length;
+  if (wipedOut) {
+    const army = sinkCarriedArmyWithNavy(navy);
+    if (army) uiNotice = `${uiNotice || ""}${navy.name}遭全數擊沉，船上的${army.general}部隊隨船覆沒，${army.general}陣亡。`;
+    return;
+  }
+  const trimmed = enforceNavyCargoCapacity(navy);
+  if (!trimmed) return;
+  const detail = Object.entries(trimmed.lost)
+    .map(([type, count]) => `${UNIT_META[type]?.name || type} ${count}`)
+    .join("、");
+  uiNotice = `${uiNotice || ""}${navy.name}運輸船折損，可載運量降為 ${trimmed.capacity} 戰力點，${trimmed.army.general}部隊被迫減至容量以內${detail ? `（損失 ${detail}）` : ""}。`;
+}
+
 function applyArmyNavyContact(army, navy) {
   const before = armyUnits(army);
   const result = resolveArmyNavyContact(before, navy, navyRules());
@@ -5718,6 +5978,7 @@ function applyArmyNavyContact(army, navy) {
     result,
     message: `${armyCombatLabel(army)}砲兵與${navy.name}交火：艦艇受損 ${Math.round(result.boatDamage)} HP${navyDamageSummary(result.boatDamageDetail)}，砲兵損失 ${result.artilleryLost} 營。${result.navyFired ? "砲艇完成還擊。" : "砲艇均已失能，未能還擊。"}${result.landRetreat ? "陸軍已無砲兵，被迫退出接觸。" : "陸軍仍有砲兵，繼續據守。"}${result.navyRetreat ? "艦隊達退卻條件。" : ""}`,
   });
+  settleNavyCarriedLosses(navy);
   return result;
 }
 
@@ -5732,6 +5993,8 @@ function applyNavyDuel(attacker, defender) {
     result,
     message: `${attacker.name}與${defender.name}交火：敵方受損 ${Math.round(result.attackerDamage)} HP${navyDamageSummary(result.attackerDamageDetail)}，我方受損 ${Math.round(result.defenderDamage)} HP${navyDamageSummary(result.defenderDamageDetail)}。${result.attackerActiveGunBoats ? "攻方完成射擊" : "攻方無可戰砲艇"}；${result.defenderActiveGunBoats ? "守方完成射擊" : "守方無可戰砲艇"}。`,
   });
+  settleNavyCarriedLosses(attacker);
+  settleNavyCarriedLosses(defender);
   return result;
 }
 
@@ -5977,6 +6240,15 @@ function undoLastNavyOrder() {
         lon: action.carriedArmyBefore.lon,
         lat: action.carriedArmyBefore.lat,
       });
+      if (action.carriedArmyBefore.units) {
+        army.units = { ...action.carriedArmyBefore.units };
+        const general = generalById(army.generalId);
+        if (general) {
+          general.units = { ...army.units };
+          if (action.carriedArmyBefore.generalStatus) general.status = action.carriedArmyBefore.generalStatus;
+        }
+      }
+      if (action.carriedArmyBefore.status) army.status = action.carriedArmyBefore.status;
       if (action.carriedArmyBefore.embarkedOn) army.embarkedOn = action.carriedArmyBefore.embarkedOn;
       else delete army.embarkedOn;
       if (action.carriedArmyBefore.resolvedTurn === null) clearArmyResolved(army);
@@ -6148,6 +6420,21 @@ const NPC_GROWTH = {
   heavyEveryTurns: 5,
   heavyUnits: ["machine_gun", "cavalry", "artillery"],
 };
+
+// 大帥被俘或陣亡的陣營。後端沒有將領資料，內閣卡的失效條件要靠這份回報。
+function fallenMarshals() {
+  const fallen = [];
+  for (const faction of TURN_PLAYERS) {
+    const marshalId = generalTrees[faction]?.great_general_id;
+    if (!marshalId) continue;
+    const general = generalTrees[faction]?.generals?.[marshalId];
+    const army = allArmies(true).find((item) => item.generalId === marshalId);
+    const captured = army?.status === "jailed" || general?.status === "captured";
+    const killed = general?.status === "killed" || army?.status === "killed";
+    if (captured || killed) fallen.push(faction);
+  }
+  return fallen;
+}
 
 // 川軍與湘軍所有將領平行、沒有大帥，所以沒有五回合的重武器成長。
 function npcMarshalArmyIds() {
@@ -6436,12 +6723,16 @@ async function respondToEvent(choice, followUp = null) {
       normalizeArmyForceCaps();
       refreshArmyLoyaltyBaselines();
       resolvedArmyIds.clear();
+      resolvedNavyIds.clear();
       replaceObject(turnReady, {});
       for (const army of allArmies()) {
         delete army.resolvedTurn;
         if (army.specialOperation) markArmyResolved(army);
       }
+      for (const navy of allNavies(true)) delete navy.resolvedTurn;
       armyOrderHistory.length = 0;
+      navyOrderHistory.length = 0;
+      archiveTerminalBattles();
       currentPhase = "military";
       updatePhaseBanner();
       updateFeatureVisibility();
@@ -7180,6 +7471,13 @@ function setupPendingActions() {
     else if (resolveButton) resolveArmy(resolveButton.dataset.resolveArmy);
     else if (focusButton) selectArmy(focusButton.dataset.focusArmy);
   });
+  $("cabinetList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-focus-cabinet]");
+    if (!button) return;
+    const cardId = button.dataset.focusCabinet;
+    selectedCabinetCardId = selectedCabinetCardId === cardId ? null : cardId;
+    renderCabinet();
+  });
   $("pendingList").addEventListener("contextmenu", (event) => {
     const report = event.target.closest("[data-focus-report]");
     if (!report) return;
@@ -7484,9 +7782,19 @@ async function handleNavyDestination(destination) {
     showNotice(`目前與${FACTIONS[destinationOwner]?.shortName || destinationOwner}和平，艦隊不能駛入其港口。`);
     return;
   }
+  if (portParalysed(destination.city)) {
+    showNotice(portParalysedNote(destination.city));
+    return;
+  }
   const path = navyPath(source, destination, cellNeighbors, navyRules());
   if (!path) {
     showNotice(`艦隊一回合最多沿可航行水道移動 ${navyRules().move?.tiles_per_turn || 2} 格。`);
+    return;
+  }
+  // 炸壞的港口連通行都不行，航線經過也算，得繞開。
+  const blockedPort = path.find((cell) => cell.key !== source.key && portParalysed(cell.city));
+  if (blockedPort) {
+    showNotice(portParalysedNote(blockedPort.city));
     return;
   }
   const ownNavy = navyAtCell(destination.key, currentPlayer);
@@ -7685,6 +7993,70 @@ function unreadNotifications(payload = state.players[currentPlayer]) {
     .filter((item) => !readNotifications.has(item.key));
 }
 
+// ── 政府內閣 ──────────────────────────────────────────────────────────
+// 五張單一玩家卡打出後，對應的人物就掛在陣營操作版最下方，與部隊分開。
+// 卡片失效時人物離開，這一區也跟著消失。
+let selectedCabinetCardId = null;
+
+function cabinetEntries(faction = currentPlayer) {
+  return Object.values(state?.cabinet || {}).filter((entry) => entry.owner === faction);
+}
+
+function cabinetPortraitMarkup(entry, className = "cabinet-portrait") {
+  const name = entry.portrait || entry.person || "";
+  return `<img class="${className}" src="/assets/portraits/${encodeURIComponent(name)}.jpg" alt="${entry.person}"
+    onerror="this.replaceWith(Object.assign(document.createElement('div'), { className: '${className} portrait-placeholder', textContent: '${(entry.person || "?").charAt(0)}' }))">`;
+}
+
+function renderCabinetDetail() {
+  const root = $("cabinetDetail");
+  if (!root) return;
+  const entry = cabinetEntries().find((item) => item.card_id === selectedCabinetCardId);
+  if (!entry) {
+    root.hidden = true;
+    root.innerHTML = "";
+    return;
+  }
+  root.hidden = false;
+  root.innerHTML = `
+    <div class="army-profile cabinet-profile">
+      ${cabinetPortraitMarkup(entry)}
+      <div class="cabinet-identity">
+        <div class="cabinet-name-row">
+          <b>${entry.person}</b>
+          <span class="cabinet-card-name">${entry.card_name}</span>
+        </div>
+        <span>${entry.skill || ""}</span>
+      </div>
+    </div>
+    <div class="cabinet-text">
+      <b>效果說明</b>
+      <p>${entry.effect || "（無）"}</p>
+      <b>失效條件</b>
+      <p>${entry.lapse_text || "（無）"}</p>
+    </div>`;
+}
+
+function renderCabinet() {
+  const section = $("cabinetSection");
+  if (!section) return;
+  const entries = cabinetEntries();
+  if (selectedCabinetCardId && !entries.some((entry) => entry.card_id === selectedCabinetCardId)) {
+    selectedCabinetCardId = null;
+  }
+  section.hidden = entries.length === 0;
+  $("cabinetCount").textContent = String(entries.length);
+  $("cabinetList").innerHTML = entries.map((entry) => `
+    <div class="pending-unit cabinet-unit ${selectedCabinetCardId === entry.card_id ? "active" : ""}">
+      <button class="pending-unit-main" data-focus-cabinet="${entry.card_id}">
+        <span class="pending-unit-number">閣</span>
+        <span><b>${entry.person}</b><small>${entry.card_name}</small></span>
+      </button>
+    </div>
+  `).join("");
+  renderCabinetDetail();
+}
+
 function renderPendingActions() {
   const pending = pendingArmies();
   const navyPending = pendingNavies();
@@ -7735,6 +8107,7 @@ function renderPendingActions() {
   $("pendingList").innerHTML = fightingMarkup + armyMarkup + navyMarkup + completeMarkup;
 
   renderArmyDetail();
+  renderCabinet();
   renderBattlePanel();
   renderTileInfo();
 
@@ -7953,6 +8326,7 @@ async function advanceToNextTurn(force = false) {
       riot_garrisons: qingGangRiotGarrisons(),
       city_garrisons: uprisingCityGarrisons(),
       contested_provinces: contestedProvinces(),
+      fallen_marshals: fallenMarshals(),
     });
     state = result.state;
     syncStrategicCitiesFromState();
@@ -7979,10 +8353,10 @@ async function advanceToNextTurn(force = false) {
     for (const navy of allNavies(true)) delete navy.resolvedTurn;
     armyOrderHistory.length = 0;
     navyOrderHistory.length = 0;
-    const terminalBattles = activeBattles.filter((battle) => !["pending", "ongoing"].includes(battle.status));
-    battleReports.push(...terminalBattles);
-    for (const battle of terminalBattles) activeBattles.splice(activeBattles.indexOf(battle), 1);
-    selectedBattleId = activeBattles.at(-1)?.id || battleReports.at(-1)?.id || null;
+    archiveTerminalBattles();
+    const visibleActiveBattles = activeBattles.filter((battle) => reportVisibleToPlayer(battle));
+    const visibleBattleReports = battleReports.filter((battle) => reportVisibleToPlayer(battle));
+    selectedBattleId = visibleActiveBattles.at(-1)?.id || visibleBattleReports.at(-1)?.id || null;
     selectedArmyId = currentArmies()[0]?.id || null;
     selectedNavyId = selectedArmyId ? null : currentNavies()[0]?.id || null;
     currentPhase = "military";
@@ -8054,6 +8428,24 @@ window.__neDebug = {
   FOREIGN_RAILWAY_RELATION_MIN,
   armyCanBeCaptured,
   annihilateArmy,
+  applyGeneralDeath,
+  settleNavyCarriedLosses,
+  sinkCarriedArmyWithNavy,
+  enforceNavyCargoCapacity,
+  carriedArmy,
+  paralysedPorts,
+  portParalysed,
+  navyLockedInPort,
+  navyLockedNote,
+  navyCanReceiveOrder,
+  pendingNavies,
+  traitLabel,
+  traitDescription,
+  enemyPortCityOptions,
+  navyById,
+  allNavies,
+  navyRules,
+  navyCapacity,
   NO_CAPTURE_FACTIONS,
   applyNpcReinforcements,
   npcMarshalArmyIds,

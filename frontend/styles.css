@@ -3018,3 +3018,81 @@ button, select, input, textarea {
   margin-top: 6px;
   text-align: right;
 }
+
+/* 政府內閣：陣營操作版最下方，與部隊分成兩區。 */
+.dock-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(231, 225, 215, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cabinet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cabinet-unit {
+  grid-template-columns: 1fr;
+}
+
+.cabinet-detail {
+  padding: 10px;
+  border: 1px solid rgba(212, 165, 116, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.cabinet-profile {
+  grid-template-columns: 46px 1fr;
+}
+
+/* 人名與功能卡名同一行：卡名靠最右，字級與原本的副標一致。 */
+.cabinet-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cabinet-card-name {
+  flex: none;
+  text-align: right;
+}
+
+.cabinet-portrait,
+.cabinet-profile .portrait-placeholder {
+  width: 46px;
+  height: 54px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 18px;
+}
+
+.cabinet-text {
+  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cabinet-text b {
+  color: #d8bd92;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.cabinet-text p {
+  margin: 0 0 4px;
+  color: #cfc6b8;
+  font-size: 11px;
+  line-height: 1.6;
+}
