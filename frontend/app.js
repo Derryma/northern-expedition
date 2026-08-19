@@ -1,4 +1,4 @@
-import { factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
+import { FLAG, factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
 import { RIVERS } from './map.js';
 import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES } from './map.js';
 import {
@@ -167,6 +167,397 @@ const PLAYABLE_LAYER_ALPHA = 0.86;
 
 // 列強租借地的顏色，與列強鐵路（南滿、中東、滇越）同一個紅。
 const FOREIGN_TERRITORY_FILL = 'rgba(176, 34, 34, 0.34)';
+
+// ── 列強懲戒在地圖上的樣子 ──────────────────────────────────────────────
+// 佔領區換成該列強的領土色、城市換成列強紅、區域中央插旗；水域封鎖畫成
+// 帶斜紋的同色水面；被轟炸的城市在下方標紅字「轟炸中」並掛上施暴國國旗，
+// 解除後轉成「重建中」。全部的判定資料來自後端 state.foreign_punishments，
+// 前端只負責畫。
+const POWER_TERRITORY_COLORS = {
+  jp: '#d8cfa8',   // 淺卡其
+  su: '#a3242b',   // 紅色，比西北軍更深
+  uk: '#9fc4de',   // 淺藍
+  fr: '#3f6fb5',   // 藍
+};
+// 列強旗幟一律走 flags.js 的 FLAG，與租借地標記、陣營操作板同一套：
+// 日本是**旭日旗**、蘇聯是鐮刀錘子紅旗。不要用 emoji——emoji 的日本是日章旗、
+// 蘇聯是現代俄羅斯三色旗，放在 1926 年的盤面上兩個都不對。
+const powerFlagImageCache = {};
+
+function powerFlagDataUrl(power) {
+  const svg = FLAG[power];
+  if (!svg) return null;
+  // flags.js 的 SVG 是要內嵌進 HTML 的，沒有帶 xmlns；當成獨立圖片載入時
+  // 少了這個宣告瀏覽器一律當作壞圖，得補上去。
+  const standalone = svg.includes('xmlns=')
+    ? svg
+    : svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(standalone)}`;
+}
+
+// canvas 不能直接畫 SVG 字串，得先做成 Image。圖是非同步載入的，
+// 載好之後補畫一次，否則第一輪的佔領旗會是空的。
+function powerFlagImage(power) {
+  const url = powerFlagDataUrl(power);
+  if (!url) return null;
+  let img = powerFlagImageCache[power];
+  if (!img) {
+    img = new Image();
+    img.addEventListener('load', () => { if (state) initMap(); });
+    img.src = url;
+    powerFlagImageCache[power] = img;
+  }
+  return img.complete && img.naturalWidth ? img : null;
+}
+
+// 在 canvas 上畫一面小旗（含深色細框，免得白底旗糊在淺色地形上）。
+function drawPowerFlag(ctx, power, cx, cy, width) {
+  const img = powerFlagImage(power);
+  const height = width * 2 / 3;
+  if (!img) return false;
+  ctx.save();
+  ctx.drawImage(img, cx - width / 2, cy - height / 2, width, height);
+  ctx.strokeStyle = 'rgba(24, 20, 16, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - width / 2, cy - height / 2, width, height);
+  ctx.restore();
+  return true;
+}
+const POWER_LABELS = { jp: '日本', su: '蘇聯', uk: '英國', fr: '法國', us: '美國' };
+const OCCUPIED_CITY_FILL = 'rgba(140, 31, 28, 0.92)';
+const BOMBING_MARK = '#e2483c';
+const REBUILD_MARK = '#d9a441';
+
+// 把 #rrggbb 加上透明度。佔領區要蓋住底下的勢力色但不能完全遮死地形。
+function withAlpha(hex, alpha) {
+  const value = String(hex).replace('#', '');
+  const full = value.length === 3
+    ? value.split('').map((ch) => ch + ch).join('')
+    : value;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+function foreignPunishments() {
+  return state?.foreign_punishments || [];
+}
+
+function occupiedProvinces() {
+  const out = {};
+  for (const entry of foreignPunishments()) {
+    if (entry.kind !== 'ground_occupation') continue;
+    for (const province of entry.provinces || []) {
+      if (!out[province]) out[province] = entry;   // 先來後到
+    }
+  }
+  return out;
+}
+
+function blockadedWaters() {
+  const out = {};
+  for (const entry of foreignPunishments()) {
+    if (entry.kind !== 'water_blockade') continue;
+    for (const water of entry.waters || []) {
+      if (!out[water]) out[water] = entry;
+    }
+  }
+  return out;
+}
+
+function bombedCities() {
+  const out = {};
+  for (const entry of foreignPunishments()) {
+    if (entry.kind !== 'air_raid') continue;
+    for (const cityId of entry.city_ids || []) {
+      if (!out[cityId]) out[cityId] = entry;
+    }
+  }
+  return out;
+}
+
+// 城市現在的狀態：轟炸中 / 重建中 / 沒事。後端也算一份同樣的東西
+// （PunishmentBook.city_status），兩邊必須說一樣的話。
+function cityPunishmentStatus(cityId) {
+  const bombed = bombedCities()[cityId];
+  if (bombed) return { status: 'bombing', label: '轟炸中', power: bombed.power };
+  const remaining = (state?.city_rebuilding || {})[cityId];
+  if (remaining) return { status: 'rebuilding', label: '重建中', remaining_turns: remaining };
+  return null;
+}
+
+function occupationForCell(cell) {
+  if (!cell) return null;
+  const province = strategicProvinceForCell(cell);
+  if (province && occupiedProvinces()[province] && cell.land) {
+    return occupiedProvinces()[province];
+  }
+  // cell.river 同時放海域名（近海格）與河名（河道格）——map.js 兩邊都寫這個欄位。
+  if (cell.river) {
+    const entry = blockadedWaters()[cell.river];
+    if (entry) return entry;
+  }
+  return null;
+}
+
+// ── 懲戒對部隊與艦隊的實際作用 ─────────────────────────────────────────
+// 設計稿寫的是「部隊被鎖在原地」「艦隊被鎖在原地」「城內駐軍被驅趕至鄰近
+// 鄉野地格」以及一次性的戰力／艦體損失。部隊與艦隊都住在前端，後端只能把
+// 待辦掛在 state.players[x].pending_frontend_effects 上；真正執行的地方是
+// 這裡。做完之後打 /api/ack-frontend-effects 銷帳，避免重複扣。
+
+// 這支部隊此刻是否被地面佔領鎖在原地？回傳鎖住它的那筆懲戒，或 null。
+// 事件卡造成的「該區部隊本回合／N 回合不可移動」（蘇聯遠東調兵、南滿護路隊擴編）。
+// 走 timed_effects 的 movement_freeze，範圍以省份指定；沒指定省份就是全境。
+function movementFreezeForArmy(army) {
+  const faction = factionForArmy(army);
+  const province = strategicProvinceForCell(cells[army?.cellKey]);
+  for (const effect of activeTimedEffects(faction, "movement_freeze")) {
+    const provinces = effect.provinces || [];
+    if (!provinces.length || (province && provinces.includes(province))) return effect;
+  }
+  return null;
+}
+
+function punishmentLockForArmy(army) {
+  const cell = cells[army?.cellKey];
+  if (!cell) return null;
+  const entry = occupationForCell(cell);
+  if (!entry || entry.kind !== 'ground_occupation') return null;
+  // 懲戒只鎖被罰的那一家；同一塊地上別家的部隊不受影響。
+  return entry.owner && entry.owner !== factionForArmy(army) ? null : entry;
+}
+
+// 艦隊在封鎖水域或被佔領的沿岸／河道上，一樣被鎖在原地。
+function punishmentLockForNavy(navy) {
+  const cell = cells[navy?.cellKey];
+  if (!cell) return null;
+  const entry = occupationForCell(cell);
+  if (!entry || !['water_blockade', 'ground_occupation'].includes(entry.kind)) return null;
+  return entry.owner && entry.owner !== navyFaction(navy) ? null : entry;
+}
+
+function punishmentLockLabel(entry) {
+  const power = POWER_LABELS[entry?.power] || entry?.power || '列強';
+  return entry?.kind === 'water_blockade' ? `${power}封鎖水域` : `${power}佔領區`;
+}
+
+// 一次性戰力損失：照現有的 clampUnitsToForceCap 往下削，削到目標戰力為止。
+function scaleArmyForce(army, multiplier) {
+  const before = forcePoints(armyUnits(army));
+  if (before <= 0) return 0;
+  army.units = clampUnitsToForceCap(armyUnits(army), Math.max(0, Math.floor(before * multiplier)));
+  const general = generalById(army.generalId);
+  if (general) general.units = { ...army.units };
+  return before - forcePoints(armyUnits(army));
+}
+
+// 艦體損失按比例攤在每艘船上，船數不變（沉船交給既有的正規化流程）。
+function scaleNavyHp(navy, multiplier) {
+  normalizeNavyDivision(navy, navyRules());
+  let lost = 0;
+  for (const boat of [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])]) {
+    const before = Math.max(0, Number(boat.hp || 0));
+    const after = Math.max(0, Math.round(before * multiplier));
+    lost += before - after;
+    boat.hp = after;
+  }
+  normalizeNavyDivision(navy, navyRules());
+  return lost;
+}
+
+// 把城內駐軍趕到鄰近的鄉野地格：不進城、不進租借地、不疊在別支部隊上。
+function evictArmyFromCity(army) {
+  const cell = cells[army?.cellKey];
+  if (!cell?.city) return null;
+  const target = cellNeighbors(cell).find((next) => next.land && !next.city && !next.power
+    && !allArmies().some((other) => other.id !== army.id && other.cellKey === next.key));
+  if (!target) return null;
+  moveArmyToCell(army, target);
+  return target;
+}
+
+// 執行一筆 foreign_punishment_damage。範圍判定與後端同一套：
+// 省份（地面佔領）、水域（封鎖）、城市清單（空襲）。
+function applyForeignPunishmentDamage(faction, effect) {
+  const notes = [];
+  const provinces = new Set(effect.provinces || []);
+  const waters = new Set(effect.waters || []);
+  const cityIds = new Set(effect.city_ids || []);
+  const power = POWER_LABELS[effect.power] || effect.power || '列強';
+
+  const inZone = (cell) => {
+    if (!cell) return false;
+    if (cityIds.size && cell.city && cityIds.has(cell.city.id)) return true;
+    if (provinces.size && cell.land && provinces.has(strategicProvinceForCell(cell))) return true;
+    if (waters.size && cell.river && waters.has(cell.river)) return true;
+    return false;
+  };
+  // 「鄰接港口」：封鎖水域旁邊的港市。
+  const nextToZone = (cell) => Boolean(cell) && cellNeighbors(cell).some(inZone);
+
+  // 日蘇重疊區的三重傷害是**以初始值為基準相加**的（−40%−10%−40% → 剩 10%），
+  // 不是逐次相乘（那會得到 32.4%）。所以後端送來的是「累計損失率」，前端要記住
+  // 這條鏈開始前的初始值，每次都從初始值重算，而不是在現值上再乘一次。
+  const chain = effect.chain || null;
+  const cumulativeForce = Number(effect.cumulative_army_force || 0);
+  const cumulativeHull = Number(effect.cumulative_harbor_gunboat_hp || 0);
+
+  let forceLost = 0;
+  let evicted = 0;
+  for (const army of allArmies()) {
+    if (factionForArmy(army) !== faction) continue;
+    const cell = cells[army.cellKey];
+    const here = inZone(cell);
+    if (chain && here && cumulativeForce) {
+      forceLost += setArmyForceFromBaseline(army, `${chain}`, 1 - cumulativeForce);
+      continue;
+    }
+    const harbor = Boolean(effect.harbor_army_force) && cell?.city && nextToZone(cell);
+    const rate = here ? Number(effect.army_force || 0) : (harbor ? Number(effect.harbor_army_force || 0) : 0);
+    if (rate) forceLost += scaleArmyForce(army, 1 + rate);
+    if (here && effect.evict_from_city && evictArmyFromCity(army)) evicted += 1;
+  }
+
+  let hullLost = 0;
+  for (const navy of allNavies()) {
+    if (navyFaction(navy) !== faction) continue;
+    const cell = cells[navy.cellKey];
+    if (!inZone(cell) && !(cell?.city && nextToZone(cell))) continue;
+    if (chain && cumulativeHull) {
+      hullLost += setNavyHpFromBaseline(navy, `${chain}`, 1 - cumulativeHull);
+      continue;
+    }
+    const rate = Number(effect.fleet_hp || effect.harbor_gunboat_hp || 0);
+    if (rate) hullLost += scaleNavyHp(navy, 1 + rate);
+  }
+
+  const headline = effect.punishment_kind === 'power_war'
+    ? `日蘇${(effect.provinces || []).join('、')}之戰`
+    : `${power}懲戒`;
+  if (forceLost) notes.push(`${headline}：部隊戰力共 −${forceLost}`);
+  if (hullLost) notes.push(`${headline}：艦隊生命共 −${hullLost}`);
+  if (evicted) notes.push(`${evicted} 支駐軍被逐出城`);
+  return notes;
+}
+
+// 三重傷害用的「初始值」帳本：鍵是 部隊/艦隊 id ＋ 這條傷害鏈（通常是省份）。
+// 第一次被打到時記下當時的值，之後每一段都從這個值重算。
+const punishmentBaselines = new Map();
+
+function setArmyForceFromBaseline(army, chain, remaining) {
+  const key = `${army.id}:${chain}`;
+  const current = forcePoints(armyUnits(army));
+  if (!punishmentBaselines.has(key)) punishmentBaselines.set(key, current);
+  const baseline = punishmentBaselines.get(key);
+  const target = Math.max(0, Math.floor(baseline * remaining));
+  if (target >= current) return 0;
+  army.units = clampUnitsToForceCap(armyUnits(army), target);
+  const general = generalById(army.generalId);
+  if (general) general.units = { ...army.units };
+  return current - forcePoints(armyUnits(army));
+}
+
+function setNavyHpFromBaseline(navy, chain, remaining) {
+  normalizeNavyDivision(navy, navyRules());
+  const key = `${navy.id}:${chain}`;
+  const boats = [...(navy.gunBoats || []), ...(navy.cargoBoatHp || [])];
+  const current = boats.reduce((sum, boat) => sum + Math.max(0, Number(boat.hp || 0)), 0);
+  if (!punishmentBaselines.has(key)) punishmentBaselines.set(key, current);
+  const baseline = punishmentBaselines.get(key);
+  if (!current) return 0;
+  const target = Math.max(0, baseline * remaining);
+  if (target >= current) return 0;
+  const lost = scaleNavyHp(navy, target / current);
+  return lost;
+}
+
+// 最後通牒：回報每家「哪些指定城市的周邊一格有我方部隊」。
+// 旅順、香港、海參崴是列強城市（住在 map.js 的 FOREIGN_CITIES），
+// 通牒指定的正是它們，所以兩種城市都要算進去。
+function ultimatumGarrisons() {
+  const adjacency = new Map();
+  for (const cell of Object.values(cells)) {
+    const city = cell.city || cell.foreignCity;
+    if (!city) continue;
+    for (const neighbour of cellNeighbors(cell)) {
+      if (!adjacency.has(neighbour.key)) adjacency.set(neighbour.key, new Set());
+      adjacency.get(neighbour.key).add(city.id);
+    }
+  }
+  const out = {};
+  for (const army of allArmies()) {
+    const faction = factionForArmy(army);
+    if (!TURN_PLAYERS.includes(faction)) continue;
+    const near = adjacency.get(army.cellKey);
+    if (!near) continue;
+    const list = out[faction] || (out[faction] = []);
+    for (const cityId of near) if (!list.includes(cityId)) list.push(cityId);
+  }
+  return out;
+}
+
+// ── 前端待辦的總處理台 ────────────────────────────────────────────────
+// 後端把「只有前端做得到的事」掛在 state.players[x].pending_frontend_effects
+// 上。這裡是唯一的消費點：每個 kind 都要在 PENDING_EFFECT_HANDLERS 裡登記，
+// 做完打 /api/ack-frontend-effects 銷帳。沒登記的 kind 會在主控台叫出來——
+// 先前 loyalty_all 就是因為沒人消費而靜靜失效了半年，不要再發生第二次。
+const PENDING_EFFECT_HANDLERS = {
+  foreign_punishment_damage: (faction, effect) => applyForeignPunishmentDamage(faction, effect),
+
+  // 全體可變忠誠將領加減忠誠。1.8 日本承認北京政府、10.8 復興儒學走這條，
+  // 幅度可能已被〈成立官辦廣播電台〉放大（後端算好了，這裡照數字執行）。
+  // 列強派來的刺客得手：真的把人從將領樹上抹掉（部屬少將忠誠一併歸零）。
+  general_death: (faction, effect) => {
+    const owner = effect.owner || faction;
+    const general = generalTrees[owner]?.generals?.[effect.general_id];
+    if (!applyGeneralDeath(effect.general_id, owner)) return [];
+    const who = general?.name || effect.general_id;
+    return [`${factionLabel(owner, owner === currentPlayer)}${effect.marshal ? '大帥' : ''}${who}遇刺身亡`];
+  },
+
+  loyalty_all: (faction, effect) => {
+    const amount = Number(effect.amount || 0);
+    if (!amount) return [];
+    const ids = mutableGeneralIdsForOwner(faction);
+    if (!ids.length) return [];
+    ids.forEach((generalId) => adjustGeneralLoyalty(generalId, amount));
+    const sign = amount > 0 ? `+${amount}` : `${amount}`;
+    const amplified = effect.amplified_by === 'radio_station' ? '（廣播電台放大）' : '';
+    return [`${factionLabel(faction, faction === currentPlayer)}全體可變忠誠將領 ${ids.length} 位忠誠 ${sign}${amplified}`];
+  },
+};
+
+async function consumePendingFrontendEffects() {
+  const notes = [];
+  const drained = [];
+  for (const faction of TURN_PLAYERS) {
+    const queue = state?.players?.[faction]?.pending_frontend_effects || [];
+    if (!queue.length) continue;
+    let handled = false;
+    for (const effect of queue) {
+      const handler = PENDING_EFFECT_HANDLERS[effect.kind];
+      if (!handler) {
+        console.warn(`[pending_frontend_effects] 沒有處理器的 kind：${effect.kind}`, effect);
+        continue;
+      }
+      notes.push(...(handler(faction, effect) || []));
+      handled = true;
+    }
+    if (handled) drained.push(faction);
+  }
+  for (const faction of drained) {
+    // 不指定 kind：整個佇列清掉。沒有處理器的項目也一併清，免得無限累積；
+    // 上面的 console.warn 已經把它們喊出來了。
+    const result = await api('/api/ack-frontend-effects', { player: faction });
+    state = result.state;
+  }
+  if (drained.length) {
+    renderArmyMarkers(currentPlayer);
+    renderPendingActions();
+  }
+  return notes;
+}
+
 const FOREIGN_CITY_OUTLINE = '#b02222';
 outsideMapArt.addEventListener("load", () => {
   if (state) initMap();
@@ -1400,6 +1791,19 @@ function statBreakdownMarkup(kind, profile = state?.players?.[currentPlayer]) {
       <span><i>${effect.name || effect.effect_id}</i><strong>${effect.amount >= 0 ? "+" : ""}$${effect.amount}</strong></span>
     `).join("")}
   ` : "";
+  // 租界管制：明細裡要看得出哪幾座城被哪幾國掐著、扣了多少、加成是不是也停了。
+  const controlled = cities.filter((city) => city.concession_control);
+  const controlRows = controlled.length ? `
+    <b>租界管制</b>
+    ${controlled.map((city) => {
+      const info = city.concession_control;
+      const powers = (info.powers || []).map((key) => POWER_LABELS[key] || key).join("、");
+      const suspended = info.bonus_suspended ? "，租界加成已停" : "";
+      return `<span><i>${city.name}（${powers}管制${suspended}）</i>`
+        + `<strong>${unit}-${info.penalty}${suffix}</strong></span>`;
+    }).join("")}
+    <span class="stat-popover-note"><i>管制持續至與該國關係改善至非敵對（&gt; −4）的下一回合；一城多國租界時，只有全部租界國都管制，租界加成才會消失。</i></span>
+  ` : "";
   const footer = kind === "cash"
     ? `<span class="stat-popover-total"><i>每回合現金合計</i><strong>+$${total}</strong></span>`
     : `<span class="stat-popover-total"><i>每回合工廠合計</i><strong>+${total} 點</strong></span>
@@ -1408,6 +1812,7 @@ function statBreakdownMarkup(kind, profile = state?.players?.[currentPlayer]) {
   return `
     <b>${kind === "cash" ? "城市現金來源" : "城市工廠來源"}</b>
     ${rows}
+    ${controlRows}
     ${footer}
     ${debtRows}
   `;
@@ -3544,10 +3949,17 @@ function drawCities(ctx) {
     points.forEach(([hx, hy], index) => index ? ctx.lineTo(hx, hy) : ctx.moveTo(hx, hy));
     ctx.closePath();
     const level = Math.max(1, Math.min(5, city.level || 1));
-    ctx.fillStyle = `rgba(${66 - level * 5}, ${60 - level * 4}, ${48 - level * 3}, 0.9)`;
+    // 被列強佔領的城市換成列強紅（同香港、旅順、海參崴那種不屬於任何勢力的樣子）。
+    const occupied = occupationForCell(cell);
+    const occupiedCity = occupied && occupied.kind === 'ground_occupation';
+    ctx.fillStyle = occupiedCity
+      ? OCCUPIED_CITY_FILL
+      : `rgba(${66 - level * 5}, ${60 - level * 4}, ${48 - level * 3}, 0.9)`;
     ctx.fill();
-    ctx.strokeStyle = level >= 4 ? '#f0c65a' : '#f7f1df';
-    ctx.lineWidth = 1.1 + level * 0.28;
+    ctx.strokeStyle = occupiedCity
+      ? FOREIGN_CITY_OUTLINE
+      : (level >= 4 ? '#f0c65a' : '#f7f1df');
+    ctx.lineWidth = occupiedCity ? 2.2 : 1.1 + level * 0.28;
     ctx.stroke();
 
     // Each level adds one building around the same central tower, keeping the
@@ -3597,9 +4009,38 @@ function drawCities(ctx) {
       ctx.fillStyle = level >= 4 ? '#f0c65a' : '#dcd3bf';
       ctx.fillRect(x - ((level - 1) * 2) + marker * 4 - 1, y + 5, 2, 2);
     }
+    // 產出那一行：正常時報 $ 與 工；停產時直接說明原因，不要騙玩家還有收入。
+    const status = cityPunishmentStatus(city.id);
     ctx.font = '700 8px Inter';
-    ctx.fillStyle = '#fff9e8';
-    ctx.fillText(`$${city.cash} 工${city.factory}`, x, y + 11);
+    if (status) {
+      const mark = status.status === 'bombing' ? BOMBING_MARK : REBUILD_MARK;
+      const text = status.status === 'rebuilding' && status.remaining_turns
+        ? `${status.label} ${status.remaining_turns}`
+        : status.label;
+      // 轟炸中的城市標上施暴國的國旗（旭日旗），一眼看得出是誰在炸。
+      const flagPower = status.status === 'bombing' ? status.power : null;
+      const hasFlag = Boolean(flagPower && FLAG[flagPower]);
+      const flagW = 10;
+      const width = 30 + (hasFlag ? flagW + 3 : 0);
+      ctx.fillStyle = 'rgba(20, 16, 14, 0.88)';
+      ctx.fillRect(x - width / 2, y + 6, width, 11);
+      ctx.strokeStyle = mark;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - width / 2, y + 6, width, 11);
+      ctx.fillStyle = mark;
+      if (hasFlag) {
+        drawPowerFlag(ctx, flagPower, x - width / 2 + 2 + flagW / 2, y + 11.5, flagW);
+        ctx.fillText(text, x + (flagW + 3) / 2, y + 11.5);
+      } else {
+        ctx.fillText(text, x, y + 11.5);
+      }
+    } else if (occupiedCity) {
+      ctx.fillStyle = '#f4c9c4';
+      ctx.fillText('收入歸零', x, y + 11);
+    } else {
+      ctx.fillStyle = '#fff9e8';
+      ctx.fillText(`$${city.cash} 工${city.factory}`, x, y + 11);
+    }
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#f1ead8';
     ctx.font = '700 10px Inter';
@@ -3755,6 +4196,7 @@ function initMap() {
   // Draw hexagonal grid with faction coloring
   ctx.lineWidth = 0.5;
   const factionCentroids = {}; // Track centroids for faction labels
+  const occupationCentroids = {}; // 佔領區的中心，用來插旗
 
   for (let c = 0; c < COLS; c++) {
     for (let r = 0; r < ROWS; r++) {
@@ -3801,7 +4243,52 @@ function initMap() {
         factionCentroids[cell.fac].count++;
       }
 
-      // 列強租借地：用與列強鐵路相同的紅色標示。
+      // 列強懲戒佔領／封鎖：整片換成該列強的領土色，水域另加斜紋。
+      const occupation = occupationForCell(cell);
+      if (occupation) {
+        // save/restore 一定要包住：格線的 lineWidth 是迴圈外設好的 0.5，
+        // 這裡若把它改掉又不還原，之後每一格的格線都會變粗變深。
+        ctx.save();
+        const color = POWER_TERRITORY_COLORS[occupation.power] || '#b02222';
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 180 * (60 * i);
+          const hx = X + s * Math.cos(a);
+          const hy = Y + s * Math.sin(a);
+          if (i === 0) ctx.moveTo(hx, hy);
+          else ctx.lineTo(hx, hy);
+        }
+        ctx.closePath();
+        ctx.fillStyle = occupation.kind === 'water_blockade'
+          ? withAlpha(color, 0.72) : withAlpha(color, 0.88);
+        ctx.fill();
+        // 封鎖水域再壓一層斜紋，跟陸地佔領區分得開。
+        if (occupation.kind === 'water_blockade') {
+          ctx.save();
+          ctx.clip();
+          ctx.strokeStyle = 'rgba(38, 26, 20, 0.75)';
+          ctx.lineWidth = 1.6;
+          for (let d = -s * 2; d < s * 2; d += 4) {
+            ctx.beginPath();
+            ctx.moveTo(X + d, Y - s);
+            ctx.lineTo(X + d + s * 2, Y + s);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+        // 演習有期限、懲戒沒有——邊框用虛線與實線分開。
+        ctx.strokeStyle = withAlpha(color, 1);
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash(occupation.drill ? [4, 3] : []);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+        const bucket = occupationCentroids[occupation.id]
+          || (occupationCentroids[occupation.id] = { sumX: 0, sumY: 0, count: 0, entry: occupation });
+        bucket.sumX += X; bucket.sumY += Y; bucket.count++;
+      }
+
+      // 列強租界地：用與列強鐵路相同的紅色標示。
       if (cell.power) {
         ctx.fillStyle = FOREIGN_TERRITORY_FILL;
         ctx.beginPath();
@@ -3834,6 +4321,7 @@ function initMap() {
 
       // Draw hex outline
       ctx.strokeStyle = '#6b5c3880';
+      ctx.lineWidth = 0.5;   // 明講，不靠迴圈外殘留的狀態
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
         const a = Math.PI / 180 * (60 * i);
@@ -3874,6 +4362,8 @@ function initMap() {
 
   drawCities(ctx);
   drawForeignCities(ctx);
+  // 佔領旗要壓在城市之上：城市畫在後面，先前旗子會被城市六角形蓋掉。
+  drawOccupationBanners(ctx, occupationCentroids);
   drawCompletedEngineering(ctx);
 
   ctx.strokeStyle = '#7c6a44';
@@ -3886,6 +4376,97 @@ function initMap() {
   // Draw army markers on SVG overlay
   renderArmyMarkers(currentPlayer);
   setupMapMovement();
+}
+
+// 佔領區中央插上該列強的旗幟，底下標明是懲戒還是演習。畫在城市之後，
+// 且文字底下墊一塊深色牌子，否則壓到城市六角形上就讀不出來了。
+function drawOccupationBanners(ctx, occupationCentroids) {
+  Object.values(occupationCentroids || {}).forEach((bucket) => {
+    const entry = bucket.entry;
+    const cx = bucket.sumX / bucket.count;
+    const cy = bucket.sumY / bucket.count;
+    const color = POWER_TERRITORY_COLORS[entry.power] || '#b02222';
+    const power = POWER_LABELS[entry.power] || entry.power;
+    // 三種說法要分得開：演習有期限、封鎖是水域、佔領是土地易主。
+    const label = entry.drill ? `${power}演習`
+      : entry.kind === 'water_blockade' ? `${power}封鎖` : `${power}佔領`;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 11px Inter';
+    const width = ctx.measureText(label).width + 14;
+    ctx.fillStyle = 'rgba(24, 20, 16, 0.82)';
+    ctx.beginPath();
+    ctx.roundRect(cx - width / 2, cy - 22, width, 40, 5);
+    ctx.fill();
+    ctx.strokeStyle = withAlpha(color, 0.95);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    if (!drawPowerFlag(ctx, entry.power, cx, cy - 6, 26)) {
+      ctx.font = '700 20px Inter';
+      ctx.fillStyle = '#fdf7e6';
+      ctx.fillText('⚑', cx, cy - 6);
+    }
+
+    // 字一律用米白：領土色有深有淺（蘇聯是深紅），拿它當字色壓在深色牌子上會看不見。
+    ctx.font = '700 11px Inter';
+    ctx.fillStyle = '#fdf7e6';
+    ctx.fillText(label, cx, cy + 11);
+    ctx.restore();
+  });
+}
+
+// 被列強懲戒鎖住的部隊／艦隊在地圖上的樣子：紅虛線圈 ＋ 下方紅底標記 ＋ 國旗。
+function appendPunishedBadge(group, x, y, entry, label, above = false) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const ring = document.createElementNS(ns, 'circle');
+  ring.setAttribute('cx', x);
+  ring.setAttribute('cy', y);
+  ring.setAttribute('r', 15);
+  ring.setAttribute('fill', 'none');
+  ring.setAttribute('stroke', BOMBING_MARK);
+  ring.setAttribute('stroke-width', '2');
+  ring.setAttribute('stroke-dasharray', '4 3');
+  group.appendChild(ring);
+
+  const flagUrl = powerFlagDataUrl(entry.power);
+  const flagW = 12;
+  const width = flagUrl ? 30 + flagW + 3 : 30;
+  // 城市地格底下已經有「轟炸中／重建中」與收入標記，標記改掛在上方免得疊在一起。
+  const top = above ? y - 30 : y + 15;
+  const plate = document.createElementNS(ns, 'rect');
+  plate.setAttribute('x', x - width / 2);
+  plate.setAttribute('y', top);
+  plate.setAttribute('width', width);
+  plate.setAttribute('height', 13);
+  plate.setAttribute('rx', '3');
+  plate.setAttribute('fill', BOMBING_MARK);
+  plate.setAttribute('stroke', '#2a1410');
+  plate.setAttribute('stroke-width', '0.8');
+  group.appendChild(plate);
+
+  if (flagUrl) {
+    const flagImage = document.createElementNS(ns, 'image');
+    flagImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', flagUrl);
+    flagImage.setAttribute('href', flagUrl);
+    flagImage.setAttribute('x', x - width / 2 + 2);
+    flagImage.setAttribute('y', top + 2.5);
+    flagImage.setAttribute('width', flagW);
+    flagImage.setAttribute('height', flagW * 2 / 3);
+    group.appendChild(flagImage);
+  }
+
+  const tag = document.createElementNS(ns, 'text');
+  tag.setAttribute('x', flagUrl ? x + (flagW + 3) / 2 : x);
+  tag.setAttribute('y', top + 10);
+  tag.setAttribute('text-anchor', 'middle');
+  tag.setAttribute('font-size', '9');
+  tag.setAttribute('font-weight', '800');
+  tag.setAttribute('fill', '#fff8e8');
+  tag.textContent = label;
+  group.appendChild(tag);
 }
 
 function renderArmyMarkers(faction) {
@@ -3955,9 +4536,14 @@ function renderArmyMarkers(faction) {
     text.textContent = number;
     g.appendChild(text);
 
+    // 佔領區內的部隊：紅色虛線圈 ＋ 下方「受困」標記與施暴國國旗。
+    const lock = punishmentLockForArmy(army);
+    if (lock) appendPunishedBadge(g, X, Y, lock, '受困', Boolean(cell.city));
+
     // Tooltip on hover
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-    title.textContent = armyTooltipText(army, faction);
+    title.textContent = armyTooltipText(army, faction)
+      + (lock ? `\n${punishmentLockLabel(lock)}：被鎖在原地，無法移動` : '');
     g.appendChild(title);
 
     const focusArmy = () => {
@@ -4052,8 +4638,13 @@ function renderNavyMarkers(svgOverlay, observer) {
     label.textContent = "艦";
     g.appendChild(label);
 
+    // 封鎖水域／佔領區內的艦隊：與陸軍同一套標記，寫「封鎖」。
+    const navyLock = punishmentLockForNavy(navy);
+    if (navyLock) appendPunishedBadge(g, 0, 0, navyLock, '封鎖', Boolean(cell.city));
+
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = navyTooltipText(navy);
+    title.textContent = navyTooltipText(navy)
+      + (navyLock ? `\n${punishmentLockLabel(navyLock)}：被鎖在原地，無法移動` : "");
     g.appendChild(title);
 
     const focus = () => {
@@ -6302,10 +6893,19 @@ function lockedForeignRailways(faction = currentPlayer) {
     .filter((railway) => foreignRailwayRelation(railway, faction) < FOREIGN_RAILWAY_RELATION_MIN));
 }
 
-// 鐵路運輸走不了的線：搶修中的 ∪ 關係不到的列強線。
+// 交涉破裂的路權封鎖：只罰拒絕的那一家，別人照走（與全場停運的崩鐵不同）。
+function bannedRailways(faction = currentPlayer) {
+  const turn = Number(state?.turn || 0);
+  return new Set((state?.railway_bans || [])
+    .filter((entry) => entry.player === faction && turn < Number(entry.until_turn || 0))
+    .map((entry) => entry.railway));
+}
+
+// 鐵路運輸走不了的線：搶修中的 ∪ 關係不到的列強線 ∪ 自己被封鎖路權的線。
 function unusableRailways(faction = currentPlayer) {
   const blocked = disabledRailways();
   for (const railway of lockedForeignRailways(faction)) blocked.add(railway);
+  for (const railway of bannedRailways(faction)) blocked.add(railway);
   return blocked;
 }
 
@@ -6422,6 +7022,16 @@ const NPC_GROWTH = {
 };
 
 // 大帥被俘或陣亡的陣營。後端沒有將領資料，內閣卡的失效條件要靠這份回報。
+// 各陣營大帥的 general_id。引擎不持有將領資料，暗殺類事件要靠這份名單擲骰。
+function factionMarshalIds() {
+  const out = {};
+  for (const faction of TURN_PLAYERS) {
+    const marshalId = generalTrees[faction]?.great_general_id;
+    if (marshalId) out[faction] = marshalId;
+  }
+  return out;
+}
+
 function fallenMarshals() {
   const fallen = [];
   for (const faction of TURN_PLAYERS) {
@@ -6537,6 +7147,9 @@ function pendingEventState() {
     drawer: entry.drawer,
     responders: entry.responders || [],
     responses: answered,
+    // 暗殺類事件在抽出當下就擲好骰，結果掛在 pending 那一筆上；
+    // 報紙的「本報附誌」要照它寫出成敗。
+    assassination: entry.assassination || null,
     strict,
     needsEveryone: false,
     pendingResponders: waiting,
@@ -6578,9 +7191,36 @@ function newspaperEffectMarkup(effect) {
   }).join("");
 }
 
+// 暗殺類事件：骰子在抽出當下就擲過了，報紙的「本報附誌」要照實寫出成敗，
+// 不能只寫「將進行一次暗殺」讓玩家自己猜。
+function assassinationVerdictMarkup(outcome) {
+  if (!outcome) return "";
+  const chance = Math.round(Number(outcome.chance || 0) * 100);
+  const guard = Number(outcome.guard_reduction || 0)
+    ? `（基礎 ${Math.round(Number(outcome.base_chance || 0) * 100)}%，親衛隊 −${
+      Math.round(Number(outcome.guard_reduction) * 100)}%）` : "";
+  const verdict = outcome.success
+    ? `<b class="newspaper-effect-hit">行刺得手</b>：${
+      factionLabel(outcome.target_owner, false)}大帥當場斃命。`
+    : `<b>行刺未遂</b>：刺客當場被擒，${factionLabel(outcome.target_owner, false)}大帥無恙。`;
+  return `<p class="newspaper-effect-line">${verdict}　成功率 ${chance}%${guard}</p>`;
+}
+
+// 有些卡的報紙不只一版（11.5 廢兩改元有「成」與「不成」兩則）。
+// 後端在**抽出當下**就擲好骰並回傳 newspaper_index，報紙照結果刊——
+// 先前這裡一律刊第 0 則，於是不管實際成不成，玩家看到的都是「今日實行」。
+function newspaperForCard(card, index) {
+  const variants = card.newspaper_variants;
+  if (Array.isArray(variants) && Number.isInteger(index) && variants[index]) {
+    return variants[index];
+  }
+  return card.newspaper || {};
+}
+
 function newspaperMarkup(view) {
   const card = view.card;
-  const paragraphs = (card.newspaper?.paragraphs || [])
+  const paper = newspaperForCard(card, view.newspaper_index);
+  const paragraphs = (paper.paragraphs || [])
     .map((text) => `<p>${newspaperInline(text)}</p>`).join("");
   const notes = (card.apply?.notes || [])
     .map((note) => `<span class="newspaper-note">※ ${newspaperInline(note)}</span>`).join("");
@@ -6613,7 +7253,8 @@ function newspaperMarkup(view) {
       const label = (resolution.options || []).find((option) => option.id === value)?.label;
       return `${FACTIONS[code]?.shortName || code}：${label || "已閱"}`;
     }).join("　");
-  const effectLines = newspaperEffectMarkup(card.effect);
+  const effectLines = newspaperEffectMarkup(card.effect)
+    + assassinationVerdictMarkup(view.assassination);
   const pendingNames = (view.pendingResponders || [])
     .map((code) => FACTIONS[code]?.shortName || code).join("、");
   let waitingText;
@@ -6649,7 +7290,7 @@ function newspaperMarkup(view) {
       <span class="newspaper-progress">本期第 ${view.index + 1} 則／共 ${view.total} 則</span>
     </div>
     <div class="newspaper-figure" data-event-figure="${card.id}"><span>［ 圖 片 待 補 ］${card.id}</span></div>
-    <div class="newspaper-headline">${newspaperInline(card.newspaper?.headline || card.name)}</div>
+    <div class="newspaper-headline">${newspaperInline(paper.headline || card.name)}</div>
     <div class="newspaper-body">${paragraphs}</div>
     <div class="newspaper-effect"><div class="newspaper-effect-title">本 報 附 誌</div>${effectLines}${notes}</div>
     ${choiceHints}
@@ -6710,6 +7351,8 @@ async function respondToEvent(choice, followUp = null) {
     newspaperCardKey = null;
     if (result.card_finished) {
       const notes = applyFrontendEventEffects(cardId);
+      // 列強懲戒的部隊／艦隊傷害由後端排進待辦，這裡直接執行，不由玩家自行扣。
+      notes.push(...await consumePendingFrontendEffects());
       if (notes.length) showNotice(`${view.card.name}：${notes.join("；")}`);
     }
     if (result.cycle_finished) {
@@ -7765,6 +8408,14 @@ async function handleNavyDestination(destination) {
   const navy = selectedNavy();
   const source = cells[navy?.cellKey];
   if (!navy || !destination || !source || destination.key === source.key) return;
+  const navyLock = punishmentLockForNavy(navy);
+  if (navyLock) {
+    showNotice(`${navy.name}位於${punishmentLockLabel(navyLock)}內，被鎖在原地，無法移動。`);
+    navyMoveMode = false;
+    $("mapStage").classList.remove("move-mode");
+    renderArmyDetail();
+    return;
+  }
   if (!navyCanReceiveOrder(navy)) {
     showNotice("此艦隊本回合已行動。");
     navyMoveMode = false;
@@ -7897,6 +8548,20 @@ function handleMapDestination(destination) {
 
     if (destination.power) {
       showNotice(`${POWER_NAME[destination.power] || destination.power}的租借地，中國各勢力不得進入或通過。`);
+      return;
+    }
+    // 事件卡下的原地戰備令：規則，不是提示。
+    const freeze = movementFreezeForArmy(army);
+    if (freeze) {
+      const left = freeze.remaining_turns;
+      showNotice(`${army.designator} 奉命原地戰備（${freeze.name || "事件"}）`
+        + `${left ? `，剩餘 ${left} 回合` : "，本回合"}不可移動。`);
+      return;
+    }
+    // 被列強佔領區鎖住的部隊不能動——這是規則，不是提示。
+    const armyLock = punishmentLockForArmy(army);
+    if (armyLock) {
+      showNotice(`${army.designator}位於${punishmentLockLabel(armyLock)}內，被鎖在原地，無法移動。`);
       return;
     }
     const ceasefire = forcedPeaceEffect(currentPlayer);
@@ -8057,6 +8722,50 @@ function renderCabinet() {
   renderCabinetDetail();
 }
 
+
+// ── 最後通牒的狀態說明 ──────────────────────────────────────────────
+// 被下通牒的玩家必須知道三件事：還剩幾回合、該去哪幾座城、逾期會怎樣。
+// 這塊常駐在側欄最上方，通牒結案（達成或逾期）之後還會再顯示一回合的結果。
+function ultimatumCityName(cityId) {
+  for (const cell of Object.values(cells)) {
+    const city = cell.city || cell.foreignCity;
+    if (city && city.id === cityId) return city.name;
+  }
+  return cityId;
+}
+
+function ultimatumsForPlayer(faction) {
+  return (state?.ultimatums || []).filter((entry) => entry.owner === faction);
+}
+
+function ultimatumNoticeMarkup(faction = currentPlayer) {
+  const turn = Number(state?.turn || 0);
+  return ultimatumsForPlayer(faction).map((entry) => {
+    const power = POWER_LABELS[entry.power] || entry.power;
+    const cities = (entry.cities || []).map(ultimatumCityName).join("、");
+    if (entry.status === "met") {
+      return `<div class="ultimatum-notice met"><b class="ultimatum-title">${power}的最後通牒　已達成</b>
+        <span>部隊已在指定城市周邊駐紮滿 1 回合，對${power}關係 +1；`
+        + `${power}的地面部隊懲戒維持封鎖。</span></div>`;
+    }
+    if (entry.status === "failed") {
+      return `<div class="ultimatum-notice failed"><b class="ultimatum-title">${power}的最後通牒　已逾期</b>
+        <span>視為無視通牒：<b>${power}的地面部隊懲戒已對你解封</b>，隨時可能降臨。</span>
+        <small>把對${power}關係修回非敵對（&gt; −4），下一回合起會重新上鎖。</small></div>`;
+    }
+    if (entry.status !== "open") return "";
+    const left = Math.max(0, Number(entry.deadline_turn || 0) - turn);
+    const posted = entry.seen_turn !== undefined && entry.seen_turn !== null;
+    const progress = posted
+      ? `<small>已有部隊就位（第 ${entry.seen_turn} 回合起）——再撐一個回合就算駐紮滿 1 回合。</small>`
+      : `<small>目前無部隊在指定城市周邊；部隊必須<b>連續兩次回合推進</b>都在原地才算駐紮滿 1 回合。</small>`;
+    return `<div class="ultimatum-notice"><b class="ultimatum-title">${power}的最後通牒　剩 ${left} 回合</b>
+      <span>派部隊進駐 <span class="ultimatum-cities">${cities}</span> 其中一座城市的<b>周邊一格</b>，並駐紮至少 1 回合。</span>
+      ${progress}
+      <small>逾期未辦 → ${power}的地面部隊懲戒（佔領你的省份）全部對你解封。達成 → 對${power}關係 +1。</small></div>`;
+  }).join("");
+}
+
 function renderPendingActions() {
   const pending = pendingArmies();
   const navyPending = pendingNavies();
@@ -8104,7 +8813,8 @@ function renderPendingActions() {
   const completeMarkup = !fighting.length && !pending.length && !navyPending.length
     ? '<div class="pending-complete">所有軍隊均已收到命令</div>'
     : "";
-  $("pendingList").innerHTML = fightingMarkup + armyMarkup + navyMarkup + completeMarkup;
+  $("pendingList").innerHTML = ultimatumNoticeMarkup()
+    + fightingMarkup + armyMarkup + navyMarkup + completeMarkup;
 
   renderArmyDetail();
   renderCabinet();
@@ -8327,10 +9037,15 @@ async function advanceToNextTurn(force = false) {
       city_garrisons: uprisingCityGarrisons(),
       contested_provinces: contestedProvinces(),
       fallen_marshals: fallenMarshals(),
+      ultimatum_garrisons: ultimatumGarrisons(),
+      marshal_ids: factionMarshalIds(),
     });
     state = result.state;
     syncStrategicCitiesFromState();
     uiNotice = null;
+    // 空襲每回合都炸一次，後端在 tick 時把傷害排進待辦，這裡立刻執行掉。
+    const raidNotes = await consumePendingFrontendEffects();
+    if (raidNotes.length) showNotice(raidNotes.join("；"));
     if (result.turn?.awaiting_events) {
       // 事件卡週期：先讀報，四張回應完後端才會結算本回合經濟。
       newspaperCardKey = null;

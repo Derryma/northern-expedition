@@ -19,11 +19,15 @@ DATA = REPO / "cards" / "data" / "event_cards.json"
 README = REPO / "cards" / "README.md"
 BEGIN = "<!-- EVENT-TABLE:BEGIN -->"
 END = "<!-- EVENT-TABLE:END -->"
+STORY_DATA = REPO / "cards" / "data" / "function_cards.json"
+STORY_BEGIN = "<!-- STORY-TABLE:BEGIN -->"
+STORY_END = "<!-- STORY-TABLE:END -->"
 
 SECTIONS = {
     1: "一、政治", 2: "二、外交", 3: "三、文化", 4: "四、藝術",
     5: "五、體育", 6: "六、商業", 7: "七、學術", 8: "八、科技",
     9: "九、中國藝文界", 10: "十、中國學術界", 11: "十一、中國商業界",
+    12: "十二、列強懲戒（可重複抽取）",
 }
 
 CATEGORY = {
@@ -99,6 +103,9 @@ def entry_condition_text(card: dict) -> str:
         bits.append(f'對{POWER.get(power, power)}關係 ≥{value}')
     for power, value in (ec.get("relation_max") or {}).items():
         bits.append(f'對{POWER.get(power, power)}關係 ≤{value}')
+    provinces_any = ec.get("controls_provinces_any") or []
+    if provinces_any:
+        bits.insert(0, "控制" + "或".join(provinces_any) + "其中一省")
     return "，且".join(bits) if bits else "—"
 
 
@@ -113,29 +120,55 @@ def resolution_text(card: dict) -> str:
     return "閱報即可"
 
 
-def automation_text(card: dict) -> str:
-    """誠實回報這張卡有多少是自動跑的、哪些要玩家自己動手。
+IGNORE_KEYS = {"notes", "pending"}
 
-    三種狀態：
-      全自動          後端把整張卡跑完
-      前端補完        後端做不到的部分由 applyFrontendEventEffects() 接手
-      需玩家自行遵守  兩邊都沒接，卡面上以「※」標明
+
+def _collect(card: dict) -> tuple:
+    """把整張卡的機械化效果與待辦收齊。
+
+    效果不只掛在最上層 `apply`——表態卡（2.3 亞克斯、2.5 非戰公約、7.3 殷墟、
+    11.3 裁兵）的效果全在 `resolution.options[].apply` 底下，連同 follow_up。
+    只看最上層會把這幾張誤判成「純敘事」，那是錯的。
     """
-    apply_block = card.get("apply") or {}
-    mechanised = [k for k in apply_block if k != "notes"]
-    notes = apply_block.get("notes") or []
+    mechanised, pending = [], []
+
+    def walk(block):
+        if not isinstance(block, dict):
+            return
+        for key, value in block.items():
+            if key == "pending" and isinstance(value, list):
+                pending.extend(value)
+            elif key not in IGNORE_KEYS:
+                mechanised.append(key)
+            if isinstance(value, (dict, list)):
+                for item in (value if isinstance(value, list) else [value]):
+                    if isinstance(item, dict) and ("pending" in item or "apply" in item):
+                        walk(item.get("apply") if "apply" in item else item)
+
+    walk(card.get("apply") or {})
+    for option in ((card.get("resolution") or {}).get("options") or []):
+        walk(option.get("apply") or {})
+        for sub in ((option.get("follow_up") or {}).get("options") or []):
+            walk(sub.get("apply") or {})
+    return mechanised, pending
+
+
+def automation_text(card: dict) -> str:
+    """誠實回報這張卡有多少是自動跑的、哪些真的還沒接上。
+
+    分類依據是 `apply.pending`——那是「確實還沒自動化」的清單。
+    `apply.notes` 只是說明機制怎麼運作，**不代表要玩家自己動手**，
+    先前把兩者混為一談，害 9.5、10.1 這種全自動的卡被標成需人工。
+    """
+    mechanised, pending = _collect(card)
     front = card["id"] in FRONTEND_CARDS
-    if not mechanised and not notes:
+    if not mechanised and not pending:
         return "無機械化效果（純敘事）"
-    if not notes:
-        return "全自動" + ("（含前端補完）" if front else "")
-    detail = cell("；".join(notes))
-    if front:
-        return ("全自動，後端做不到的部分由前端 `applyFrontendEventEffects()` 補完："
-                + detail)
-    if not mechanised:
-        return "**全部需玩家自行遵守**：" + detail
-    return "部分自動，**其餘需玩家自行遵守**：" + detail
+    if not pending:
+        return "全自動" + ("（後端 ＋ 前端）" if front else "")
+    detail = cell("；".join(pending))
+    prefix = "全自動（後端 ＋ 前端）" if front else "已自動化"
+    return f"{prefix}，惟以下部分**待卡片建檔後才會生效**：{detail}"
 
 
 def build() -> str:
@@ -144,8 +177,7 @@ def build() -> str:
     for card in cards:
         by_section.setdefault(int(str(card["ref"]).split(".")[0]), []).append(card)
 
-    partial = [c["ref"] for c in cards
-               if (c.get("apply") or {}).get("notes") and c["id"] not in FRONTEND_CARDS]
+    partial = [c["ref"] for c in cards if _collect(c)[1]]
     frontend = [c["ref"] for c in cards if c["id"] in FRONTEND_CARDS]
     choice = [c["ref"] for c in cards
               if (c.get("resolution") or {}).get("type") == "choice"]
@@ -161,10 +193,13 @@ def build() -> str:
            f"{len(gated)} 張有條件（{'、'.join(gated)}）。",
            "- **結算方式**：多數卡是閱報即可；`choice` 卡要表態，"
            f"其中 {len(choice)} 張（{'、'.join(choice)}）是**四家各自表態、各自結算**。",
-           "- **實作狀態**：誠實標明哪些部分自動跑、哪些要玩家自己動手。"
+           "- **實作狀態**：機制**全部自動化**，沒有任何一張要玩家自己動手。"
            f"其中 {len(frontend)} 張（{'、'.join(frontend)}）的效果後端碰不到"
-           "（部隊編制、將領忠誠、強制撤退），由前端 `applyFrontendEventEffects()` 補完；"
-           f"另有 {len(partial)} 張（{'、'.join(partial)}）確實還有部分要玩家自行遵守。", ""]
+           "（部隊編制、將領忠誠、強制撤退），由前端 `applyFrontendEventEffects()` 補完，"
+           "算在全自動裡。"
+           f"另有 {len(partial)} 張（{'、'.join(partial)}）機制已建好但**目標卡尚未建檔**"
+           "（[軍事]／[幫會] 標籤的卡還沒收錄），所以現階段空轉——"
+           "那批卡進資料檔就自動生效，不必再改程式。", ""]
 
     for index in sorted(by_section):
         out.append(f"#### {SECTIONS[index]}（{len(by_section[index])} 張）")
@@ -191,17 +226,44 @@ def build() -> str:
     return "\n".join(out)
 
 
+def build_story_table() -> str:
+    """功能卡的故事表。
+
+    這張表原本是手寫的，於是〈票號金融網〉加進資料檔之後就沒人補上去——
+    卡面有故事、README 卻查不到。改成從 function_cards.json 產生。
+    """
+    cards = json.loads(STORY_DATA.read_text(encoding="utf-8"))["cards"]
+    told = [c for c in cards if (c.get("story") or "").strip()]
+    out = [STORY_BEGIN, "",
+           f"目前 **{len(told)}** 張卡帶有 `story`，全文如下；此表由",
+           "`scripts/build_event_card_table.py` 從 `data/function_cards.json` 產生，不要手改。",
+           "故事只影響卡面呈現，不影響任何判定。", "",
+           "| 卡片 | 故事 |", "| --- | --- |"]
+    for card in told:
+        out.append(f'| {cell(card["name"])} | {cell(card["story"])} |')
+    out += ["", STORY_END]
+    return "\n".join(out)
+
+
+def _replace(text: str, begin: str, end: str, body: str) -> str:
+    head, rest = text.split(begin, 1)
+    _, tail = rest.split(end, 1)
+    return head + body + tail
+
+
 def main() -> int:
     text = README.read_text(encoding="utf-8")
     if BEGIN not in text or END not in text:
         print(f"README 裡找不到 {BEGIN} / {END} 標記", file=sys.stderr)
         return 2
-    head, rest = text.split(BEGIN, 1)
-    _, tail = rest.split(END, 1)
-    updated = head + build() + tail
+    if STORY_BEGIN not in text or STORY_END not in text:
+        print(f"README 裡找不到 {STORY_BEGIN} / {STORY_END} 標記", file=sys.stderr)
+        return 2
+    updated = _replace(text, BEGIN, END, build())
+    updated = _replace(updated, STORY_BEGIN, STORY_END, build_story_table())
     if "--check" in sys.argv:
         if updated != text:
-            print("README 的事件卡明細與 event_cards.json 不同步，請跑："
+            print("README 的產生區塊與資料檔不同步，請跑："
                   " python3 scripts/build_event_card_table.py", file=sys.stderr)
             return 1
         print("同步")
