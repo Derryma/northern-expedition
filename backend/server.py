@@ -108,6 +108,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/new-game": self._new_game,
             "/api/next-turn": self._next_turn,
             "/api/respond-event": self._respond_event,
+            "/api/ack-frontend-effects": self._ack_frontend_effects,
             "/api/draw-function": self._draw_function,
             "/api/use-function": self._use_function,
             "/api/discard-for-draw": self._discard_for_draw,
@@ -155,6 +156,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             city_garrisons=payload.get("city_garrisons") or {},
             contested_provinces=payload.get("contested_provinces"),
             fallen_marshals=payload.get("fallen_marshals"),
+            ultimatum_garrisons=payload.get("ultimatum_garrisons") or {},
+            marshal_ids=payload.get("marshal_ids") or {},
         )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -224,6 +227,12 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def _respond_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.respond_event(
             str(payload["player"]), choice=payload.get("choice"), follow_up=payload.get("follow_up"),
+        )
+
+    def _ack_frontend_effects(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 前端把 pending_frontend_effects 執行完之後回來銷帳。
+        return ENGINE.consume_frontend_effects(
+            str(payload["player"]), kind=payload.get("kind") or None,
         )
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:

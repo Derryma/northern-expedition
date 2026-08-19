@@ -240,7 +240,7 @@
             "label": "婦女選舉權法案：英國 [軍事] 事件封鎖"
           }
         ],
-        "notes": [
+        "pending": [
           "封鎖對象是**英國**的 [軍事] 事件卡。機制已建好，但資料檔目前一張帶 [軍事] 的英國卡都沒有，所以現階段這道封鎖是空轉的（唯一帶 [軍事] 的 1.9 屬於日本）。"
         ]
       }
@@ -316,7 +316,7 @@
             "label": "胡佛當選：美國 [軍事] 事件封鎖"
           }
         ],
-        "notes": [
+        "pending": [
           "封鎖對象是**美國**的 [軍事] 事件卡。機制已建好，但資料檔目前一張帶 [軍事] 的美國卡都沒有，所以現階段這道封鎖是空轉的（唯一帶 [軍事] 的 1.9 屬於日本）。"
         ]
       }
@@ -402,8 +402,8 @@
             "copies": 1
           }
         ],
-        "notes": [
-          "六張目標卡（南滿鐵路交涉、南滿護路隊擴編、濟南護僑、關東軍侵占東北三省、日本吞併江浙地區、關東軍特別演習）尚未建檔，引擎會以名稱比對，找不到就如實回報 no matching event cards in data，不會假裝加成功。等《對照 v2》的列強懲戒卡收錄後自動生效。"
+        "pending": [
+          "六張目標卡目前建檔兩張（12.1 關東軍侵占東北三省、12.4 關東軍特別演習），這兩張會確實加進卡池；其餘四張（南滿鐵路交涉、南滿護路隊擴編、濟南護僑、日本吞併江浙地區）尚未建檔，引擎以卡名比對，找不到就跳過。那批卡建檔後自動生效，不必改程式。"
         ]
       }
     },
@@ -731,8 +731,8 @@
             "label": "西蒙委員會：英國 [軍事] 事件封鎖"
           }
         ],
-        "notes": [
-          "事件卡 tags 與封鎖機制已建好，但資料檔目前沒有任何帶 [軍事] 標籤的事件卡，所以現階段封鎖不到任何東西。"
+        "pending": [
+          "封鎖對象是**英國**的 [軍事] 事件卡。機制已建好，但資料檔目前一張帶 [軍事] 的英國卡都沒有，所以現階段這道封鎖是空轉的（唯一帶 [軍事] 的 1.9 屬於日本）。"
         ]
       }
     },
@@ -858,8 +858,15 @@
           "amount": 1,
           "turns": 3
         },
-        "notes": [
-          "[幫會] 類事件持續時間 +1 回合：事件分類標籤尚未建立，未自動化。"
+        "event_duration_bonus": {
+          "tags": [
+            "幫會"
+          ],
+          "amount": 1,
+          "turns": 3
+        },
+        "pending": [
+          "[幫會] 事件卡持續時間 +1 回合的機制已建好（event_duration_bonus，依卡片 tags 比對）。資料檔目前還沒有任何一張帶 [幫會] 標籤的事件卡，等那批卡建檔後自動生效，不必再改程式。"
         ]
       }
     },
@@ -895,7 +902,7 @@
           }
         ],
         "notes": [
-          "事件卡 tags 與封鎖機制已建好，但資料檔目前沒有任何帶 [軍事] 標籤的事件卡，所以現階段封鎖不到任何東西。"
+          "封鎖對象是**日本**的 [軍事] 事件卡。資料檔目前有一張：1.9 日本陸軍裝備八九式中戰車，所以這道封鎖確實鎖得到東西。等《對照 v2》的列強懲戒卡收錄後涵蓋範圍會再擴大。"
         ]
       }
     },
@@ -1346,15 +1353,25 @@
           {
             "id": "scientific_dig",
             "label": "科學發掘",
-            "effect_text": "現金 +20，英 +1、美 +1；該省城市免疫治安事件 3 回合。",
+            "effect_text": "現金 +20，英 +1、美 +1；該省城市免疫治安事件 3 回合（暴動類功能卡與 security 類事件卡皆不生效）。",
             "apply": {
               "cash": 20,
               "relations": {
                 "uk": 1,
                 "us": 1
               },
-              "notes": [
-                "河南城市免疫治安事件 3 回合：尚未自動化。"
+              "province_riot_shield": [
+                {
+                  "province": "河南",
+                  "turns": 3,
+                  "blocked_mechanics": [
+                    "qing_gang_riot",
+                    "communist_riot",
+                    "red_army_uprising",
+                    "security_event"
+                  ],
+                  "label": "殷墟第一鏟：民心所繫，河南三回合不生亂"
+                }
               ]
             }
           },
@@ -2480,7 +2497,7 @@
                     "turns": null
                   }
                 ],
-                "notes": [
+                "pending": [
                   "「不再受〈世界銀價波動〉〈白銀外流〉〈錢莊擠兌〉影響」目前是空的：這三張卡在 function_cards.json 裡都不存在，沒有東西可以免疫。旗標先掛著，等那三張卡建檔後接上。"
                 ]
               }
@@ -2513,9 +2530,2871 @@
           ]
         },
         "notes": [
-          "報紙依 random_outcome 回傳的 newspaper_index 從 newspaper_variants 擇一刊出；前端尚未實作這個分支，目前一律顯示 newspaper（＝成功那一則）。"
+          "報紙依 random_outcome 回傳的 newspaper_index 從 newspaper_variants 擇一刊出，前端已實作（見 app.js 的 newspaperForCard()）。"
         ]
       }
+    },
+    {
+      "id": "kwantung_army_occupies_manchuria",
+      "ref": "12.1",
+      "name": "關東軍侵占東北三省",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對日關係未恢復，則日本將佔領滿州三省（奉天、吉林、黑龍江）。佔領期間三省換成日本領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與日本敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。日本將佔領該地區直到對日關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制奉天省或吉林省或黑龍江省，且對日關係 `≤ −6`，且已無視日本的最後通牒。[懲戒] 類卡在對同一玩家生效期間對該玩家封鎖，但不同玩家可同時遭受",
+      "newspaper": {
+        "headline": "關東軍越境入滿　奉吉黑三省易幟",
+        "paragraphs": [
+          "　　東京二十九日電——日本陸軍省昨夜發表聲明，稱為保護南滿鐵路沿線僑民與既得權益，已令關東軍越境進駐奉天、吉林、黑龍江三省要地。聲明謂此舉「純屬自衛」，並稱俟中國方面「恢復理性」即行撤退。",
+          "　　訪員按：所謂自衛者，兵已在他人之境內矣。三省之城，一夜之間旗換日章；關內來電稱奉天城內守軍被逐出城外，槍未及發。鐵路沿線之倉廩、礦廠、稅關，悉由日方接管。",
+          "　　查最後通牒之期已過而我方未有應對，此局非一日之積。惟三省之地非日本之地，其去留繫於邦交之寒暖——邦交一日不轉圜，此旗一日不下。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "奉天",
+          "吉林",
+          "黑龍江"
+        ],
+        "relation_max": {
+          "jp": -6
+        },
+        "requires_failed_ultimatum": "jp"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "ground_occupation",
+            "provinces": [
+              "奉天",
+              "吉林",
+              "黑龍江"
+            ],
+            "label": "關東軍侵占東北三省"
+          }
+        ]
+      }
+    },
+    {
+      "id": "japanese_navy_blockades_yangtze",
+      "ref": "12.2",
+      "name": "日艦封鎖長江",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "水域封鎖"
+      ],
+      "repeatable": true,
+      "effect": "若對日關係未恢復，則日本將砲擊長江沿岸並封鎖江面。封鎖期間長江水域的艦隊被鎖在原地，你方控制的長江河港城市產出歸零。與日本敵對者範圍內艦隊總生命 `−50%`、鄰接港口駐軍戰力 `−30%`。封鎖持續至對日關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "控制至少三座長江河港城市，且對日關係 `≤ −4`",
+      "newspaper": {
+        "headline": "日艦溯江而上　漢口以下江面斷航",
+        "paragraphs": [
+          "　　上海十一日訊——日本第一遣外艦隊昨日溯江而上，於江陰、鎮江、蕪湖各處下錨，宣布長江漢口以下江面即日起實施「航行管制」。中外商輪一律扣留候查，沿岸碼頭停止裝卸。",
+          "　　訪員按：長江者，中國之腹心水道也。米、鹽、紗、煤，半由此出入。江面一封，沿岸諸埠之市面立見蕭條；碼頭工人數萬，一夕失業。",
+          "　　日方稱此為「保護僑民之臨時措置」。惟臨時二字，向來繫於邦交而不繫於時日。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -4
+        },
+        "controls_ports_in_waters_min": {
+          "waters": [
+            "長江"
+          ],
+          "count": 3
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "water_blockade",
+            "waters": [
+              "長江"
+            ],
+            "label": "日艦封鎖長江"
+          }
+        ]
+      }
+    },
+    {
+      "id": "japanese_air_raid",
+      "ref": "12.3",
+      "name": "日軍航空隊轟炸",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "空襲"
+      ],
+      "repeatable": true,
+      "effect": "若對日關係未恢復，則日本將每回合空襲你方最大的五個城市（金錢＋工廠產出最高者）。期間該五城產出全部歸零；城內駐軍每回合被驅逐至鄰近陸地地格且戰力 `−30%`，靠港艦隊總生命 `−50%`。轟炸目標是動態的——被奪走的城市會換一個遞補，每回合固定五座。轟炸持續至對日關係改善至非敵對（`> −4`）的下一回合為止；解除後每座城市還要 `3` 回合才復工",
+      "condition": "對日關係 `≤ −4`",
+      "newspaper": {
+        "headline": "日機臨空　五大都邑同日遭炸",
+        "paragraphs": [
+          "　　本報訊——日本海軍航空隊昨晨自航艦起飛，分五隊臨我腹地大埠上空投彈。被炸者皆一方之通衢巨鎮，車站、電廠、紗廠、碼頭為主要目標。城內守軍倉皇出城，市民扶老攜幼奔於郊野。",
+          "　　訪員按：轟炸之為術，不在殺傷而在停工。一廠停則百業停，一埠停則一省之稅源涸。日方所擇者皆我最大之城，其意昭然。",
+          "　　據東京方面表示，此類行動將「持續至中國方面態度轉變為止」。而縱使他日停炸，瓦礫之下復工非旬日可辦。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "air_raid",
+            "cities": 5,
+            "label": "日軍航空隊轟炸"
+          }
+        ]
+      }
+    },
+    {
+      "id": "kwantung_army_special_drill",
+      "ref": "12.4",
+      "name": "關東軍特別演習",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "演習"
+      ],
+      "repeatable": true,
+      "effect": "奉天省、吉林省變成日本領地 **3 回合**，期間金錢與工廠收入歸零，兩省境內城市有駐軍者會被驅逐至鄰近陸地地格，若有艦隊者會被鎖在原地。演習不是懲戒：**不造成任何傷害**，且結束後土地與城市原封不動歸還原屬勢力",
+      "condition": "控制奉天省或吉林省。演習有固定回合數，與關係無關",
+      "newspaper": {
+        "headline": "關東軍舉行特別大演習　奉吉兩省戒嚴三日",
+        "paragraphs": [
+          "　　奉天十七日訊——關東軍司令部昨日公告，自即日起於奉天、吉林兩省舉行秋季特別演習，為期三旬。演習期間鐵路優先運兵，各縣城門日落即閉，中國駐軍奉命暫移城外指定地點。",
+          "　　訪員按：演習與佔領，於帳面上是兩回事，於地面上只差一紙公告。所幸公告上寫明了日期——寫明日期的，總會有結束的一天。",
+          "　　三旬之後，旗歸原主，城歸原主。惟這三旬之內，兩省的稅、廠、車，皆不在自己手裡。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "奉天",
+          "吉林"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "ground_occupation",
+            "provinces": [
+              "奉天",
+              "吉林"
+            ],
+            "drill_turns": 3,
+            "label": "關東軍特別演習"
+          }
+        ]
+      }
+    },
+    {
+      "id": "japan_annexes_jiangsu_zhejiang",
+      "ref": "12.5",
+      "name": "日本吞併江浙地區",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對日本關係未恢復，則日本將佔領江蘇、浙江。佔領期間該區換成該國領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與該國敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。佔領持續至關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制江蘇省或浙江省，且對日關係 `≤ −6`，且已無視日本的最後通牒",
+      "newspaper": {
+        "headline": "日軍登陸吳淞　蘇浙兩省易主",
+        "paragraphs": [
+          "　　上海七日電——日本陸戰隊昨晨於吳淞口登陸，當日進駐蘇州、無錫、杭州各要衝。日本領事館發表聲明，稱此舉係「因中國方面未於期限內作出誠意表示」，故不得不「自行採取必要措置」。",
+          "　　訪員按：蘇浙者，東南財賦之所出也。絲、茶、紗、米，半天下之利在此。今日之事，非爭一城一地，爭的是江南的帳房。",
+          "　　所謂期限者，即前日之最後通牒。通牒既下而我方無應，則今日之登陸，在對方眼中乃「依約行事」。此中之理，讀者自可斟酌。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "江蘇",
+          "浙江"
+        ],
+        "relation_max": {
+          "jp": -6
+        },
+        "requires_failed_ultimatum": "jp"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "ground_occupation",
+            "provinces": [
+              "江蘇",
+              "浙江"
+            ],
+            "label": "日本吞併江浙地區"
+          }
+        ]
+      }
+    },
+    {
+      "id": "british_troops_occupy_jiangsu_zhejiang",
+      "ref": "12.6",
+      "name": "英軍護僑部隊控制江浙地區",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對英國關係未恢復，則英國將佔領江蘇、浙江。佔領期間該區換成該國領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與該國敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。佔領持續至關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制江蘇省或浙江省，且對英關係 `≤ −6`，且已無視英國的最後通牒",
+      "newspaper": {
+        "headline": "英軍護僑部隊進駐蘇浙　租界戒嚴",
+        "paragraphs": [
+          "　　上海十九日訊——英國遠東艦隊陸戰隊昨日自公共租界出動，接管蘇州河以北各要道，並沿滬寧鐵路推進至南京、杭州。英方稱此為「保護僑民生命財產之臨時措置」。",
+          "　　訪員按：臨時二字，在滬上已聽了八十年。自道光年間起，凡英人所謂臨時者，未有一件是臨時的。",
+          "　　英國公使照會謂：通牒期限已過而未見我方誠意，故不得不「代為維持秩序」。秩序誰家之秩序，維持者又是誰，其中分別，市民心裡明白。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "江蘇",
+          "浙江"
+        ],
+        "relation_max": {
+          "uk": -6
+        },
+        "requires_failed_ultimatum": "uk"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "ground_occupation",
+            "provinces": [
+              "江蘇",
+              "浙江"
+            ],
+            "label": "英軍護僑部隊控制江浙地區"
+          }
+        ]
+      }
+    },
+    {
+      "id": "british_troops_occupy_two_guangs",
+      "ref": "12.7",
+      "name": "英軍護僑部隊進佔兩廣地區",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對英國關係未恢復，則英國將佔領廣東、廣西。佔領期間該區換成該國領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與該國敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。佔領持續至關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制廣東省或廣西省，且對英關係 `≤ −6`，且已無視英國的最後通牒",
+      "newspaper": {
+        "headline": "英軍自香港北上　廣州佛山同日戒嚴",
+        "paragraphs": [
+          "　　香港二十三日電——駐港英軍昨夜越過深圳河，分兩路進佔廣州、佛山，另一支溯西江而上直趨梧州。港督府發表公告，稱係「應僑商請求」而行。",
+          "　　訪員按：省港一水之隔，商情最熟。英人所護之僑，多半是自家的洋行；所保之產，多半是自家的貨棧。護僑二字，說穿了不外如是。",
+          "　　通牒之期既過，兩廣之門遂開。廣州一埠，昨日銀號盡閉，米價一日三漲。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "廣東",
+          "廣西"
+        ],
+        "relation_max": {
+          "uk": -6
+        },
+        "requires_failed_ultimatum": "uk"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "ground_occupation",
+            "provinces": [
+              "廣東",
+              "廣西"
+            ],
+            "label": "英軍護僑部隊進佔兩廣地區"
+          }
+        ]
+      }
+    },
+    {
+      "id": "soviet_far_east_army_invades_songhua",
+      "ref": "12.8",
+      "name": "蘇聯遠東軍入侵松花江流域",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對蘇聯關係未恢復，則蘇聯將佔領吉林、黑龍江。佔領期間該區換成該國領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與該國敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。佔領持續至關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制吉林省或黑龍江省，且對蘇關係 `≤ −6`，且已無視蘇聯的最後通牒",
+      "newspaper": {
+        "headline": "蘇軍越過黑龍江　哈爾濱一日數變",
+        "paragraphs": [
+          "　　哈爾濱十二日電——蘇聯遠東特別軍昨夜自黑河、綏芬河兩路越境，沿中東鐵路長驅直入，今晨已抵松花江北岸。蘇方聲明稱係「保衛中東路權益與蘇聯僑民」。",
+          "　　訪員按：中東路之爭，由來已久。惟權益二字，向來是槍桿子寫上去的；今日之事，不過是把舊帳重新寫了一遍。",
+          "　　哈埠俄僑數萬，昨夜張燈；華商則盡數閉市。松花江上冰未合，兩岸已無渡船。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "吉林",
+          "黑龍江"
+        ],
+        "relation_max": {
+          "su": -6
+        },
+        "requires_failed_ultimatum": "su"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "su",
+            "kind": "ground_occupation",
+            "provinces": [
+              "吉林",
+              "黑龍江"
+            ],
+            "label": "蘇聯遠東軍入侵松花江流域"
+          }
+        ]
+      }
+    },
+    {
+      "id": "soviet_mongol_army_enters_inner_mongolia",
+      "ref": "12.9",
+      "name": "蘇蒙聯軍進佔內蒙、黑龍江",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對蘇聯關係未恢復，則蘇聯將佔領察哈爾、熱河、黑龍江。佔領期間該區換成該國領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與該國敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。佔領持續至關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制察哈爾省或熱河省或黑龍江省，且對蘇關係 `≤ −6`，且已無視蘇聯的最後通牒",
+      "newspaper": {
+        "headline": "蘇蒙聯軍南下　察熱兩省告急",
+        "paragraphs": [
+          "　　張家口十五日訊——蘇蒙聯軍騎兵三路南下，昨日已入察哈爾北境，前鋒抵多倫；另一支東出，與由黑龍江南下之部會師。外蒙方面聲稱此係「邊境防務行動」。",
+          "　　訪員按：察熱兩省，向為關內外之屏障。屏障既撤，則平津之北再無遮攔。所謂邊境防務者，防的是誰的邊，讀者不難自明。",
+          "　　通牒之期已過。草原上無城可守，唯有的幾條商道，昨日起皆換了旗。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "察哈爾",
+          "熱河",
+          "黑龍江"
+        ],
+        "relation_max": {
+          "su": -6
+        },
+        "requires_failed_ultimatum": "su"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "su",
+            "kind": "ground_occupation",
+            "provinces": [
+              "察哈爾",
+              "熱河",
+              "黑龍江"
+            ],
+            "label": "蘇蒙聯軍進佔內蒙、黑龍江"
+          }
+        ]
+      }
+    },
+    {
+      "id": "french_troops_occupy_southwest",
+      "ref": "12.10",
+      "name": "法軍護僑部隊進佔西南地區",
+      "category": "foreign_power",
+      "power_note": "法",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "地面部隊"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對法國關係未恢復，則法國將佔領雲南、廣西。佔領期間該區換成該國領土，境內城市金錢與工廠收入歸零，部隊被鎖在原地，城內駐軍被驅趕至鄰近鄉野地格。與該國敵對者範圍內部隊戰力一次性 `−40%`、靠港砲艇總生命 `−40%`。佔領持續至關係改善至非敵對（`> −4`）的下一回合為止，退出後土地成為無主地，原屬勢力須重新佔領",
+      "condition": "控制雲南省或廣西省，且對法關係 `≤ −6`，且已無視法國的最後通牒",
+      "newspaper": {
+        "headline": "法軍沿滇越路北上　昆明南寧同告失守",
+        "paragraphs": [
+          "　　河內二十八日電——法屬印度支那軍團昨日沿滇越鐵路北上，今晨進入昆明；另一支自鎮南關入桂，直趨南寧。法方稱係「保護教堂、教民與鐵路員工」。",
+          "　　訪員按：滇越路者，法人所築，法人所有。護路護到省城裡去，這條路護的究竟是路還是省，值得一問。",
+          "　　通牒逾期而無覆。昆明城內法國教堂昨日鳴鐘，城外則有難民萬餘沿路南行。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "雲南",
+          "廣西"
+        ],
+        "relation_max": {
+          "fr": -6
+        },
+        "requires_failed_ultimatum": "fr"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "fr",
+            "kind": "ground_occupation",
+            "provinces": [
+              "雲南",
+              "廣西"
+            ],
+            "label": "法軍護僑部隊進佔西南地區"
+          }
+        ]
+      }
+    },
+    {
+      "id": "japanese_ultimatum",
+      "ref": "12.11",
+      "name": "日本的最後通牒",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "最後通牒"
+      ],
+      "repeatable": true,
+      "pool_copies": 10,
+      "effect": "抽出此卡後 **5 回合內**沒有派遣部隊前往 旅順、蘇州、漢口 其中一座城市**周邊一格地格**駐紮至少 1 回合，則視為無視最後通牒，下一回合起日本的 [地面部隊] 懲戒全部對你解封。若期限內完成要求，則 [地面部隊] 不會進入可抽卡組合，且對日本關係 `+1`",
+      "condition": "對日本關係 `≤ −6`。同一國的通牒未結案前不會再對同一玩家降臨；關係改善至非敵對後，已失敗的通牒也會解除，[地面部隊] 重新上鎖",
+      "newspaper": {
+        "headline": "日本公使遞交最後通牒　限五回合內覆",
+        "paragraphs": [
+          "　　北京三日電——日本公使昨日午後赴外交部，遞交照會一件，措辭嚴峻，要求我方於五回合之內派兵進駐旅順、蘇州、漢口三處之一的近郊，以示「誠意」。",
+          "　　訪員按：所謂誠意，在此不是言詞，是兵。派兵到人家指定的地方去站崗，站給人家看——這便是二十世紀的誠意。",
+          "　　照會末段稱：屆期若無具體表示，帝國政府「將採取認為必要之一切措置」。此語之下，關東軍已在動員。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "ultimatum": [
+          {
+            "power": "jp",
+            "cities": [
+              "lushun",
+              "suzhou",
+              "hankou"
+            ],
+            "turns": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "british_ultimatum",
+      "ref": "12.12",
+      "name": "英國的最後通牒",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "最後通牒"
+      ],
+      "repeatable": true,
+      "pool_copies": 10,
+      "effect": "抽出此卡後 **5 回合內**沒有派遣部隊前往 香港、上海、天津 其中一座城市**周邊一格地格**駐紮至少 1 回合，則視為無視最後通牒，下一回合起英國的 [地面部隊] 懲戒全部對你解封。若期限內完成要求，則 [地面部隊] 不會進入可抽卡組合，且對英國關係 `+1`",
+      "condition": "對英國關係 `≤ −6`。同一國的通牒未結案前不會再對同一玩家降臨；關係改善至非敵對後，已失敗的通牒也會解除，[地面部隊] 重新上鎖",
+      "newspaper": {
+        "headline": "英使照會措辭空前　限五回合內表示",
+        "paragraphs": [
+          "　　北京九日電——英國公使昨日照會我外交部，限五回合之內派兵駐紮香港、上海、天津三處之一的近郊，否則英國政府「保留採取進一步行動之權利」。",
+          "　　訪員按：保留權利四字，是英人外交辭令中最重的一句。上一次用它，是庚子年。",
+          "　　據悉遠東艦隊已自新加坡北上，日內可抵吳淞口外。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "uk": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "ultimatum": [
+          {
+            "power": "uk",
+            "cities": [
+              "hongkong",
+              "shanghai",
+              "tianjin"
+            ],
+            "turns": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "soviet_ultimatum",
+      "ref": "12.13",
+      "name": "蘇聯的最後通牒",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "最後通牒"
+      ],
+      "repeatable": true,
+      "pool_copies": 10,
+      "effect": "抽出此卡後 **5 回合內**沒有派遣部隊前往 海參崴、張家口 其中一座城市**周邊一格地格**駐紮至少 1 回合，則視為無視最後通牒，下一回合起蘇聯的 [地面部隊] 懲戒全部對你解封。若期限內完成要求，則 [地面部隊] 不會進入可抽卡組合，且對蘇聯關係 `+1`",
+      "condition": "對蘇聯關係 `≤ −6`。同一國的通牒未結案前不會再對同一玩家降臨；關係改善至非敵對後，已失敗的通牒也會解除，[地面部隊] 重新上鎖",
+      "newspaper": {
+        "headline": "蘇聯代辦提出最後期限　限五回合內派兵表態",
+        "paragraphs": [
+          "　　北京十四日訊——蘇聯駐華代辦昨日面交備忘錄，要求我方於五回合內派兵至海參崴或張家口近郊駐紮，以證明「無敵對意圖」。",
+          "　　訪員按：證明自己沒有敵意的辦法，是把兵開到對方指定的地方去。這個邏輯，若非身歷其境，實難索解。",
+          "　　備忘錄稱，逾期則蘇聯「將視為中國方面已作出選擇」。遠東特別軍近日調動頻繁，非無因也。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "ultimatum": [
+          {
+            "power": "su",
+            "cities": [
+              "vladivostok",
+              "zhangjiakou"
+            ],
+            "turns": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "french_ultimatum",
+      "ref": "12.14",
+      "name": "法國的最後通牒",
+      "category": "foreign_power",
+      "power_note": "法",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "最後通牒"
+      ],
+      "repeatable": true,
+      "pool_copies": 10,
+      "effect": "抽出此卡後 **5 回合內**沒有派遣部隊前往 昆明、上海、天津 其中一座城市**周邊一格地格**駐紮至少 1 回合，則視為無視最後通牒，下一回合起法國的 [地面部隊] 懲戒全部對你解封。若期限內完成要求，則 [地面部隊] 不會進入可抽卡組合，且對法國關係 `+1`",
+      "condition": "對法國關係 `≤ −6`。同一國的通牒未結案前不會再對同一玩家降臨；關係改善至非敵對後，已失敗的通牒也會解除，[地面部隊] 重新上鎖",
+      "newspaper": {
+        "headline": "法使限期照會　昆明滬津三處擇一",
+        "paragraphs": [
+          "　　北京二十一日電——法國公使昨日遞交照會，限我方於五回合內派兵至昆明、上海、天津三處之一的近郊駐紮，以保障法僑與教產之安全。",
+          "　　訪員按：法人在華，教堂多於商行。護教之名，用了七十年，每一次都伴著兵艦。",
+          "　　照會謂逾期即「另作籌畫」。滇越鐵路沿線之法軍，昨日已見增兵。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "fr": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "ultimatum": [
+          {
+            "power": "fr",
+            "cities": [
+              "kunming",
+              "shanghai",
+              "tianjin"
+            ],
+            "turns": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "japan_concession_control",
+      "ref": "12.15",
+      "name": "日本加強租界商務管制",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "懲戒",
+        "租界"
+      ],
+      "repeatable": true,
+      "effect": "日本收緊租界商務管制。期間你方持有的所有該國租界城市每回合額外 `$−3`、工廠 `−3`（多國管制可疊加，最多扣至產出歸零）。租界加成只有在該城**所有**租界國都對你管制時才會消失——加成綁的是城市的「租界」狀態，不是單一國家。管制持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "對日本關係 `≤ −4`，且擁有日本租界城市",
+      "newspaper": {
+        "headline": "日本收緊租界商務管制　華商貨棧盡遭查扣",
+        "paragraphs": [
+          "　　天津八日訊——日本租界工部局昨日公告，即日起實施「商務登記整理」，凡未經登記之華商行號一律停業候查，碼頭貨棧亦封存待驗。",
+          "　　訪員按：登記整理者，查扣之雅稱也。租界之利，本在通商；通商既阻，則租界於我方只剩一塊飛地。",
+          "　　日方稱此係「因兩國關係之現狀不得不然」。關係一日不轉圜，此令一日不撤。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -4
+        },
+        "requires_concession_of": "jp"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "concession_control": [
+          {
+            "power": "jp"
+          }
+        ]
+      }
+    },
+    {
+      "id": "britain_concession_control",
+      "ref": "12.16",
+      "name": "英國加強租界商務管制",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "懲戒",
+        "租界"
+      ],
+      "repeatable": true,
+      "effect": "英國收緊租界商務管制。期間你方持有的所有該國租界城市每回合額外 `$−3`、工廠 `−3`（多國管制可疊加，最多扣至產出歸零）。租界加成只有在該城**所有**租界國都對你管制時才會消失——加成綁的是城市的「租界」狀態，不是單一國家。管制持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "對英國關係 `≤ −4`，且擁有英國租界城市",
+      "newspaper": {
+        "headline": "英租界工部局收緊商務管制　華行停業待查",
+        "paragraphs": [
+          "　　上海十六日訊——英租界工部局昨日發布緊急章程，凡華資行號之營業執照一律暫停換發，貨物出入須逐件報驗。",
+          "　　訪員按：工部局之權，本在市政；今日之令，卻直指商務。市政與商務之界，向來由持槍者劃定。",
+          "　　英方表示，此項措置「與兩國關係之改善進度連動」。話已說得明白。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "uk": -4
+        },
+        "requires_concession_of": "uk"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "concession_control": [
+          {
+            "power": "uk"
+          }
+        ]
+      }
+    },
+    {
+      "id": "france_concession_control",
+      "ref": "12.17",
+      "name": "法國加強租界商務管制",
+      "category": "foreign_power",
+      "power_note": "法",
+      "tags": [
+        "懲戒",
+        "租界"
+      ],
+      "repeatable": true,
+      "effect": "法國收緊租界商務管制。期間你方持有的所有該國租界城市每回合額外 `$−3`、工廠 `−3`（多國管制可疊加，最多扣至產出歸零）。租界加成只有在該城**所有**租界國都對你管制時才會消失——加成綁的是城市的「租界」狀態，不是單一國家。管制持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "對法國關係 `≤ −4`，且擁有法國租界城市",
+      "newspaper": {
+        "headline": "法租界頒商務緊急令　華商行號一律停業候查",
+        "paragraphs": [
+          "　　上海二十日訊——法租界公董局昨日頒布緊急令，華資行號營業一律停業候查，租界內外之貨運須另請通行執照。",
+          "　　訪員按：公董局向以寬鬆著稱，今日忽爾嚴峻，非市政之故，乃邦交之故。",
+          "　　法方稱俟關係「回復常軌」即行撤銷。常軌者，對方定義之常軌也。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "fr": -4
+        },
+        "requires_concession_of": "fr"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "concession_control": [
+          {
+            "power": "fr"
+          }
+        ]
+      }
+    },
+    {
+      "id": "usa_concession_control",
+      "ref": "12.18",
+      "name": "美國加強租界商務管制",
+      "category": "foreign_power",
+      "power_note": "美",
+      "tags": [
+        "懲戒",
+        "租界"
+      ],
+      "repeatable": true,
+      "effect": "美國收緊租界商務管制。期間你方持有的所有該國租界城市每回合額外 `$−3`、工廠 `−3`（多國管制可疊加，最多扣至產出歸零）。租界加成只有在該城**所有**租界國都對你管制時才會消失——加成綁的是城市的「租界」狀態，不是單一國家。管制持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "對美國關係 `≤ −4`，且擁有美國租界城市",
+      "newspaper": {
+        "headline": "美方收緊公共租界商務　華商信用交易全面凍結",
+        "paragraphs": [
+          "　　上海二十五日訊——美國駐滬總領事館昨日照會公共租界工部局，要求對華資行號之信用交易暫停辦理，並凍結相關押匯。",
+          "　　訪員按：美人不派兵，卻扼住了銀根。刀不見血，而市面立枯——此為新式之懲戒。",
+          "　　總領事館稱此係「臨時性金融審慎措施」，將視兩國關係發展而定。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "us": -4
+        },
+        "requires_concession_of": "us"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "concession_control": [
+          {
+            "power": "us"
+          }
+        ]
+      }
+    },
+    {
+      "id": "jp_su_war_heilongjiang_soviet_win",
+      "ref": "12.19",
+      "name": "黑龍江爭奪戰：蘇軍獲勝",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "戰況"
+      ],
+      "repeatable": true,
+      "never_drawn": true,
+      "effect": "日蘇重疊區（黑龍江）開戰的戰況報導：**蘇聯獲勝**，黑龍江由蘇聯佔領並適用該國的懲戒規則。本卡不進事件卡池，只在開戰判定發生時由系統直接插入當回合的報紙佇列",
+      "condition": "由日蘇重疊區開戰判定自動觸發，不會被抽到",
+      "newspaper": {
+        "headline": "蘇軍克黑河　日軍退守嫩江以南",
+        "paragraphs": [
+          "　　黑河十一日電——蘇日兩軍昨日於黑龍江沿岸激戰竟日。蘇軍以砲兵與裝甲列車開道，日軍不支，退往嫩江以南。今晨蘇軍已接管黑河、璦琿全境。",
+          "　　訪員按：兩國之兵在我國之土上分勝負，而我國之民只能在旁看著。此非戰報，是恥錄。",
+          "　　勝負既定，黑龍江一省遂入蘇軍之手，其治法一依蘇聯懲戒之例。地上原有之中國部隊，先受日軍之創，再遭戰火，復被蘇軍搜剿，所餘無幾。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "notes": [
+          "純戰況報導；土地歸屬與傷害在開戰判定當下就已結算。"
+        ]
+      }
+    },
+    {
+      "id": "jp_su_war_heilongjiang_japan_win",
+      "ref": "12.20",
+      "name": "黑龍江爭奪戰：日軍獲勝",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "戰況"
+      ],
+      "repeatable": true,
+      "never_drawn": true,
+      "effect": "日蘇重疊區（黑龍江）開戰的戰況報導：**日本獲勝**，黑龍江由日本佔領並適用該國的懲戒規則。本卡不進事件卡池，只在開戰判定發生時由系統直接插入當回合的報紙佇列",
+      "condition": "由日蘇重疊區開戰判定自動觸發，不會被抽到",
+      "newspaper": {
+        "headline": "日軍守住嫩江防線　蘇軍北撤",
+        "paragraphs": [
+          "　　齊齊哈爾十一日電——蘇日兩軍於嫩江兩岸相持三日，日軍以航空隊反覆轟炸蘇軍補給線，蘇軍終於昨夜北撤過江。日方宣布黑龍江全省「治安已定」。",
+          "　　訪員按：治安已定四字，出自佔領者之口，向來只表示槍聲停了，不表示日子好過。",
+          "　　黑龍江一省仍由日軍管領。地上中國部隊先受日軍之創，復遭戰火波及，元氣大傷而未至於盡。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "notes": [
+          "純戰況報導；土地歸屬與傷害在開戰判定當下就已結算。"
+        ]
+      }
+    },
+    {
+      "id": "jp_su_war_jilin_soviet_win",
+      "ref": "12.21",
+      "name": "吉林爭奪戰：蘇軍獲勝",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "戰況"
+      ],
+      "repeatable": true,
+      "never_drawn": true,
+      "effect": "日蘇重疊區（吉林）開戰的戰況報導：**蘇聯獲勝**，吉林由蘇聯佔領並適用該國的懲戒規則。本卡不進事件卡池，只在開戰判定發生時由系統直接插入當回合的報紙佇列",
+      "condition": "由日蘇重疊區開戰判定自動觸發，不會被抽到",
+      "newspaper": {
+        "headline": "蘇軍下長春　中東路全線易手",
+        "paragraphs": [
+          "　　長春十三日電——蘇軍沿中東鐵路南下，昨日於寬城子與日軍遭遇，激戰半日。日軍守備隊撤往四平，蘇軍遂入長春，中東路全線落入蘇方掌握。",
+          "　　訪員按：一條鐵路，兩國爭了三十年。爭的人換了旗號，路基還是當年那一條，枕木下面埋的還是中國人的骨頭。",
+          "　　吉林一省改由蘇軍管領，一切依蘇聯懲戒之例。省內中國部隊三受打擊，幾不成軍。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "notes": [
+          "純戰況報導；土地歸屬與傷害在開戰判定當下就已結算。"
+        ]
+      }
+    },
+    {
+      "id": "jp_su_war_jilin_japan_win",
+      "ref": "12.22",
+      "name": "吉林爭奪戰：日軍獲勝",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "戰況"
+      ],
+      "repeatable": true,
+      "never_drawn": true,
+      "effect": "日蘇重疊區（吉林）開戰的戰況報導：**日本獲勝**，吉林由日本佔領並適用該國的懲戒規則。本卡不進事件卡池，只在開戰判定發生時由系統直接插入當回合的報紙佇列",
+      "condition": "由日蘇重疊區開戰判定自動觸發，不會被抽到",
+      "newspaper": {
+        "headline": "日軍擊退蘇軍　長春防線穩固",
+        "paragraphs": [
+          "　　長春十三日電——蘇軍南下之勢昨日於寬城子受挫。日軍以砲兵集中射擊，蘇軍前鋒潰退，退回松花江以北。日方宣布吉林全省秩序恢復。",
+          "　　訪員按：秩序恢復，指的是佔領者的秩序恢復了。城裡的鋪子昨日仍未開門。",
+          "　　吉林一省仍在日軍之手。省內中國部隊受日軍打擊在先、戰火波及在後，尚存半數。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "notes": [
+          "純戰況報導；土地歸屬與傷害在開戰判定當下就已結算。"
+        ]
+      }
+    },
+    {
+      "id": "japanese_navy_blockades_yellow_river",
+      "ref": "12.23",
+      "name": "日艦封鎖黃河",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "水域封鎖"
+      ],
+      "repeatable": true,
+      "effect": "若對日本關係未恢復，則日本將封鎖黃河。封鎖期間該水域的艦隊被鎖在原地，你方控制的該水域河港與鄰接海港城市產出歸零。與日本敵對者範圍內艦隊總生命 `−50%`、鄰接港口駐軍戰力 `−30%`。封鎖持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "控制至少 3 座黃河沿岸港市，且對日本關係 `≤ −4`",
+      "newspaper": {
+        "headline": "日艦溯黃河而上　濟南以下河運斷絕",
+        "paragraphs": [
+          "　　濟南六日訊——日本海軍陸戰隊昨日於黃河下游各渡口設卡，宣布即日起對黃河河運實施「臨檢」。凡未持日方通行證之船隻一律扣留。",
+          "　　訪員按：黃河水淺，本非通衢；然而沿河諸縣的鹽、麥、棉，全靠這幾條土船轉運。船一停，糧價立漲。",
+          "　　日方稱此為「保護僑民之必要措置」。黃河兩岸並無日僑，此語聽者自明。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -4
+        },
+        "controls_ports_in_waters_min": {
+          "waters": [
+            "黃河"
+          ],
+          "count": 3
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "water_blockade",
+            "waters": [
+              "黃河"
+            ],
+            "label": "日艦封鎖黃河"
+          }
+        ]
+      }
+    },
+    {
+      "id": "british_navy_blockades_yangtze",
+      "ref": "12.24",
+      "name": "英艦封鎖長江",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "水域封鎖"
+      ],
+      "repeatable": true,
+      "effect": "若對英國關係未恢復，則英國將封鎖長江。封鎖期間該水域的艦隊被鎖在原地，你方控制的該水域河港與鄰接海港城市產出歸零。與英國敵對者範圍內艦隊總生命 `−50%`、鄰接港口駐軍戰力 `−30%`。封鎖持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "控制至少 3 座長江沿岸港市，且對英國關係 `≤ −4`",
+      "newspaper": {
+        "headline": "英艦封鎖長江　漢口以下商輪全停",
+        "paragraphs": [
+          "　　上海十七日電——英國長江艦隊昨日於江陰下錨，宣布對長江航運實施「秩序維持」，中外商輪須逐船報驗放行。",
+          "　　訪員按：長江航行權，英人爭了八十年。今日之封鎖，說到底是把交涉桌上要不到的，用砲艇要了回去。",
+          "　　沿江碼頭昨日起停止裝卸，米市、紗市俱告停牌。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "uk": -4
+        },
+        "controls_ports_in_waters_min": {
+          "waters": [
+            "長江"
+          ],
+          "count": 3
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "water_blockade",
+            "waters": [
+              "長江"
+            ],
+            "label": "英艦封鎖長江"
+          }
+        ]
+      }
+    },
+    {
+      "id": "british_navy_blockades_pearl_and_south_sea",
+      "ref": "12.25",
+      "name": "皇家海軍遠東艦隊封鎖南海與珠江",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "水域封鎖"
+      ],
+      "repeatable": true,
+      "effect": "若對英國關係未恢復，則英國將封鎖珠江、南海。封鎖期間該水域的艦隊被鎖在原地，你方控制的該水域河港與鄰接海港城市產出歸零。與英國敵對者範圍內艦隊總生命 `−50%`、鄰接港口駐軍戰力 `−30%`。封鎖持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "控制至少 3 座珠江、南海沿岸港市，且對英國關係 `≤ −4`",
+      "newspaper": {
+        "headline": "英艦封鎖珠江口　省港航線全斷",
+        "paragraphs": [
+          "　　香港二十二日電——皇家海軍遠東艦隊昨日進駐珠江口，宣布對珠江與南海航線實施全面管制，省港輪渡即日停航。",
+          "　　訪員按：省港一線，每日往來客貨數千。此線一斷，廣州之米、佛山之鐵、汕頭之糖，皆無出路。",
+          "　　英方表示管制將持續至「中英關係恢復正常」為止。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "uk": -4
+        },
+        "controls_ports_in_waters_min": {
+          "waters": [
+            "珠江",
+            "南海"
+          ],
+          "count": 3
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "water_blockade",
+            "waters": [
+              "珠江",
+              "南海"
+            ],
+            "label": "皇家海軍遠東艦隊封鎖南海與珠江"
+          }
+        ]
+      }
+    },
+    {
+      "id": "french_navy_blockades_pearl_and_south_sea",
+      "ref": "12.26",
+      "name": "法國遠東艦隊封鎖珠江與南海",
+      "category": "foreign_power",
+      "power_note": "法",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "水域封鎖"
+      ],
+      "repeatable": true,
+      "effect": "若對法國關係未恢復，則法國將封鎖珠江、南海。封鎖期間該水域的艦隊被鎖在原地，你方控制的該水域河港與鄰接海港城市產出歸零。與法國敵對者範圍內艦隊總生命 `−50%`、鄰接港口駐軍戰力 `−30%`。封鎖持續至關係改善至非敵對（`> −4`）的下一回合為止",
+      "condition": "控制至少 3 座珠江、南海沿岸港市，且對法國關係 `≤ −4`",
+      "newspaper": {
+        "headline": "法艦封鎖珠江與南海　滇桂出海口盡失",
+        "paragraphs": [
+          "　　海防二十六日電——法國遠東艦隊昨日自海防出動，封鎖珠江口與南海航線，並宣布凡自兩廣出海之船隻須先赴海防報驗。",
+          "　　訪員按：法人扼住的是西南的出海口。雲南、廣西的錫、茶、桐油，一向由此出洋；今日封鎖，等於把西南的錢袋紮了口。",
+          "　　法方稱此係「保障法屬印度支那航運安全」之必要措施。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "fr": -4
+        },
+        "controls_ports_in_waters_min": {
+          "waters": [
+            "珠江",
+            "南海"
+          ],
+          "count": 3
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "fr",
+            "kind": "water_blockade",
+            "waters": [
+              "珠江",
+              "南海"
+            ],
+            "label": "法國遠東艦隊封鎖珠江與南海"
+          }
+        ]
+      }
+    },
+    {
+      "id": "royal_air_force_bombing",
+      "ref": "12.27",
+      "name": "皇家空軍轟炸",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "空襲"
+      ],
+      "repeatable": true,
+      "effect": "若對英國關係未恢復，則英國將每回合空襲你方最大的五個城市（金錢＋工廠產出最高者）。期間該五城產出全部歸零；城內駐軍每回合被驅逐至鄰近陸地地格且戰力 `−30%`，靠港艦隊總生命 `−50%`。轟炸目標是動態的——被奪走的城市會換一個遞補，每回合固定五座。轟炸持續至關係改善至非敵對（`> −4`）的下一回合為止；解除後每座城市還要 `3` 回合才復工",
+      "condition": "對英國關係 `≤ −4`",
+      "newspaper": {
+        "headline": "英機自航艦起飛　五大埠同遭轟炸",
+        "paragraphs": [
+          "　　本報訊——英國海軍航空隊昨日自遠東艦隊航艦起飛，分隊轟炸我方五座最大城市，目標多為發電廠、紗廠與碼頭。",
+          "　　訪員按：英人炸的不是兵營，是工廠。工廠停一日，稅收少一日；此為算盤上的戰爭。",
+          "　　英國外交部發表聲明，稱轟炸將「持續至中國方面態度改變為止」。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "uk": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "air_raid",
+            "cities": 5,
+            "label": "皇家空軍轟炸"
+          }
+        ]
+      }
+    },
+    {
+      "id": "soviet_air_force_bombing",
+      "ref": "12.28",
+      "name": "蘇聯空軍轟炸",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "空襲"
+      ],
+      "repeatable": true,
+      "effect": "若對蘇聯關係未恢復，則蘇聯將每回合空襲你方最大的五個城市（金錢＋工廠產出最高者）。期間該五城產出全部歸零；城內駐軍每回合被驅逐至鄰近陸地地格且戰力 `−30%`，靠港艦隊總生命 `−50%`。轟炸目標是動態的——被奪走的城市會換一個遞補，每回合固定五座。轟炸持續至關係改善至非敵對（`> −4`）的下一回合為止；解除後每座城市還要 `3` 回合才復工",
+      "condition": "對蘇聯關係 `≤ −4`",
+      "newspaper": {
+        "headline": "蘇聯轟炸機越境　五大城市同日被炸",
+        "paragraphs": [
+          "　　本報訊——蘇聯遠東空軍昨晨越境南下，對我方五座最大城市投彈，車站與電廠受創最重。",
+          "　　訪員按：蘇聯的飛機來自北方的機場，飛行不過兩小時。這兩小時，就是我們與那片天空之間的全部距離。",
+          "　　塔斯社稱此係「對中國方面挑釁行為之回應」。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "su",
+            "kind": "air_raid",
+            "cities": 5,
+            "label": "蘇聯空軍轟炸"
+          }
+        ]
+      }
+    },
+    {
+      "id": "french_air_force_bombing",
+      "ref": "12.29",
+      "name": "法國空軍轟炸",
+      "category": "foreign_power",
+      "power_note": "法",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "空襲"
+      ],
+      "repeatable": true,
+      "effect": "若對法國關係未恢復，則法國將每回合空襲你方最大的五個城市（金錢＋工廠產出最高者）。期間該五城產出全部歸零；城內駐軍每回合被驅逐至鄰近陸地地格且戰力 `−30%`，靠港艦隊總生命 `−50%`。轟炸目標是動態的——被奪走的城市會換一個遞補，每回合固定五座。轟炸持續至關係改善至非敵對（`> −4`）的下一回合為止；解除後每座城市還要 `3` 回合才復工",
+      "condition": "對法國關係 `≤ −4`",
+      "newspaper": {
+        "headline": "法機自河內起飛　西南各埠受炸",
+        "paragraphs": [
+          "　　河內十八日電——法屬印度支那航空隊昨日起飛北上，轟炸我方五座最大城市。法方稱係「對法僑遇害事件之報復」。",
+          "　　訪員按：報復二字，向來是強者的專利。弱者遇害，只能寫進報紙的角落。",
+          "　　被炸各埠工廠停工，市民逃往郊野者以萬計。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "fr": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "fr",
+            "kind": "air_raid",
+            "cities": 5,
+            "label": "法國空軍轟炸"
+          }
+        ]
+      }
+    },
+    {
+      "id": "american_air_force_bombing",
+      "ref": "12.30",
+      "name": "美國空軍轟炸",
+      "category": "foreign_power",
+      "power_note": "美",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "空襲"
+      ],
+      "repeatable": true,
+      "effect": "若對美國關係未恢復，則美國將每回合空襲你方最大的五個城市（金錢＋工廠產出最高者）。期間該五城產出全部歸零；城內駐軍每回合被驅逐至鄰近陸地地格且戰力 `−30%`，靠港艦隊總生命 `−50%`。轟炸目標是動態的——被奪走的城市會換一個遞補，每回合固定五座。轟炸持續至關係改善至非敵對（`> −4`）的下一回合為止；解除後每座城市還要 `3` 回合才復工",
+      "condition": "對美國關係 `≤ −4`",
+      "newspaper": {
+        "headline": "美國海軍航空隊臨空　五大城市工廠盡毀",
+        "paragraphs": [
+          "　　馬尼拉二十四日電——美國亞洲艦隊航空隊昨日自呂宋起飛，轟炸我方五座最大城市，目標集中於工業區。",
+          "　　訪員按：美人一向自詡不佔中國一寸土地。今日看來，不佔土地者，未必不炸工廠。",
+          "　　美國國務院稱行動係「為維護門戶開放與美商權益」。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "us": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "us",
+            "kind": "air_raid",
+            "cities": 5,
+            "label": "美國空軍轟炸"
+          }
+        ]
+      }
+    },
+    {
+      "id": "combined_fleet_special_drill",
+      "ref": "12.31",
+      "name": "聯合艦隊發動特別演習",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "演習"
+      ],
+      "repeatable": true,
+      "effect": "黃海、東海、臺灣海峽變成日本領地 **3 回合**，期間該區水域不可通行，若有艦隊在該區域者會被鎖在原地，**但領域內城市生產照常，不會減損**。演習不是懲戒：不造成任何傷害，結束後水域原封歸還",
+      "condition": "演習有固定回合數，與關係無關",
+      "newspaper": {
+        "headline": "日本聯合艦隊舉行特別大演習　黃東兩海封航三旬",
+        "paragraphs": [
+          "　　東京五日電——日本海軍省公告，聯合艦隊將於黃海、東海及臺灣海峽舉行秋季特別大演習，為期三旬，演習區域禁止他國船艦通行。",
+          "　　訪員按：演習與封鎖，海圖上是兩件事，海面上只差一紙公告。所幸公告上寫明了日期。",
+          "　　沿海各埠生產照常，惟出海船隻須繞道南行，運費倍增。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "water_blockade",
+            "waters": [
+              "黃海",
+              "東海",
+              "臺灣海峽"
+            ],
+            "drill_turns": 3,
+            "label": "聯合艦隊發動特別演習"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bohai_fleet_special_drill",
+      "ref": "12.32",
+      "name": "渤海艦隊發動特別演習",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "演習"
+      ],
+      "repeatable": true,
+      "effect": "渤海變成日本領地 **3 回合**，期間該區水域不可通行，若有艦隊在該區域者會被鎖在原地，**但領域內城市生產照常，不會減損**。演習不是懲戒：不造成任何傷害，結束後水域原封歸還",
+      "condition": "演習有固定回合數，與關係無關",
+      "newspaper": {
+        "headline": "日本渤海艦隊演習　旅大津沽間航道封閉三旬",
+        "paragraphs": [
+          "　　旅順十日訊——日本駐渤海艦隊昨日公告，即日起於渤海全域舉行特別演習，為期三旬，期間各國船艦不得進入。",
+          "　　訪員按：渤海乃京津之門戶。門戶由他人演習三旬，這三旬裡，門是誰家的門？",
+          "　　天津、煙臺各港生產照常，惟船隻一律不得出海。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "jp",
+            "kind": "water_blockade",
+            "waters": [
+              "渤海"
+            ],
+            "drill_turns": 3,
+            "label": "渤海艦隊發動特別演習"
+          }
+        ]
+      }
+    },
+    {
+      "id": "royal_navy_yangtze_drill",
+      "ref": "12.33",
+      "name": "皇家海軍長江艦隊發動特別演習",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "演習"
+      ],
+      "repeatable": true,
+      "effect": "長江變成英國領地 **3 回合**，期間該區水域不可通行，若有艦隊在該區域者會被鎖在原地，**但領域內城市生產照常，不會減損**。演習不是懲戒：不造成任何傷害，結束後水域原封歸還",
+      "condition": "演習有固定回合數，與關係無關",
+      "newspaper": {
+        "headline": "英國長江艦隊演習　漢口至上海江面封航三旬",
+        "paragraphs": [
+          "　　上海二十七日電——皇家海軍長江艦隊公告，將於長江漢口至上海段舉行特別演習，為期三旬，期間該段江面禁止他國船艦通行。",
+          "　　訪員按：英人的演習向來選在最要緊的水道上。這一段江，正是中國的腹心。",
+          "　　沿江城市生產照常，惟江上船隻一律靠岸候令。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "water_blockade",
+            "waters": [
+              "長江"
+            ],
+            "drill_turns": 3,
+            "label": "皇家海軍長江艦隊發動特別演習"
+          }
+        ]
+      }
+    },
+    {
+      "id": "royal_navy_far_east_drill",
+      "ref": "12.34",
+      "name": "皇家海軍遠東艦隊發動特別演習",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "軍事",
+        "演習"
+      ],
+      "repeatable": true,
+      "effect": "南海變成英國領地 **3 回合**，期間該區水域不可通行，若有艦隊在該區域者會被鎖在原地，**但領域內城市生產照常，不會減損**。演習不是懲戒：不造成任何傷害，結束後水域原封歸還",
+      "condition": "演習有固定回合數，與關係無關",
+      "newspaper": {
+        "headline": "英國遠東艦隊南海演習　三旬內航道禁行",
+        "paragraphs": [
+          "　　香港三日電——皇家海軍遠東艦隊將於南海舉行為期三旬之特別演習，期間演習海域禁止他國船艦通行。",
+          "　　訪員按：南海之上，英人的軍艦來去自如，中國的商船反須繞道。此中之理，說了八十年也沒說通。",
+          "　　沿海城市生產照常。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "uk",
+            "kind": "water_blockade",
+            "waters": [
+              "南海"
+            ],
+            "drill_turns": 3,
+            "label": "皇家海軍遠東艦隊發動特別演習"
+          }
+        ]
+      }
+    },
+    {
+      "id": "soviet_mongol_army_drill",
+      "ref": "12.35",
+      "name": "蘇蒙聯軍演習",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "演習"
+      ],
+      "repeatable": true,
+      "effect": "察哈爾省、熱河省變成蘇聯領地 **3 回合**，期間金錢與工廠收入歸零，兩省境內城市有駐軍者會被驅逐至鄰近陸地地格，若有艦隊者會被鎖在原地。演習不是懲戒：**不造成任何傷害**，且結束後土地與城市原封不動歸還原屬勢力",
+      "condition": "控制察哈爾省或熱河省。演習有固定回合數，與關係無關",
+      "newspaper": {
+        "headline": "蘇蒙聯軍舉行大演習　察熱兩省戒嚴三旬",
+        "paragraphs": [
+          "　　庫倫十四日電——蘇蒙聯軍司令部昨日公告，將於察哈爾、熱河兩省邊境地帶舉行為期三旬之聯合演習，期間中國駐軍須撤出各縣城，移駐城外指定地點。",
+          "　　訪員按：在別人的省份上演習，還要別人的兵讓開——這種演習，古書上叫做「假道」。",
+          "　　三旬之後，旗歸原主，城歸原主。惟這三旬之內，兩省的稅、廠、車，皆不在自己手裡。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "察哈爾",
+          "熱河"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "foreign_punishment": [
+          {
+            "power": "su",
+            "kind": "ground_occupation",
+            "provinces": [
+              "察哈爾",
+              "熱河"
+            ],
+            "drill_turns": 3,
+            "label": "蘇蒙聯軍演習"
+          }
+        ]
+      }
+    },
+    {
+      "id": "japanese_agents_blow_up_railway",
+      "ref": "12.36",
+      "name": "親日漢奸團爆破鐵路",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "鐵路"
+      ],
+      "repeatable": true,
+      "effect": "若對日本關係未恢復，則日本將對你境內一條黑色鐵路進行癱瘓。效果與〈崩鐵玩家〉相同：該線停運 **3 回合**，期間任何勢力不得沿此線進行鐵路運輸，沿線地格視為普通地格仍可通行。**差別在搶修攤派——工業點 `30` 由被懲戒方全額支付，其他玩家一毛不出**",
+      "condition": "對日本關係 `≤ −4`。系統從尚未搶修中的中國幹線隨機挑一條",
+      "newspaper": {
+        "headline": "夜半巨響　幹線橋樑被炸斷",
+        "paragraphs": [
+          "　　本報訊——昨夜三時許，我方境內一條幹線鐵路之鋼橋遭炸藥破壞，橋墩斷折，路軌懸空數丈。現場拾獲日文標記之雷管殘件。",
+          "　　訪員按：炸橋者自稱義軍，領的卻是別人的餉。這種人歷代都有，史書上給他們留了兩個字。",
+          "　　路局估計搶修需三旬，所需工料悉由本方自籌——與尋常崩鐵不同，此番無人分攤。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "railway_sabotage": [
+          {
+            "power": "jp",
+            "factory_cost": 30,
+            "duration_turns": 3,
+            "railways": [
+              "京奉鐵路",
+              "京漢鐵路",
+              "津浦鐵路",
+              "膠濟鐵路",
+              "正太鐵路",
+              "隴海鐵路",
+              "滬寧鐵路",
+              "粵漢鐵路"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ccp_agents_blow_up_railway",
+      "ref": "12.37",
+      "name": "中國共產黨爆破鐵路",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "鐵路"
+      ],
+      "repeatable": true,
+      "effect": "若對蘇聯關係未恢復，則蘇聯將對你境內一條黑色鐵路進行癱瘓。效果與〈崩鐵玩家〉相同：該線停運 **3 回合**，期間任何勢力不得沿此線進行鐵路運輸，沿線地格視為普通地格仍可通行。**差別在搶修攤派——工業點 `30` 由被懲戒方全額支付，其他玩家一毛不出**",
+      "condition": "對蘇聯關係 `≤ −4`。系統從尚未搶修中的中國幹線隨機挑一條",
+      "newspaper": {
+        "headline": "路工暴動炸毀幹線　運輸中斷三旬",
+        "paragraphs": [
+          "　　本報訊——昨日午後，我方境內一條幹線鐵路之路段遭爆破，鐵軌翻捲數十丈。路局稱係「赤色分子所為」，已拘捕鐵路工會多人。",
+          "　　訪員按：路工的工錢欠了半年，這是事實；有人趁著欠餉來遞炸藥，這也是事實。兩件事湊在一起，橋就斷了。",
+          "　　搶修工料全由本方自籌，估需工業點三十。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "railway_sabotage": [
+          {
+            "power": "su",
+            "factory_cost": 30,
+            "duration_turns": 3,
+            "railways": [
+              "京奉鐵路",
+              "京漢鐵路",
+              "津浦鐵路",
+              "膠濟鐵路",
+              "正太鐵路",
+              "隴海鐵路",
+              "滬寧鐵路",
+              "粵漢鐵路"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "kwantung_army_special_service_assassination",
+      "ref": "12.38",
+      "name": "關東軍特務機關行刺",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "暗殺"
+      ],
+      "repeatable": true,
+      "effect": "若對日本關係未恢復，則日本將對你方領袖（大帥）進行一次暗殺。成功率 `20%`，受〈組建親衛隊〉減免。**骰子在抽出當下就擲**，成敗直接寫在本報附誌上；得手則該大帥當場死亡，其部屬少將忠誠歸零",
+      "condition": "對日本關係 `≤ −6`",
+      "newspaper": {
+        "headline": "槍聲驟起於官邸前　大帥座車遇襲",
+        "paragraphs": [
+          "　　本報訊——昨日午後，我方大帥座車行經市區時遭人投彈並開槍射擊。護衛當場還擊，行刺者一人被擊斃、一人在逃。現場遺留之手槍為日本製式。",
+          "　　訪員按：關東軍特務機關之名，關外無人不知。他們不上戰場，專走小巷；不打陣仗，只算人頭。",
+          "　　外務省照例否認，稱係「浪人個人行為」。此語二十年來一字未改。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "jp": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "assassinate_marshal": [
+          {
+            "power": "jp",
+            "success_rate": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "ccp_assassination_attempt",
+      "ref": "12.39",
+      "name": "中國共產黨行刺",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒",
+        "暗殺"
+      ],
+      "repeatable": true,
+      "effect": "若對蘇聯關係未恢復，則蘇聯將對你方領袖（大帥）進行一次暗殺。成功率 `20%`，受〈組建親衛隊〉減免。**骰子在抽出當下就擲**，成敗直接寫在本報附誌上；得手則該大帥當場死亡，其部屬少將忠誠歸零",
+      "condition": "對蘇聯關係 `≤ −6`",
+      "newspaper": {
+        "headline": "宴席上的手槍　大帥遇刺",
+        "paragraphs": [
+          "　　本報訊——昨夜某公館設宴，席間一名侍者忽自懷中取出手槍，向我方大帥連發數響。衛士撲上格鬥，行刺者當場被制伏。",
+          "　　訪員按：那名侍者在公館裡做了半年的事，替人斟過無數次酒。半年的耐性，換一次三尺之內的機會。",
+          "　　共產國際方面對此不置一詞。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "assassinate_marshal": [
+          {
+            "power": "su",
+            "success_rate": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "comintern_great_revolution",
+      "ref": "12.40",
+      "name": "共產國際大革命",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事",
+        "懲戒"
+      ],
+      "repeatable": true,
+      "effect": "若最後通牒未完成且對蘇關係未恢復，則蘇聯將在你控制的**隨機 6 座城市**發動紅軍起義：各城產出歸零且**無期限**，需各自派 `5` 營進駐才能平息。**本卡是 [懲戒] 的唯一例外——一經發動就走紅軍起義的機制，對蘇關係回升也不會自動解除**",
+      "condition": "對蘇關係 `≤ −6`，且已無視蘇聯的最後通牒。起義一旦發動即與關係脫鉤，只能靠派兵平息",
+      "newspaper": {
+        "headline": "赤旗遍插通衢　全境同日暴動",
+        "paragraphs": [
+          "　　本報訊——昨日拂曉，我方所轄各城同時爆發工農暴動。暴動者持械占領車站、電廠與稅關，市面全停。各地來電措辭如出一轍，顯係同一指令。",
+          "　　訪員按：同一日、同一時、同一份傳單——這不是民怨，是組織。民怨不會準時。",
+          "　　共產國際遠東局對此不置一詞。此番與尋常懲戒不同——縱使日後邦交轉圜，起義亦不會自行平息；六城之中，非各駐五營不能奏功。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": -6
+        },
+        "requires_failed_ultimatum": "su"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "city_riot": [
+          {
+            "kind": "red_army_uprising",
+            "cities": 6,
+            "required_battalions": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "red_labour_infiltration",
+      "ref": "12.41",
+      "name": "赤色工運滲透",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "幫會"
+      ],
+      "repeatable": true,
+      "effect": "所有對蘇關係 `< 6` 的玩家各有隨機 `2` 座城市遭受共黨暴動：產出歸零且無期限，需各自派 `5` 營進駐才能平息",
+      "condition": "對蘇關係 `< 6`。所有符合條件的玩家各自結算",
+      "newspaper": {
+        "headline": "赤色工運自滬上蔓延　各埠紗廠同告停工",
+        "paragraphs": [
+          "　　上海七日訊——赤色職工國際所屬之工運幹部近月分赴各埠，於紗廠、碼頭、鐵路間廣設支部。昨日起數處同時罷工，並有搗毀機器之事。",
+          "　　訪員按：工人要的是工錢，組織要的是工人。兩者一時同路，過了這個路口便分道。",
+          "　　各廠停工待復，須派兵進駐彈壓。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": 5
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "city_riot": [
+          {
+            "kind": "red_army_uprising",
+            "cities": 2,
+            "required_battalions": 5
+          }
+        ],
+        "relation_gate_max": {
+          "power": "su",
+          "max": 5
+        }
+      }
+    },
+    {
+      "id": "red_propaganda_infiltration",
+      "ref": "12.42",
+      "name": "赤化宣傳滲透",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [],
+      "repeatable": true,
+      "effect": "中共在各地散布反戰宣傳：所有對蘇關係 `< 6` 的玩家，**所有陸軍兵種的預備隊各自逃散 1 營**",
+      "condition": "對蘇關係 `< 6`。所有符合條件的玩家各自結算",
+      "newspaper": {
+        "headline": "反戰傳單遍營房　各部逃兵日增",
+        "paragraphs": [
+          "　　本報訊——近日各營房外牆屢見反戰傳單，文曰「莫為軍閥賣命」。連日以來各部逃兵大增，補充處點名時屢有缺額。",
+          "　　訪員按：傳單能讓人走，是因為本來就有人想走。欠餉三月的兵，讀什麼都覺得有理。",
+          "　　軍需處統計，四個兵種的預備隊各短少一營。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": 5
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "reserve_delta": [
+          {
+            "unit_type": "infantry",
+            "amount": -1
+          },
+          {
+            "unit_type": "cavalry",
+            "amount": -1
+          },
+          {
+            "unit_type": "machine_gun",
+            "amount": -1
+          },
+          {
+            "unit_type": "artillery",
+            "amount": -1
+          }
+        ],
+        "relation_gate_max": {
+          "power": "su",
+          "max": 5
+        }
+      }
+    },
+    {
+      "id": "soviet_far_east_mobilisation",
+      "ref": "12.43",
+      "name": "蘇聯遠東調兵",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "軍事"
+      ],
+      "repeatable": true,
+      "effect": "蘇蒙聯軍向中蒙邊境集結。對蘇關係 `< 0` 者，其控制的熱河、察哈爾、黑龍江境內城市**本回合產出 `$−2`、工廠 `−2`**；且留在該地區內的部隊須原地戰備，**本回合不可移動**",
+      "condition": "對蘇關係 `< 0`，且控制熱河、察哈爾或黑龍江其中一省",
+      "newspaper": {
+        "headline": "蘇蒙聯軍向邊境集結　察熱黑三省戒備",
+        "paragraphs": [
+          "　　庫倫九日電——蘇蒙聯軍近日向中蒙邊境大舉集結，鐵路運兵晝夜不絕。我方邊境各部奉命原地戒備，不得擅離防地。",
+          "　　訪員按：集結不是進攻，但要防集結，代價與防進攻一樣。這一回合的兵，哪裡都去不了。",
+          "　　三省市面因戒嚴而蕭條，稅收銳減。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "su": -1
+        },
+        "controls_provinces_any": [
+          "熱河",
+          "察哈爾",
+          "黑龍江"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "city_output_once": {
+          "select": {
+            "provinces": [
+              "熱河",
+              "察哈爾",
+              "黑龍江"
+            ],
+            "owned_by_target": true
+          },
+          "cash": -2,
+          "factory": -2
+        },
+        "timed_flags": [
+          {
+            "kind": "movement_freeze",
+            "turns": 1,
+            "label": "邊境戒備",
+            "provinces": [
+              "熱河",
+              "察哈爾",
+              "黑龍江"
+            ]
+          }
+        ],
+        "relation_gate_max": {
+          "power": "su",
+          "max": -1
+        }
+      }
+    },
+    {
+      "id": "south_manchuria_guard_expansion",
+      "ref": "12.44",
+      "name": "南滿護路隊擴編",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "軍事"
+      ],
+      "repeatable": true,
+      "effect": "日軍以護路為名增兵：**滿洲三省（奉天、吉林、黑龍江）境內所有陸軍 3 回合內不可移動**",
+      "condition": "控制奉天省、吉林省或黑龍江省",
+      "newspaper": {
+        "headline": "日軍護路隊大舉擴編　南滿沿線遍設哨所",
+        "paragraphs": [
+          "　　奉天二十一日訊——關東軍以「保護南滿鐵路」為名，將護路隊由六大隊擴編為十二大隊，沿線每十里設一哨所，並要求中國駐軍「避免與護路隊發生誤會」。",
+          "　　訪員按：避免誤會的辦法，是不要動。於是三省的兵，三旬之內哪裡都去不了。",
+          "　　所謂護路，護的是路權；所謂誤會，向來只發生在一方身上。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "奉天",
+          "吉林",
+          "黑龍江"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "timed_flags": [
+          {
+            "kind": "movement_freeze",
+            "turns": 3,
+            "label": "護路隊戒嚴",
+            "provinces": [
+              "奉天",
+              "吉林",
+              "黑龍江"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "powers_tariff_conference",
+      "ref": "12.45",
+      "name": "列強關稅會議",
+      "category": "foreign_power",
+      "power_note": "列",
+      "tags": [],
+      "repeatable": true,
+      "effect": "各國協商關稅：你持有的**每座租界城市本回合金錢 `+3`**；並對你持有租界的每一個列強關係 `+1`",
+      "condition": "控制至少一個租界城市。所有符合條件的玩家各自結算",
+      "newspaper": {
+        "headline": "北京關稅特別會議開幕　各國公使齊集",
+        "paragraphs": [
+          "　　北京二十六日電——關稅特別會議昨日於北京開幕，英、美、日、法各國公使與我方代表同席。會中議定通商口岸稅則之若干調整，各埠商會皆稱便利。",
+          "　　訪員按：關稅自主喊了十餘年，這回總算坐上了同一張桌子。桌子是別人搬來的，椅子也是，但畢竟是同一張桌子。",
+          "　　各租界市面因之一振，稅入可觀。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "city_output_once": {
+          "select": {
+            "concession": true,
+            "owned_by_target": true
+          },
+          "cash": 3
+        },
+        "concession_relations": {
+          "delta": 1
+        }
+      }
+    },
+    {
+      "id": "britain_recognises_tariff_autonomy",
+      "ref": "12.46",
+      "name": "英國承認關稅自主",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [],
+      "repeatable": true,
+      "effect": "英方於關稅上讓步：場上**所有英租界城市每回合金錢 `+2`（永久）**",
+      "condition": "控制至少一個英租界城市",
+      "newspaper": {
+        "headline": "英國承認我關稅自主　各埠英租界同沾其惠",
+        "paragraphs": [
+          "　　倫敦十二日電——英國政府昨日照會我外交部，聲明承認中國關稅自主之原則，並願先行調整英租界內之稅則。此為列強中之首例。",
+          "　　訪員按：首例二字值得記下。八十年來英人在稅則上未曾退過一步，這一步縱然不大，方向是對的。",
+          "　　各英租界市面聞訊即漲，商會連夜張燈。"
+        ]
+      },
+      "entry_condition": {
+        "relation_min": {
+          "uk": 0
+        },
+        "requires_concession_of": "uk"
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "city_output": {
+          "select": {
+            "concession_of": "uk"
+          },
+          "cash": 2
+        }
+      }
+    },
+    {
+      "id": "usa_recognition_and_treaty",
+      "ref": "12.47",
+      "name": "美國外交承認與商約",
+      "category": "foreign_power",
+      "power_note": "美",
+      "tags": [],
+      "repeatable": true,
+      "effect": "簽訂商約：你方〈對美貿易出口〉功能卡每次貿易獲得金錢 `+15`",
+      "condition": "對美關係 `≥ 6`",
+      "newspaper": {
+        "headline": "中美商約簽字　美方正式承認我政府",
+        "paragraphs": [
+          "　　華盛頓十八日電——中美商約昨日於國務院簽字，美方同時發表聲明，正式承認我方政府。條約中另訂最惠國待遇條款。",
+          "　　訪員按：承認二字，在外交上是門票。有了門票才談得上坐在哪一排——這一排目前還在後面。",
+          "　　商約簽訂後，對美出口之絲、茶、桐油可望大增。"
+        ]
+      },
+      "entry_condition": {
+        "relation_min": {
+          "us": 6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "player_card_overrides": [
+          {
+            "card_id": "trade_export_us",
+            "field_deltas": {
+              "cash_gain": 15
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "britain_recognition_and_treaty",
+      "ref": "12.48",
+      "name": "英國外交承認與商約",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [],
+      "repeatable": true,
+      "effect": "簽訂商約：你方〈對英貿易出口〉功能卡每次貿易獲得金錢 `+15`",
+      "condition": "對英關係 `≥ 6`",
+      "newspaper": {
+        "headline": "中英商約成立　英方正式承認我政府",
+        "paragraphs": [
+          "　　倫敦二十四日電——中英商約昨日於外交部簽字，英方同時聲明承認我方政府，並允商討修訂舊約中若干條款。",
+          "　　訪員按：舊約者，南京條約以降之總稱也。允商討三字，離修訂還有很遠，但總算開了口。",
+          "　　滬上洋行聞訊，英貨出口報價即日調整。"
+        ]
+      },
+      "entry_condition": {
+        "relation_min": {
+          "uk": 6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "player_card_overrides": [
+          {
+            "card_id": "trade_export_uk",
+            "field_deltas": {
+              "cash_gain": 15
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "international_red_cross",
+      "ref": "12.49",
+      "name": "國際紅十字救護團",
+      "category": "foreign_power",
+      "power_note": "列",
+      "tags": [],
+      "repeatable": true,
+      "effect": "紅十字會於交戰區設立野戰醫院。**3 回合**內，對英或對美友好的玩家每場戰鬥結束後可免費復原隨機 `2` 個營（傷兵歸隊，兵種自該戰損失過者中隨機擇一）",
+      "condition": "對英關係 `≥ 6` 或對美關係 `≥ 6`。所有符合條件的玩家各自結算",
+      "newspaper": {
+        "headline": "國際紅十字會設野戰醫院　傷兵得以歸隊",
+        "paragraphs": [
+          "　　日內瓦十五日電——國際紅十字會決議派遣救護團赴華，於交戰各區設立野戰醫院，收容雙方傷兵，不問旗號。",
+          "　　訪員按：不問旗號四字，在這片土地上聽來近乎奢侈。這幾年抬下火線的人，多半是抬到路邊就算了。",
+          "　　救護團所需經費由英美兩國紅十字會分擔，為期三旬。"
+        ]
+      },
+      "entry_condition": {
+        "relation_min_any": {
+          "uk": 6,
+          "us": 6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "timed_flags": [
+          {
+            "kind": "field_hospital_window",
+            "turns": 3,
+            "label": "國際紅十字救護團",
+            "units": 2
+          }
+        ],
+        "relation_gate_any": [
+          {
+            "power": "uk",
+            "min": 6
+          },
+          {
+            "power": "us",
+            "min": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "maritime_customs_agreement",
+      "ref": "12.50",
+      "name": "海關總稅務司協議",
+      "category": "foreign_power",
+      "power_note": "列",
+      "tags": [],
+      "repeatable": true,
+      "effect": "接受洋員管理關務：場上**所有港口城市每回合金錢 `+1`（永久）**",
+      "condition": "無條件，全場適用",
+      "newspaper": {
+        "headline": "海關總稅務司協議成立　各口岸稅入可期",
+        "paragraphs": [
+          "　　北京三十日電——我方與各國公使團就海關行政達成協議，總稅務司續由洋員擔任，惟稅款存儲與用途須經我方核可。",
+          "　　訪員按：關餘之爭，爭的從來不是誰來收，而是收了歸誰。這一次至少寫明了歸誰。",
+          "　　各口岸稅務整頓有序，稅入較前為豐。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "city_output": {
+          "select": {
+            "port": true
+          },
+          "cash": 1
+        }
+      }
+    },
+    {
+      "id": "far_east_diplomatic_conference",
+      "ref": "12.51",
+      "name": "遠東外交會議",
+      "category": "foreign_power",
+      "power_note": "美",
+      "tags": [
+        "懲戒"
+      ],
+      "repeatable": true,
+      "effect": "若對美關係未恢復，則美國將邀集列強召開遠東外交會議討論中國軍閥問題：你方**對英、對法、對日關係立刻各 `−5`**",
+      "condition": "對美關係 `≤ −6`",
+      "newspaper": {
+        "headline": "遠東外交會議開議　我方成議題而非與會者",
+        "paragraphs": [
+          "　　華盛頓十一日電——美國邀集英、法、日三國公使召開遠東外交會議，議題為「中國軍閥割據對條約權益之影響」。我方未獲邀請。",
+          "　　訪員按：會議的桌上談的是我們，桌邊卻沒有我們的位子。這種會議，開一次傷一次。",
+          "　　會後聯合公報措辭嚴峻，英法日三國態度同告轉冷。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "us": -6
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "relations": {
+          "uk": -5,
+          "fr": -5,
+          "jp": -5
+        }
+      }
+    },
+    {
+      "id": "joint_condemnation_of_china",
+      "ref": "12.52",
+      "name": "列強對華聯合譴責",
+      "category": "foreign_power",
+      "power_note": "列",
+      "tags": [],
+      "repeatable": true,
+      "effect": "列強聯合發表對華譴責：**所有玩家與其各自交惡（關係 `≤ −4`）的每一個列強，關係再各 `−1`**",
+      "condition": "無條件，全場適用；每位玩家依自己的交惡名單各自結算",
+      "newspaper": {
+        "headline": "列強聯合發表對華譴責書",
+        "paragraphs": [
+          "　　北京二十日電——駐華各國公使團昨日聯名發表譴責書，指我國內戰不休、條約權益屢遭侵害，要求各方「立即恢復秩序」。",
+          "　　訪員按：譴責書上簽名的，正是把軍火賣給各方的那幾國。他們既賣槍，又責人開槍。",
+          "　　與各國關係本已交惡者，此番更形冷淡。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "hostile_relations_delta": -1
+      }
+    },
+    {
+      "id": "washington_system_conference",
+      "ref": "12.53",
+      "name": "華盛頓體系會議",
+      "category": "foreign_power",
+      "power_note": "列",
+      "tags": [],
+      "repeatable": true,
+      "effect": "英美日三國協調對華政策：**所有玩家對英、對美、對日關係各 `+1`，但對蘇 `−2`**",
+      "condition": "無條件，全場適用",
+      "newspaper": {
+        "headline": "華盛頓體系會議復開　英美日協調對華政策",
+        "paragraphs": [
+          "　　華盛頓五日電——英、美、日三國昨日重開華盛頓體系會議，重申九國公約之門戶開放與機會均等原則，並協調對華一致立場。",
+          "　　訪員按：一致立場的意思，是三家講好了怎麼分。分的是別人的東西，所以講起來容易。",
+          "　　蘇聯外交人民委員部發表聲明，斥此為「帝國主義分贓會議」。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "relations": {
+          "uk": 1,
+          "us": 1,
+          "jp": 1,
+          "su": -2
+        }
+      }
+    },
+    {
+      "id": "usa_condemns_open_door_breach",
+      "ref": "12.54",
+      "name": "美國譴責破壞門戶開放",
+      "category": "foreign_power",
+      "power_note": "美",
+      "tags": [
+        "懲戒"
+      ],
+      "repeatable": true,
+      "effect": "若對美關係未恢復，則美國將譴責你破壞門戶開放並實施經濟制裁：你方未來 **10 回合**內所有兵種與艦艇的生產成本 `$+50%`、工廠 `+50%`",
+      "condition": "對美關係 `≤ −4`",
+      "newspaper": {
+        "headline": "美國譴責我破壞門戶開放　宣布經濟制裁",
+        "paragraphs": [
+          "　　華盛頓十四日電——美國國務院昨日發表聲明，指我方之作為「違背門戶開放與機會均等之原則」，即日起對我實施經濟制裁，禁止美資銀行承作相關貸款，並限制機器與原料輸出。",
+          "　　訪員按：門戶開放本是美國替自己開的門。門既是他家的，關起來自然也由他說了算。",
+          "　　制裁之下，鋼材、機床、車床價格一日三漲，兵工廠成本倍蓰。"
+        ]
+      },
+      "entry_condition": {
+        "relation_max": {
+          "us": -4
+        }
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "production_cost_multiplier": [
+          {
+            "arms": [
+              "ground",
+              "navy"
+            ],
+            "cash": 1.5,
+            "factory": 1.5,
+            "turns": 10,
+            "scope": "self",
+            "label": "美國經濟制裁"
+          }
+        ]
+      }
+    },
+    {
+      "id": "britain_arms_export_control",
+      "ref": "12.55",
+      "name": "英國軍火出口管制",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [],
+      "repeatable": true,
+      "effect": "**所有玩家**未來 **3 回合**內所有陸軍兵種生產成本 `$+30%`、工廠 `+30%`",
+      "condition": "無條件，全場適用",
+      "newspaper": {
+        "headline": "英國國會通過軍火出口管制案",
+        "paragraphs": [
+          "　　倫敦二十九日電——英國國會昨日三讀通過軍火出口管制法案，憂心英製武器流入共產國際與愛爾蘭共和軍之手，即日起對遠東各口岸之軍火輸出實施許可制。",
+          "　　訪員按：英人擔心的是自家的槍打回自家人身上。至於這些槍在別人土地上打了誰，法案裡一個字也沒有。",
+          "　　滬上軍火行報價昨日即漲三成，各方採辦皆稱吃緊。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "production_cost_multiplier": [
+          {
+            "arms": [
+              "ground"
+            ],
+            "cash": 1.3,
+            "factory": 1.3,
+            "turns": 3,
+            "label": "英國軍火出口管制"
+          }
+        ]
+      }
+    },
+    {
+      "id": "usa_congress_arms_embargo",
+      "ref": "12.56",
+      "name": "美國國會禁運案",
+      "category": "foreign_power",
+      "power_note": "美",
+      "tags": [],
+      "repeatable": true,
+      "effect": "**所有玩家**未來 **3 回合**內所有陸軍兵種生產成本 `$+50%`、工廠 `+50%`",
+      "condition": "無條件，全場適用",
+      "newspaper": {
+        "headline": "美國國會通過對華軍火禁運案",
+        "paragraphs": [
+          "　　華盛頓八日電——美國國會昨日通過對華軍火禁運案，禁止一切武器、彈藥及其製造機具輸往中國，理由為「避免延長中國之內戰」。",
+          "　　訪員按：延長內戰的是槍，還是買槍的錢？這個問題，禁運案沒有回答。",
+          "　　案通過後，各國軍火商轉道走私，價格倍增而品質難保。"
+        ]
+      },
+      "entry_condition": {},
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "apply": {
+        "production_cost_multiplier": [
+          {
+            "arms": [
+              "ground"
+            ],
+            "cash": 1.5,
+            "factory": 1.5,
+            "turns": 3,
+            "label": "美國國會禁運案"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hongkong_arms_trade",
+      "ref": "12.57",
+      "name": "香港軍火交易",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [],
+      "repeatable": true,
+      "effect": "經香港轉運英械：你方未來 **3 回合**內所有陸軍兵種生產成本 `$−30%`、工廠 `−30%`",
+      "condition": "控制香港周邊一圈兩格內所有陸地與城市，且對英關係 `≥ 6`",
+      "newspaper": {
+        "headline": "英械經香港北運　省城軍火市面大暢",
+        "paragraphs": [
+          "　　香港十七日訊——港英當局默許之下，大批英製步槍、機槍經九龍轉運北上。行內稱此為「例外處理」，實則貨單俱全、關卡皆通。",
+          "　　訪員按：管制與例外，向來是同一隻手。手心朝上是管制，手心朝下便是例外。",
+          "　　省城軍火行昨日報價較上月低三成，各部採辦爭相北運。"
+        ]
+      },
+      "entry_condition": {
+        "relation_min": {
+          "uk": 6
+        },
+        "controls_cities_any": [
+          "guangzhou",
+          "foshan",
+          "shenzhen"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "drawer"
+      },
+      "apply": {
+        "production_cost_multiplier": [
+          {
+            "arms": [
+              "ground"
+            ],
+            "cash": 0.7,
+            "factory": 0.7,
+            "turns": 3,
+            "scope": "self",
+            "label": "香港軍火交易"
+          }
+        ]
+      }
+    },
+    {
+      "id": "south_manchuria_railway_talks",
+      "ref": "12.58",
+      "name": "南滿鐵路交涉",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "交涉"
+      ],
+      "repeatable": true,
+      "effect": "日方要求承認南滿路權，是否接受？\n - 接受 → 對日關係 `+2`、一次性金錢 `+10`；代價：南滿鐵路沿線每座城市每回合 `$−1`（永久）\n - 拒絕 → 對日關係 `−2`；日方封鎖路權，你 **10 回合**內不得使用南滿鐵路運輸",
+      "condition": "所有符合條件的玩家皆須各自表態，各自結算",
+      "newspaper": {
+        "headline": "日方要求南滿路權　我方限期答覆",
+        "paragraphs": [
+          "　　奉天十一日電——日本滿鐵株式會社昨日向我方提出交涉，要求承認南滿鐵路沿線之駐兵權與附屬地行政權，並允其延長支線。",
+          "　　訪員按：滿鐵不是一條鐵路，是一個帶著鐵路的政府。承認它的路權，等於承認沿線那一長條不歸自己管。",
+          "　　我方限期答覆。允則沿線稅入永久見絀，拒則路權立遭封鎖。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "奉天",
+          "吉林"
+        ]
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "all_players",
+        "prompt": "日方要求承認南滿路權，是否接受？",
+        "options": [
+          {
+            "id": "accept",
+            "label": "接受",
+            "effect_text": "對日關係 `+2`、一次性金錢 `+10`；代價：南滿鐵路沿線每座城市每回合 `$−1`（永久）",
+            "apply": {
+              "relations": {
+                "jp": 2
+              },
+              "grant": {
+                "cash": 10
+              },
+              "city_output": {
+                "select": {
+                  "provinces": [
+                    "奉天",
+                    "吉林"
+                  ]
+                },
+                "cash": -1
+              }
+            }
+          },
+          {
+            "id": "refuse",
+            "label": "拒絕",
+            "effect_text": "對日關係 `−2`；日方封鎖路權，你 **10 回合**內不得使用南滿鐵路運輸",
+            "apply": {
+              "relations": {
+                "jp": -2
+              },
+              "railway_ban": [
+                {
+                  "railway": "南滿鐵路",
+                  "turns": 10
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "apply": {}
+    },
+    {
+      "id": "chinese_eastern_railway_talks",
+      "ref": "12.59",
+      "name": "中東路交涉",
+      "category": "foreign_power",
+      "power_note": "蘇",
+      "tags": [
+        "交涉"
+      ],
+      "repeatable": true,
+      "effect": "蘇方要求共管中東鐵路，是否允許？\n - 允許 → 對蘇關係 `+2`、一次性工廠 `+10`；代價：中東鐵路沿線每座城市每回合 `$−1`（永久）\n - 拒絕 → 對蘇關係 `−2`；蘇方封鎖路權，你 **10 回合**內不得使用中東鐵路運輸",
+      "condition": "所有符合條件的玩家皆須各自表態，各自結算",
+      "newspaper": {
+        "headline": "蘇方要求共管中東路　我方限期答覆",
+        "paragraphs": [
+          "　　哈爾濱十九日電——蘇聯代表昨日向我方提出中東鐵路共管方案，要求路局正副局長由兩國分任，並比照舊約分配盈餘。",
+          "　　訪員按：中東路是沙俄留下的東西，蘇聯口口聲聲廢除舊約，卻獨獨在這條路上把舊約抄了一遍。",
+          "　　允則沿線稅入永久見絀，拒則路權立遭封鎖。"
+        ]
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "黑龍江",
+          "吉林"
+        ]
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "all_players",
+        "prompt": "蘇方要求共管中東鐵路，是否允許？",
+        "options": [
+          {
+            "id": "accept",
+            "label": "允許",
+            "effect_text": "對蘇關係 `+2`、一次性工廠 `+10`；代價：中東鐵路沿線每座城市每回合 `$−1`（永久）",
+            "apply": {
+              "relations": {
+                "su": 2
+              },
+              "grant": {
+                "factory": 10
+              },
+              "city_output": {
+                "select": {
+                  "provinces": [
+                    "黑龍江",
+                    "吉林"
+                  ]
+                },
+                "cash": -1
+              }
+            }
+          },
+          {
+            "id": "refuse",
+            "label": "拒絕",
+            "effect_text": "對蘇關係 `−2`；蘇方封鎖路權，你 **10 回合**內不得使用中東鐵路運輸",
+            "apply": {
+              "relations": {
+                "su": -2
+              },
+              "railway_ban": [
+                {
+                  "railway": "中東鐵路",
+                  "turns": 10
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "apply": {}
+    },
+    {
+      "id": "yunnan_vietnam_railway_talks",
+      "ref": "12.60",
+      "name": "滇越鐵路交涉",
+      "category": "foreign_power",
+      "power_note": "法",
+      "tags": [
+        "交涉"
+      ],
+      "repeatable": true,
+      "effect": "法方要求滇越路沿線特權，是否允許？\n - 允許 → 對法關係 `+2`；代價：滇越鐵路沿線每座城市每回合 `$−1`（永久）\n - 拒絕 → 對法關係 `−2`；法方封鎖路權，你 **10 回合**內不得使用滇越鐵路運輸",
+      "condition": "所有符合條件的玩家皆須各自表態，各自結算",
+      "newspaper": {
+        "headline": "法方要求滇越路沿線特權",
+        "paragraphs": [
+          "　　昆明二十三日訊——法國駐滇領事昨日照會我方，要求承認滇越鐵路沿線之礦權與稅務優待，並允法籍職員免受我方司法管轄。",
+          "　　訪員按：一條路修進來，帶進來的從來不只是火車。礦、稅、法權，一樣一樣跟著鐵軌走。",
+          "　　允則沿線稅入永久見絀，拒則路權立遭封鎖。"
+        ]
+      },
+      "entry_condition": {
+        "controls_province": "雲南"
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "all_players",
+        "prompt": "法方要求滇越路沿線特權，是否允許？",
+        "options": [
+          {
+            "id": "accept",
+            "label": "允許",
+            "effect_text": "對法關係 `+2`；代價：滇越鐵路沿線每座城市每回合 `$−1`（永久）",
+            "apply": {
+              "relations": {
+                "fr": 2
+              },
+              "city_output": {
+                "select": {
+                  "provinces": [
+                    "雲南"
+                  ]
+                },
+                "cash": -1
+              }
+            }
+          },
+          {
+            "id": "refuse",
+            "label": "拒絕",
+            "effect_text": "對法關係 `−2`；法方封鎖路權，你 **10 回合**內不得使用滇越鐵路運輸",
+            "apply": {
+              "relations": {
+                "fr": -2
+              },
+              "railway_ban": [
+                {
+                  "railway": "滇越鐵路",
+                  "turns": 10
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "apply": {}
+    },
+    {
+      "id": "yangtze_navigation_talks",
+      "ref": "12.61",
+      "name": "長江航行權交涉",
+      "category": "foreign_power",
+      "power_note": "英",
+      "tags": [
+        "交涉"
+      ],
+      "repeatable": true,
+      "effect": "英方要求砲艇自由通行長江，是否允許？\n - 允許 → 對英關係 `+2`；但你當前控制的長江沿岸河港每回合工廠 `−1`（永久）\n - 拒絕 → 對英關係 `−2`",
+      "condition": "所有符合條件的玩家皆須各自表態，各自結算",
+      "newspaper": {
+        "headline": "英方要求砲艇自由通行長江各埠",
+        "paragraphs": [
+          "　　上海十三日電——英國公使昨日照會我外交部，要求其砲艇得自由通行長江各通商口岸，並於各埠設立補給站。",
+          "　　訪員按：砲艇自由通行的意思，是江上有事時，第一個到場的不是我們的船。",
+          "　　允則沿江工業永久見絀，拒則邦交轉冷。"
+        ]
+      },
+      "entry_condition": {
+        "controls_ports_in_waters_min": {
+          "waters": [
+            "長江"
+          ],
+          "count": 3
+        }
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "all_players",
+        "prompt": "英方要求砲艇自由通行長江，是否允許？",
+        "options": [
+          {
+            "id": "accept",
+            "label": "允許",
+            "effect_text": "對英關係 `+2`；但你當前控制的長江沿岸河港每回合工廠 `−1`（永久）",
+            "apply": {
+              "relations": {
+                "uk": 2
+              },
+              "city_output": {
+                "select": {
+                  "provinces": [
+                    "江蘇",
+                    "安徽",
+                    "江西",
+                    "湖北",
+                    "湖南"
+                  ]
+                },
+                "factory": -1
+              }
+            }
+          },
+          {
+            "id": "refuse",
+            "label": "拒絕",
+            "effect_text": "對英關係 `−2`",
+            "apply": {
+              "relations": {
+                "uk": -2
+              }
+            }
+          }
+        ]
+      },
+      "apply": {}
+    },
+    {
+      "id": "jinan_protect_nationals",
+      "ref": "12.62",
+      "name": "濟南護僑",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "交涉"
+      ],
+      "repeatable": true,
+      "effect": "是否允許日軍進駐濟南護僑？\n - 允許 → 對日關係 `+2`；代價：濟南每回合 `$−1`（永久）\n - 拒絕 → 對日關係 `−3`",
+      "condition": "所有符合條件的玩家皆須各自表態，各自結算",
+      "newspaper": {
+        "headline": "日方以護僑為名要求進駐濟南",
+        "paragraphs": [
+          "　　濟南十六日訊——日本領事館昨日照會我方，稱濟南日僑安全堪虞，要求允許日軍一部進駐城內護僑。",
+          "　　訪員按：護僑二字，關內外都聽熟了。上一次聽見，是在青島；再上一次，是在旅順。",
+          "　　允則濟南稅入永久見絀，拒則邦交立損。"
+        ]
+      },
+      "entry_condition": {
+        "controls_cities_any": [
+          "jinan"
+        ]
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "all_players",
+        "prompt": "是否允許日軍進駐濟南護僑？",
+        "options": [
+          {
+            "id": "accept",
+            "label": "允許",
+            "effect_text": "對日關係 `+2`；代價：濟南每回合 `$−1`（永久）",
+            "apply": {
+              "relations": {
+                "jp": 2
+              },
+              "city_output": {
+                "cities": [
+                  "jinan"
+                ],
+                "cash": -1
+              }
+            }
+          },
+          {
+            "id": "refuse",
+            "label": "拒絕",
+            "effect_text": "對日關係 `−3`",
+            "apply": {
+              "relations": {
+                "jp": -3
+              }
+            }
+          }
+        ]
+      },
+      "apply": {}
+    },
+    {
+      "id": "japanese_factory_investment",
+      "ref": "12.63",
+      "name": "日商設廠",
+      "category": "foreign_power",
+      "power_note": "日",
+      "tags": [
+        "交涉"
+      ],
+      "repeatable": true,
+      "effect": "日資要求入股我方工業，是否配合？\n - 配合 → 對日關係 `+1`，且以後每回合工廠 `+2`；代價：以後每回合 `$−2`（永久，日商分潤）\n - 拒絕 → 對日關係 `−2`",
+      "condition": "所有符合條件的玩家皆須各自表態，各自結算",
+      "newspaper": {
+        "headline": "日資要求入股我方工業",
+        "paragraphs": [
+          "　　天津二十七日訊——三井、三菱兩會社昨日聯名向我方提出入股計畫，願出資擴建紗廠與麵粉廠，條件為分潤與經營權共享。",
+          "　　訪員按：日資帶來的是機器，帶走的是分潤。機器會舊，分潤不會。",
+          "　　配合則工廠日增而歲入日減，拒絕則邦交轉冷。"
+        ]
+      },
+      "entry_condition": {
+        "relation_min": {
+          "jp": 1
+        }
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "all_players",
+        "prompt": "日資要求入股我方工業，是否配合？",
+        "options": [
+          {
+            "id": "accept",
+            "label": "配合",
+            "effect_text": "對日關係 `+1`，且以後每回合工廠 `+2`；代價：以後每回合 `$−2`（永久，日商分潤）",
+            "apply": {
+              "relations": {
+                "jp": 1
+              },
+              "player_output_bonus": [
+                {
+                  "cash": -2,
+                  "factory": 2
+                }
+              ]
+            }
+          },
+          {
+            "id": "refuse",
+            "label": "拒絕",
+            "effect_text": "對日關係 `−2`",
+            "apply": {
+              "relations": {
+                "jp": -2
+              }
+            }
+          }
+        ]
+      },
+      "apply": {}
     }
-  ]
+  ],
+  "count": 122
 }

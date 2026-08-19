@@ -217,6 +217,16 @@ button, select, input, textarea {
   border-top: 1px solid rgba(231, 225, 215, 0.18);
 }
 .stat-popover-total strong { color: #e8d7a6; }
+.stat-popover-note {
+  margin-top: 4px;
+  display: block;
+}
+.stat-popover-note i {
+  font-style: normal;
+  color: #9a9186;
+  font-size: 11px;
+  line-height: 1.5;
+}
 
 /* 窄畫面時先縮按鈕與數字，再縮標題，避免整排溢出。 */
 @media (max-width: 1500px) {
@@ -2468,6 +2478,49 @@ button, select, input, textarea {
   color: white;
 }
 
+/* 最後通牒：側欄常駐的狀態方塊，通牒還在跑時一直看得到。 */
+.ultimatum-notice {
+  padding: 10px 11px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(226, 72, 60, 0.55);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: rgba(226, 72, 60, 0.12);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #f0ddd8;
+}
+.ultimatum-notice.failed {
+  border-color: rgba(226, 72, 60, 0.9);
+  background: rgba(226, 72, 60, 0.22);
+}
+.ultimatum-notice.met {
+  border-color: rgba(89, 139, 102, 0.6);
+  background: rgba(89, 139, 102, 0.13);
+  color: #c9e0cd;
+}
+/* 只有標題是整行；內文裡的 <b> 只是加粗，不能也 display:block，
+   否則句子會在奇怪的地方斷開（報紙的效果欄踩過同一個坑）。 */
+.ultimatum-notice .ultimatum-title {
+  display: block;
+  font-size: 12px;
+  color: #ffd9d2;
+  margin-bottom: 3px;
+}
+.ultimatum-notice.met .ultimatum-title { color: #cfe8d4; }
+.ultimatum-notice b { font-weight: 700; color: #ffd9d2; }
+.ultimatum-notice.met b { color: #cfe8d4; }
+.ultimatum-notice .ultimatum-cities {
+  color: #ffe9b0;
+  font-weight: 600;
+}
+.ultimatum-notice small {
+  display: block;
+  margin-top: 4px;
+  color: #cbbdb8;
+  font-size: 11px;
+}
+
 .pending-complete {
   padding: 11px;
   border: 1px solid rgba(89, 139, 102, 0.45);
@@ -3095,4 +3148,10 @@ button, select, input, textarea {
   color: #cfc6b8;
   font-size: 11px;
   line-height: 1.6;
+}
+
+/* 行刺得手：報紙附誌裡最刺眼的那一行。 */
+.newspaper-effect-hit {
+  color: #a3231d;
+  font-weight: 800;
 }
