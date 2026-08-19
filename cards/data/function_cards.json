@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 120,
+  "count": 87,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -13,7 +13,7 @@
       "effect": "透過斧頭幫進行一次暗殺行動，可指定任意一位敵方人物（含大帥與 NPC 陣營），成功率 20%；目標若已編成親衛隊則成功率降低。成功者當場身亡，其麾下少將忠誠歸零；失敗則無後果。",
       "mechanic": "assassination",
       "success_rate": 0.2,
-      "story": "一身舊短打，手裡提著把不起眼的斧頭——當年逃荒的弟兄只買得起這個。他不收保護費、不佔碼頭，只挑人。你問價碼，他反問你要殺的是誰；名字說得對，錢一分不取。"
+      "story": "王亞樵率領斧頭幫加入你方勢力，可指使其進行一次暗殺行動。"
     },
     {
       "id": "du_yuesheng_gamble",
@@ -35,7 +35,7 @@
         "河南",
         "湖北"
       ],
-      "story": "三層樓的宅子裡，牌桌上只坐四個人，門外站著四十個。他把茶碗一放，整條法租界的碼頭與堂口就靜了下來。今晚押的不是錢，是一整座城的秩序——青幫從不下注，青幫只決定誰贏。",
+      "story": "杜月笙率領青幫支持你方勢力為中國正統。",
       "disruption_label": "黑幫暴動"
     },
     {
@@ -58,7 +58,7 @@
         "湖南",
         "江西"
       ],
-      "story": "香堂設在祠堂後院，關公像前燃著三炷香。老堂主翻開那本傳了幾代的簿子：辛亥年廣州死的七十二人，一半是自己弟兄。反清復明喊了兩百年，如今該反的換成了穿新軍裝的舊軍閥。",
+      "story": "洪門弟兄承認你方勢力為民國正統，決定助你撥亂反正。",
       "disruption_label": "黑幫暴動"
     },
     {
@@ -183,6 +183,18 @@
       "effect": "指定一座己方城市，每回合現金 +1-3、工廠 +1-2。打出功能卡不另收費。"
     },
     {
+      "id": "piaohao_network",
+      "name": "票號金融網",
+      "deck_type": "function",
+      "category": "economic",
+      "holdable": true,
+      "cost": 0,
+      "effect": "匯通天下。使用時自行決定方向與數量，兩邊同一匯率：\n- **賣工廠**：每 `2` 工業點兌得 `$1`\n- **買工廠**：每 `$1` 購得 `2` 工業點\n不設數量上限，只受你手上實際的工業點與現金限制；工業點須為偶數才兌得盡。",
+      "mechanic": "piaohao_exchange",
+      "story": "平遙西大街的日昇昌，門面不過三間，卻掛著「匯通天下」四字。掌櫃的說：我們不放槍，也不佔地，只認一張票。票到即兌，山西的銀子今日在漢口出，明日在上海進；督軍的餉銀走我們的路子，比走火車還快些，也比走火車少丟些。",
+      "factory_per_cash": 2
+    },
+    {
       "id": "intel_network",
       "name": "情報網",
       "deck_type": "function",
@@ -218,9 +230,7 @@
       "factory_multiplier": 0,
       "cost": 0,
       "effect": "指定一個敵方勢力，隨機兩座城市現金與工廠產出歸零 3 回合；目標勢力會收到明確通知。",
-      "story": "起來，飢寒交迫的奴隸，起來，全世界受苦的人！滿腔的熱血已經沸騰，要為真理而鬥爭！",
-      "foreign_power_key": "su",
-      "requires_relation_min": 6
+      "story": "起來，飢寒交迫的奴隸，起來，全世界受苦的人！滿腔的熱血已經沸騰，要為真理而鬥爭！"
     },
     {
       "id": "red_army_uprising",
@@ -240,9 +250,7 @@
         "fr": -1
       },
       "required_turns": 2,
-      "story": "這是最後的鬥爭，團結起來到明天，英特納雄耐爾就一定要實現！",
-      "foreign_power_key": "su",
-      "requires_relation_min": 6
+      "story": "這是最後的鬥爭，團結起來到明天，英特納雄耐爾就一定要實現！"
     },
     {
       "id": "zhili_infantry_drill",
@@ -396,15 +404,12 @@
         "N"
       ],
       "cost": 0,
-      "effect": "工農動員：國民革命軍步兵與機槍生產現金成本 −2，每回合工廠 +2。國共合作：解鎖「國共合作」功能卡。需國民革命軍對蘇關係 6 以上才會進入卡池，每副牌僅 1 張。",
+      "effect": "工農動員：國民革命軍步兵生產金額 −1，每回合工廠 +1。國共合作：解鎖「國共合作」功能卡。每副牌僅 1 張。",
       "unlock_key": "wang_jingwei_return",
-      "factory": 2,
+      "factory": 1,
       "recruit_cost_adjustment": {
         "infantry": {
-          "cash": -2
-        },
-        "machine_gun": {
-          "cash": -2
+          "cash": -1
         }
       },
       "unlocks_cards": [
@@ -413,22 +418,7 @@
           "copies": 1
         }
       ],
-      "story": "船靠黃浦江那天下著雨，他在跳板上停了幾秒，讓相機拍好這一幕。去國兩年，總理遺囑上的字仍是他的筆跡，這一點誰也搶不走。文人的復出從不靠軍隊，靠的是所有人都覺得少不了他。",
-      "foreign_power_key": "su",
-      "requires_relation_min": 6,
-      "cabinet": {
-        "person": "汪精衛",
-        "skill": "工農動員",
-        "portrait": "汪精衛",
-        "lapse": {
-          "relation": {
-            "power": "su",
-            "below": 6
-          },
-          "marshal_lost": true
-        },
-        "lapse_text": "對蘇關係跌破 6，或本陣營大帥被俘或陣亡。"
-      }
+      "story": "汪精衛返華並與蔣介石重新合作。"
     },
     {
       "id": "first_united_front",
@@ -444,13 +434,10 @@
         "infantry": 20
       },
       "cost": 0,
-      "effect": "國民革命軍步兵預備隊 +20；麾下所有可變忠誠將領忠誠 -2。絕對忠誠將領不受影響。需「汪精衛復出」生效、且國民革命軍對蘇關係 6 以上才會進入卡池，每副牌僅 1 張。",
+      "effect": "國民革命軍步兵預備隊 +20；麾下所有可變忠誠將領忠誠 -2。絕對忠誠將領不受影響。需「汪精衛復出」生效後才會進入卡池，每副牌僅 1 張。",
       "loyalty_delta_all": -2,
       "requires_unlock": "wang_jingwei_return",
-      "requires_unlock_name": "汪精衛復出",
-      "foreign_power_key": "su",
-      "requires_relation_min": 6,
-      "story": "會場外排著兩列人，一列別青天白日，一列別紅布條，進門時互看一眼，誰也沒先開口。台上宣讀的文件寫得漂亮，台下的算盤各打各的。這樁婚事沒有媒人，只有一個共同的敵人。"
+      "requires_unlock_name": "汪精衛復出"
     },
     {
       "id": "northeast_army_rearmament",
@@ -650,7 +637,7 @@
       "holdable": true,
       "mechanic": "reserve_bundle",
       "foreign_power_key": "jp",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "日本關係 8+：預備隊步兵 +4、機槍 +1。",
       "unit_reserves": {
@@ -667,7 +654,7 @@
       "holdable": true,
       "mechanic": "project_loan",
       "foreign_power_key": "jp",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "日本關係 8+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用橫濱正金的授信額度。逾期未清償者債務照還，另由日方接管你產出最高 2 座城市的全部現金與工廠產出，持續 5 回合。",
       "cash": 50,
@@ -719,7 +706,7 @@
       "holdable": true,
       "mechanic": "regional_city_development",
       "foreign_power_key": "jp",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "日本關係 8+，且控制奉天、吉林、黑龍江：這三省城市每回合現金 +1、工廠 +2。本牌每副牌僅 1 張。",
       "provinces": [
@@ -744,7 +731,7 @@
       "holdable": true,
       "mechanic": "reserve_bundle",
       "foreign_power_key": "su",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "蘇聯關係 8+：預備隊步兵 +6、機槍 +1。",
       "unit_reserves": {
@@ -761,7 +748,7 @@
       "holdable": true,
       "mechanic": "cash_gain",
       "foreign_power_key": "su",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "蘇聯關係 8+：現金 +25。",
       "cash": 25,
@@ -802,7 +789,7 @@
       "holdable": true,
       "mechanic": "reserve_bundle",
       "foreign_power_key": "uk",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "英國關係 8+：預備隊機槍 +3。",
       "unit_reserves": {
@@ -818,7 +805,7 @@
       "holdable": true,
       "mechanic": "project_loan",
       "foreign_power_key": "uk",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "英國關係 8+：現金 +65、負債 +50，利率每回合 5%，3 回合到期，且不佔用匯豐的授信額度。逾期未清償者債務照還，另由英方永久抽取你產出最高 1 個省份 15% 的現金與工廠產出。",
       "cash": 65,
@@ -870,7 +857,7 @@
       "holdable": true,
       "mechanic": "concession_city_development",
       "foreign_power_key": "uk",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "英國關係 8+，且控制至少一座英租界城市：你控制的所有英租界城市每回合現金 +2、工廠 +2。",
       "concession_power": "uk",
@@ -886,7 +873,7 @@
       "holdable": true,
       "mechanic": "reserve_bundle",
       "foreign_power_key": "fr",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "法國關係 8+：預備隊砲兵 +2。",
       "unit_reserves": {
@@ -902,7 +889,7 @@
       "holdable": true,
       "mechanic": "debt_cash",
       "foreign_power_key": "fr",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "法國關係 8+：現金 +30、負債 +25。",
       "cash": 30,
@@ -939,7 +926,7 @@
       "holdable": true,
       "mechanic": "regional_city_development",
       "foreign_power_key": "fr",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "法國關係 8+，且控制雲南：雲南所有城市每回合現金 +2、工廠 +2。",
       "requires_provinces": [
@@ -960,7 +947,7 @@
       "holdable": true,
       "mechanic": "reserve_bundle",
       "foreign_power_key": "us",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "美國關係 8+：預備隊步兵 +2、機槍 +1、砲兵 +1。",
       "unit_reserves": {
@@ -978,7 +965,7 @@
       "holdable": true,
       "mechanic": "project_loan",
       "foreign_power_key": "us",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "美國關係 8+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用花旗的授信額度。逾期未清償者債務照還，另由美方接管你產出最高 3 座城市的全部工廠產出，持續 5 回合。",
       "cash": 50,
@@ -1034,7 +1021,7 @@
       "holdable": true,
       "mechanic": "concession_city_development",
       "foreign_power_key": "us",
-      "requires_relation_min": 6,
+      "requires_relation_min": 8,
       "cost": 0,
       "effect": "美國關係 8+，且控制至少一座美租界城市：你控制的所有美租界城市每回合現金 +2、工廠 +4。",
       "concession_power": "us",
@@ -1122,7 +1109,7 @@
       },
       "cost": 0,
       "effect": "僅張可用。若張學良未被俘，張學良所在軍隊立刻增加步兵 10、騎兵 5、機槍 2、砲兵 1。每副牌僅 1 張。",
-      "story": "軍中背後笑他的少將肩章是靠爹掙來的。他不辯，把講武堂的課從頭修完，德式操典一頁頁抄過。第二次直奉之戰他親自帶隊出關，回來以後沒人再笑——奉天開始改口叫他少帥。"
+      "story": "張學良逐漸掌握權力，成為東北軍骨幹。"
     },
     {
       "id": "wang_yongjiang_financial_reform",
@@ -1138,16 +1125,7 @@
       "factory": 2,
       "cost": 0,
       "effect": "僅張可用。永久每回合現金收入 +5、工廠點收入 +2。每副牌僅 1 張。",
-      "story": "張作霖說服王永江重新出山，重組東北軍財政體系並加碼投資重工業。",
-      "cabinet": {
-        "person": "王永江",
-        "skill": "工業經濟",
-        "portrait": "王永江",
-        "lapse": {
-          "marshal_lost": true
-        },
-        "lapse_text": "本陣營大帥被俘或陣亡。"
-      }
+      "story": "張作霖說服王永江重新出山，重組東北軍財政體系並加碼投資重工業。"
     },
     {
       "id": "zhili_anti_communist_declaration",
@@ -1244,30 +1222,16 @@
       "holdable": true,
       "mechanic": "soong_patronage",
       "cost": 0,
-      "effect": "控制上海期間每三回合額外現金 +10、工廠 +5，同時免疫對手的「杜月笙的豪賭」。需「結盟江浙財團」生效後才會進入卡池，每副牌僅 1 張。",
+      "effect": "控制上海期間每三回合額外現金 +5、工廠 +3，同時免疫對手的「杜月笙的豪賭」。需「結盟江浙財團」生效後才會進入卡池，每副牌僅 1 張。",
       "requires_unlock": "jiangzhe_financiers",
       "requires_unlock_name": "結盟江浙財團",
       "city_id": "shanghai",
-      "cash": 10,
-      "factory": 5,
+      "cash": 5,
+      "factory": 3,
       "immune_cards": [
         "du_yuesheng_gamble"
       ],
-      "story": "上海宋家決定押注你方勢力，宋美齡在大世界的秘密包廂會晤杜月笙與黃金榮，宋子文也入閣助你籌組財政部。在這風雲際會的上海灘，沒有什麼是不可能的。",
-      "cabinet": {
-        "person": "宋子文",
-        "skill": "財政部長",
-        "portrait": "宋子文",
-        "lapse": {
-          "lose_city": "shanghai",
-          "relation": {
-            "power": "su",
-            "at_or_above": 6
-          },
-          "marshal_lost": true
-        },
-        "lapse_text": "失去上海、對蘇關係回升到 6 以上，或本陣營大帥被俘或陣亡。"
-      }
+      "story": "上海宋家決定押注你方勢力，宋美齡在大世界的秘密包廂會晤杜月笙與黃金榮，宋子文也入閣助你籌組財政部。在這風雲際會的上海灘，沒有什麼是不可能的。"
     },
     {
       "id": "kong_xiangxi_office",
@@ -1282,20 +1246,7 @@
       "requires_unlock_name": "結盟江浙財團",
       "loan_interest_override": 0.03,
       "loan_term_bonus": 1,
-      "story": "孔祥熙入閣主政，組建中央銀行並穩定金融體系。",
-      "cabinet": {
-        "person": "孔祥熙",
-        "skill": "中央銀行",
-        "portrait": "孔祥熙",
-        "lapse": {
-          "relation": {
-            "power": "su",
-            "at_or_above": 6
-          },
-          "marshal_lost": true
-        },
-        "lapse_text": "對蘇關係回升到 6 以上，或本陣營大帥被俘或陣亡。"
-      }
+      "story": "孔祥熙入閣主政，組建中央銀行並穩定金融體系。"
     },
     {
       "id": "artifact_smuggling",
@@ -1579,51 +1530,6 @@
       "duration_turns": 1,
       "ignores_counter_intelligence": true,
       "story": "飛艇浮在雲上，慢得像一朵不肯走的雲。艙裡的相機每隔十秒喀一聲，把底下的營盤、砲位與行軍縱隊一一收進膠捲。"
-    },
-    {
-      "id": "harbor_demolition",
-      "name": "大港開炸",
-      "deck_type": "function",
-      "category": "sabotage",
-      "holdable": true,
-      "mechanic": "port_demolition",
-      "cost": 0,
-      "effect": "任選兩座敵方港口城市（河港、海港皆可），兩座可屬於同一勢力，也可分屬兩個不同勢力。該兩座港口癱瘓 2 回合：期間艦隊不得停靠與通行，也不得在該港修理艦艇、登陸部隊、載運部隊或編補艦隊；癱瘓只擋艦隊，陸軍的通行與佔領完全不受影響。搶修期間停在港內的艦隊不會受損，但整支被鎖在港裡，兩回合內不能有任何動作。每座被炸的港口須付 $10 與工業點 10 修復，同一勢力被炸兩座就付兩份，當下不足的部分由之後回合的收入自動扣繳。",
-      "target_city_count": 2,
-      "duration_turns": 2,
-      "repair_cash_cost": 10,
-      "repair_factory_cost": 10,
-      "story": "人生的敵後作戰"
-    },
-    {
-      "id": "zhou_enlai_underground",
-      "name": "周恩來與地下黨",
-      "deck_type": "function",
-      "category": "soviet_perk",
-      "holdable": true,
-      "mechanic": "underground_party",
-      "cost": 0,
-      "effect": "周恩來著手領導中共地下活動：打出者牌庫中的「共黨暴動」與「紅軍起義」各增加為 6 張。需對蘇關係 6 以上才會進入卡池，每副牌僅 1 張，且全場同時只有一位玩家能持有。",
-      "foreign_power_key": "su",
-      "requires_relation_min": 6,
-      "card_copies": {
-        "communist_riot": 6,
-        "red_army_uprising": 6
-      },
-      "story": "法租界弄堂裡的二樓，窗簾整天拉著。他白天是報館編輯，晚上抄名單、對暗號、排交通，每條線只有他一個人接得起來。有人勸他離開上海太險，他說城裡二十萬工人，我走了誰跟他們說話。",
-      "cabinet": {
-        "person": "周恩來",
-        "skill": "中共中央軍委",
-        "portrait": "周恩來",
-        "lapse": {
-          "relation": {
-            "power": "su",
-            "below": 6
-          },
-          "marshal_lost": true
-        },
-        "lapse_text": "對蘇關係跌破 6，或本陣營大帥被俘或陣亡。"
-      }
     }
   ]
 }

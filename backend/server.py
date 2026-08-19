@@ -154,7 +154,6 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             riot_garrisons=payload.get("riot_garrisons") or {},
             city_garrisons=payload.get("city_garrisons") or {},
             contested_provinces=payload.get("contested_provinces"),
-            fallen_marshals=payload.get("fallen_marshals"),
         )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -217,6 +216,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_provinces=payload.get("target_provinces"),
             target_railway=payload.get("target_railway"),
             target_power=payload.get("target_power"),
+            exchange_direction=payload.get("exchange_direction"),
+            exchange_amount=payload.get("exchange_amount"),
         )
 
     def _respond_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
