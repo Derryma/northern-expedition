@@ -62,12 +62,6 @@ export function maxGunBoatHp(navy) {
   return (navy?.gunBoats || []).reduce((sum, boat) => sum + Math.max(0, Number(boat.maxHp || 0)), 0);
 }
 
-export function retreatBaselineGunBoatHp(navy, rules = null) {
-  normalizeNavyDivision(navy, rules);
-  const baseline = Number(navy?.retreatMaxGunBoatHp || 0);
-  return Math.max(0, baseline || maxGunBoatHp(navy));
-}
-
 export function totalCargoBoatHp(navy, rules) {
   normalizeNavyDivision(navy, rules);
   return (navy?.cargoBoatHp || []).reduce((sum, boat) => sum + Math.max(0, Number(boat.hp || 0)), 0);
@@ -113,27 +107,6 @@ export function normalizeNavyDivision(navy, rules = null) {
   return navy;
 }
 
-export function navyRetreatThresholdReached(navy, rules) {
-  normalizeNavyDivision(navy, rules);
-  const maxHp = retreatBaselineGunBoatHp(navy, rules);
-  if (maxHp <= 0) return true;
-  const lossRatio = Number(rules?.land_interaction?.navy_retreat_gun_boat_hp_loss_ratio || 0.5);
-  return totalGunBoatHp(navy) <= maxHp * (1 - lossRatio);
-}
-
-export function restoreHpToFloor(navy, targetHp) {
-  const target = Math.max(0, Number(targetHp || 0));
-  let restored = 0;
-  normalizeNavyDivision(navy);
-  for (const boat of [...(navy?.gunBoats || []), ...(navy?.cargoBoatHp || [])]) {
-    const maxHp = Number(boat.maxHp || 0);
-    const next = Math.min(maxHp, Math.max(Number(boat.hp || 0), target));
-    restored += Math.max(0, next - Number(boat.hp || 0));
-    boat.hp = next;
-  }
-  return Math.round(restored);
-}
-
 export function navyCanEnterCell(cell) {
   if (!cell || cell.power) return false;
   if (cell.river || cell.coastalWater || cell.navalRoute) return true;
@@ -159,95 +132,9 @@ export function navyPath(source, destination, cellNeighbors, rules) {
   return null;
 }
 
-export function applyGunBoatDamage(navy, damage) {
-  normalizeNavyDivision(navy);
-  let remaining = Math.max(0, Number(damage || 0));
-  const damaged = [];
-  const targets = [
-    ...(navy?.gunBoats || []).map((boat) => ({ boat, type: "gun_boat" })),
-    ...(navy?.cargoBoatHp || []).map((boat) => ({ boat, type: "cargo_boat" })),
-  ].sort((a, b) => {
-    if (a.type !== b.type) return a.type === "gun_boat" ? -1 : 1;
-    return Number(b.boat.hp || 0) - Number(a.boat.hp || 0);
-  });
-  for (const target of targets) {
-    if (remaining <= 0) break;
-    const { boat, type } = target;
-    const before = Math.max(0, Number(boat.hp || 0));
-    if (before <= 0) continue;
-    const applied = Math.min(before, remaining);
-    boat.hp = before - applied;
-    remaining -= applied;
-    damaged.push({ boat_id: boat.id, type, before, after: boat.hp, damage: applied, sunk: boat.hp <= 0 });
-  }
-  normalizeNavyDivision(navy);
-  return { applied: Math.max(0, Number(damage || 0)) - remaining, damaged };
-}
 
-export function resolveArmyNavyContact(armyUnits, navy, rules) {
-  const artilleryBefore = Math.max(0, Math.round(Number(armyUnits?.artillery || 0)));
-  const activeBoats = activeGunBoats(navy, rules);
-  const boatDamage = artilleryBefore * Number(rules?.land_interaction?.artillery_attack_to_gun_boat || 1);
-  const gunBoatAttack = activeBoats.length * Number(rules?.units?.gun_boat?.attack?.artillery || 2);
-  const gunBoatDamage = applyGunBoatDamage(navy, boatDamage);
-  const artilleryLost = Math.min(artilleryBefore, Math.ceil(gunBoatAttack / 2));
-  const artilleryAfter = Math.max(0, artilleryBefore - artilleryLost);
-  // An army with any artillery left holds the contact tile.  The old
-  // percentage-loss check made a viable artillery force back away after a
-  // single exchange and caused army/navy contacts to stall.
-  const landRetreat = artilleryAfter <= 0;
-  const navyRetreat = navyRetreatThresholdReached(navy, rules) || activeGunBoats(navy, rules).length === 0;
-  return {
-    kind: "army_navy",
-    activeGunBoats: activeBoats.length,
-    navyFired: activeBoats.length > 0,
-    boatDamage: gunBoatDamage.applied,
-    boatDamageDetail: gunBoatDamage,
-    artilleryBefore,
-    artilleryLost,
-    artilleryAfter,
-    landRetreat,
-    navyRetreat,
-  };
-}
-
-export function resolveNavyDuel(attacker, defender, rules) {
-  // Fire eligibility is fixed at the start of the exchange.  A division with
-  // no active gunboat takes the enemy salvo without returning fire.
-  const activeA = activeGunBoats(attacker, rules).length;
-  const activeB = activeGunBoats(defender, rules).length;
-  const attackA = activeA * Number(rules?.units?.gun_boat?.attack?.gun_boat || 5);
-  const attackB = activeB * Number(rules?.units?.gun_boat?.attack?.gun_boat || 5);
-  const damageToA = applyGunBoatDamage(attacker, attackB);
-  const damageToB = applyGunBoatDamage(defender, attackA);
-  let attackerRetreat = activeGunBoats(attacker, rules).length === 0 || navyRetreatThresholdReached(attacker, rules);
-  let defenderRetreat = activeGunBoats(defender, rules).length === 0 || navyRetreatThresholdReached(defender, rules);
-  let tileWinner = null;
-  if (attackerRetreat && defenderRetreat) {
-    const attackerHp = totalGunBoatHp(attacker);
-    const defenderHp = totalGunBoatHp(defender);
-    if (attackerHp > defenderHp) {
-      attackerRetreat = false;
-      tileWinner = "attacker";
-    } else if (defenderHp > attackerHp) {
-      defenderRetreat = false;
-      tileWinner = "defender";
-    } else {
-      tileWinner = "draw";
-    }
-  } else if (attackerRetreat !== defenderRetreat) {
-    tileWinner = attackerRetreat ? "defender" : "attacker";
-  }
-  return {
-    kind: "navy_duel",
-    attackerActiveGunBoats: activeA,
-    defenderActiveGunBoats: activeB,
-    attackerDamage: damageToB.applied,
-    attackerDamageDetail: damageToB,
-    defenderDamage: damageToA.applied,
-    defenderDamageDetail: damageToA,
-    attackerRetreat,
-    defenderRetreat,
-    tileWinner,
-  };
-}
+// 海戰的規則（砲艇失能門檻、傷害分配、退卻判定、艦砲對砲兵、砲兵對艦艇、
+// 船上陸軍的裁兵與覆沒、修理補血）都住在後端 navy_system/navy.py，
+// 由 /api/navy-duel、/api/army-navy-contact、/api/repair-navy 結算。
+// 這個檔案只留下前端真正需要的部分：建立初始艦隊、讀取艦隊現況（血量、載運量）、
+// 地圖上的通行與路徑。規則只留一份在後端——前端不再自己算海戰。

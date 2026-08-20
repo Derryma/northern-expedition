@@ -75,6 +75,9 @@
       <div class="cabinet-detail" id="cabinetDetail" hidden></div>
       <div class="cabinet-list" id="cabinetList"></div>
     </div>
+    <!-- 可花錢平息的騷亂：自己一格，不跟其他提示搶 #turnNotification 那個插槽。
+         那是單一插槽，誰先匹配誰佔住——罷工提示曾經整個被 NPC 補兵提示蓋掉。 -->
+    <div class="unrest-notice" id="unrestNotice" hidden></div>
     <div class="turn-notification" id="turnNotification" hidden></div>
     <div class="turn-dock-actions">
       <button class="undo-order-btn" id="undoOrderBtn" title="撤銷本回合上一道軍令" disabled>↶</button>

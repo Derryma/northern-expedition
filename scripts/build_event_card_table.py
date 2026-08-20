@@ -28,10 +28,13 @@ SECTIONS = {
     5: "五、體育", 6: "六、商業", 7: "七、學術", 8: "八、科技",
     9: "九、中國藝文界", 10: "十、中國學術界", 11: "十一、中國商業界",
     12: "十二、列強懲戒（可重複抽取）",
+    13: "十三、經濟事件（可重複抽取）",
+    14: "十四、治安事件（可重複抽取）",
 }
 
 CATEGORY = {
     "foreign_power": "列強行動",
+    "economy": "經濟事件",
     "economic": "經濟事件",
     "npc_or_other_force": "其他勢力",
     "security": "治安事件",
@@ -99,14 +102,44 @@ def entry_condition_text(card: dict) -> str:
         bits.append(f"控制{cities[0]}")
     elif cities:
         bits.append("控制" + "或".join(cities))
+    all_cities = [CITY_NAMES.get(c, c) for c in (ec.get("controls_cities_all") or [])]
+    if all_cities:
+        bits.append("同時控制" + "、".join(all_cities))
     for power, value in (ec.get("relation_min") or {}).items():
         bits.append(f'對{POWER.get(power, power)}關係 ≥{value}')
+    # 任一達標即可（對英 ≥6 **或** 對美 ≥6），與 relation_min 的全部達標不同。
+    any_min = ec.get("relation_min_any") or {}
+    if any_min:
+        bits.append("或".join(f'對{POWER.get(p, p)}關係 ≥{v}' for p, v in any_min.items()))
     for power, value in (ec.get("relation_max") or {}).items():
         bits.append(f'對{POWER.get(power, power)}關係 ≤{value}')
     provinces_any = ec.get("controls_provinces_any") or []
     if provinces_any:
         bits.insert(0, "控制" + "或".join(provinces_any) + "其中一省")
-    return "，且".join(bits) if bits else "—"
+    port_level = ec.get("controls_port_level_min") or {}
+    if port_level:
+        kinds = {"river": "河港", "sea": "海港"}
+        which = "或".join(kinds.get(t, t) for t in (port_level.get("port_types") or []))
+        bits.append(f'控制至少一個 {port_level.get("level", 3)} 級以上'
+                    + (which or "河港或海港") + "城市")
+    if ec.get("requires_concession_any"):
+        bits.append("控制至少一個租界城市")
+    if ec.get("treasury_below_last_turn") is not None:
+        bits.append(f'上回合結束時現金 < {ec["treasury_below_last_turn"]}')
+    if ec.get("controls_port_count_min") is not None:
+        bits.append(f'控制至少 {ec["controls_port_count_min"]} 個港口城市（河港海港皆可）')
+    if ec.get("requires_concession_of"):
+        bits.append(f'控制至少一個{POWER.get(ec["requires_concession_of"], ec["requires_concession_of"])}租界城市')
+    if ec.get("requires_failed_ultimatum"):
+        bits.append(f'無視{POWER.get(ec["requires_failed_ultimatum"], ec["requires_failed_ultimatum"])}方最後通牒')
+    ports_in_waters = ec.get("controls_ports_in_waters_min") or {}
+    if ports_in_waters:
+        bits.append(f'控制至少 {ports_in_waters.get("count", 1)} 座'
+                    + "或".join(ports_in_waters.get("waters") or []) + "港市")
+    if not bits:
+        # 條件寫了卻一個字都印不出來，代表這裡漏認一個鍵——那正是 12.49 的舊病。
+        raise ValueError(f'entry_condition 無法轉成文字：{sorted(ec)}（{card["ref"]}）')
+    return "，且".join(bits)
 
 
 def resolution_text(card: dict) -> str:
@@ -183,8 +216,9 @@ def build() -> str:
               if (c.get("resolution") or {}).get("type") == "choice"]
     gated = [c["ref"] for c in cards if c.get("entry_condition")]
 
-    out = [BEGIN, "", "### 五九張事件卡逐張明細", "",
-           "下面十一張表由 `scripts/build_event_card_table.py` 從 `data/event_cards.json`",
+    out = [BEGIN, "", f"### {len(cards)} 張事件卡逐張明細", "",
+           f"下面 {len(by_section)} 張表由 `scripts/build_event_card_table.py`"
+           " 從 `data/event_cards.json`",
            "產生，**不要手改**——改了下次跑就被蓋掉，而且",
            "`test_event_card_table_matches_the_data` 會先讓你紅掉。改卡片請改資料檔，",
            "再跑一次 `python3 scripts/build_event_card_table.py`。", "",

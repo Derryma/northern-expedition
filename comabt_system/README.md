@@ -224,7 +224,7 @@ The 22 named generals each carry one signature skill (張宗昌 carries two):
 | `marshal_zhang` 張大帥 | 張作霖 | whole command HP +10% (aura) |
 | `young_marshal` 少帥 | 張學良 | cavalry and artillery attack +8% |
 | `white_russian_mercenaries` 白俄傭兵 | 張宗昌 | infantry and cavalry attack +10%, cavalry HP +7%; disabled while the owning faction's Soviet relation is 6 or higher, and 張宗昌 loses 5 loyalty |
-| `japanese_comprador` 日本買辦 | 張宗昌 | on joining a faction that faction's Japan relation +2; each Japanese condemnation card has a 10% chance of being blocked |
+| `japanese_comprador` 日本買辦 | 張宗昌 | on joining a faction that faction's Japan relation +2; when a Japanese [懲戒] **event** card is drawn against that faction it has a 10% chance of being deflected (the draw is silently retried) |
 | `elite_artillery` 精銳砲兵 | 楊宇霆 | artillery attack +10% |
 | `five_provinces_alliance` 五省聯軍 | 孫傳芳 | whole command HP +10% (aura) |
 | `riverine_warfare` 水域作戰 | 周蔭人、盧香亭 | harm taken -10% while fighting in 廣西、廣東、福建、浙江、江蘇、安徽、江西 |
@@ -238,7 +238,7 @@ The 22 named generals each carry one signature skill (張宗昌 carries two):
 | `precision_barrage` 精準砲擊 | 白崇禧 | artillery attack +25% vs machine guns, +15% vs infantry, +5% vs artillery |
 | `mountain_division` 山地師 | 李宗仁、白崇禧、唐繼堯、龍雲、劉湘、楊森 | harm taken -10% while fighting in 廣東、廣西、雲南、貴州、四川、湖南 |
 | `elite_mountain_division` 精銳山地師 | 劉文輝 | same provinces: harm taken -10% and attack +5% |
-| `french_comprador` 法國買辦 | 唐繼堯 | on joining a faction that faction's France relation +3; each French condemnation card has a 30% chance of being blocked |
+| `french_comprador` 法國買辦 | 唐繼堯 | on joining a faction that faction's France relation +3; when a French [懲戒] **event** card is drawn against that faction it has a 30% chance of being deflected (the draw is silently retried) |
 | `tianfu_land` 天府之國 | 劉湘 | every 四川 city his faction controls yields +1 cash and +1 factory per turn |
 | `buddhist_general` 佛教將軍 | 唐生智 | harm taken -10%, attack -10%, and defection attempts against him lose 5 percentage points of success chance |
 | `hunan_governor` 我才是省長 | 趙恒惕 | every 湖南 city his faction controls yields +1 cash and +1 factory per turn; attack +10% in any battle where 唐生智 is on the other side |
@@ -268,6 +268,14 @@ they live in `frontend/app.js` (`AURA_TRAITS`, `PROVINCE_CONDITIONAL_TRAITS`,
   (盧永祥 needs 段祺瑞). `ENEMY_PRESENCE_TRAITS` fires on a named general being
   on the *other* side (趙恒惕 vs 唐生智), and `ENEMY_RELATION_TRAITS` on the
   opposing faction's relation with a power (何鍵 vs anyone friendly to Moscow).
+
+The comprador immunity acts on **event cards tagged [懲戒]**, not on the
+`*_condemnation` function cards. The old "fewer condemnation cards enter your
+deck" mechanism was removed entirely — one skill should not have two effects.
+The check reads the drawn card's own `tags` and `power_note`, so any new [懲戒]
+card is covered automatically. A deflected card stays in the pool (immunity is
+"not this time", not permanent), the retry is silent, and the number of retries
+is capped so a turn can never hang.
 
 Effects that belong to a faction rather than to a battle live in the engine
 (`backend/card_engine.py`): `COMPRADOR_TRAITS`, `PROVINCE_OUTPUT_TRAITS` and
