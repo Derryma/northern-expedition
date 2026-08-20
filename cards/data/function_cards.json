@@ -664,7 +664,7 @@
       "foreign_power_key": "jp",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "日本關係 8+：預備隊步兵 +4、機槍 +1。",
+      "effect": "日本關係 6+：預備隊步兵 +4、機槍 +1。",
       "unit_reserves": {
         "infantry": 4,
         "machine_gun": 1
@@ -681,7 +681,7 @@
       "foreign_power_key": "jp",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "日本關係 8+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用橫濱正金的授信額度。逾期未清償者債務照還，另由日方接管你產出最高 2 座城市的全部現金與工廠產出，持續 5 回合。",
+      "effect": "日本關係 6+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用橫濱正金的授信額度。逾期未清償者債務照還，另由日方接管你產出最高 2 座城市的全部現金與工廠產出，持續 5 回合。",
       "cash": 50,
       "debt": 40,
       "interest_per_turn": 0.05,
@@ -733,7 +733,7 @@
       "foreign_power_key": "jp",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "日本關係 8+，且控制奉天、吉林、黑龍江：這三省城市每回合現金 +1、工廠 +2。本牌每副牌僅 1 張。",
+      "effect": "日本關係 6+，且控制奉天、吉林、黑龍江：這三省城市每回合現金 +1、工廠 +2。本牌每副牌僅 1 張。",
       "provinces": [
         "奉天",
         "吉林",
@@ -758,7 +758,7 @@
       "foreign_power_key": "su",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "蘇聯關係 8+：預備隊步兵 +6、機槍 +1。",
+      "effect": "蘇聯關係 6+：預備隊步兵 +6、機槍 +1。",
       "unit_reserves": {
         "infantry": 6,
         "machine_gun": 1
@@ -775,7 +775,7 @@
       "foreign_power_key": "su",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "蘇聯關係 8+：現金 +25。",
+      "effect": "蘇聯關係 6+：現金 +25。",
       "cash": 25,
       "story": "盧布不走銀行，走的是一只手提箱與一份沒有抬頭的收據。共產國際的代表只說一句：革命需要經費，將軍需要朋友。"
     },
@@ -816,7 +816,7 @@
       "foreign_power_key": "uk",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "英國關係 8+：預備隊機槍 +3。",
+      "effect": "英國關係 6+：預備隊機槍 +3。",
       "unit_reserves": {
         "machine_gun": 3
       },
@@ -832,7 +832,7 @@
       "foreign_power_key": "uk",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "英國關係 8+：現金 +65、負債 +50，利率每回合 5%，3 回合到期，且不佔用匯豐的授信額度。逾期未清償者債務照還，另由英方永久抽取你產出最高 1 個省份 15% 的現金與工廠產出。",
+      "effect": "英國關係 6+：現金 +65、負債 +50，利率每回合 5%，3 回合到期，且不佔用匯豐的授信額度。逾期未清償者債務照還，另由英方永久抽取你產出最高 1 個省份 15% 的現金與工廠產出。",
       "cash": 65,
       "debt": 50,
       "interest_per_turn": 0.05,
@@ -884,7 +884,7 @@
       "foreign_power_key": "uk",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "英國關係 8+，且控制至少一座英租界城市：你控制的所有英租界城市每回合現金 +2、工廠 +2。",
+      "effect": "英國關係 6+，且控制至少一座英租界城市：你控制的所有英租界城市每回合現金 +2、工廠 +2。",
       "concession_power": "uk",
       "cash": 2,
       "factory": 2,
@@ -900,7 +900,7 @@
       "foreign_power_key": "fr",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "法國關係 8+：預備隊砲兵 +2。",
+      "effect": "法國關係 6+：預備隊砲兵 +2。",
       "unit_reserves": {
         "artillery": 2
       },
@@ -916,7 +916,7 @@
       "foreign_power_key": "fr",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "法國關係 8+：現金 +30、負債 +25。",
+      "effect": "法國關係 6+：現金 +30、負債 +25。",
       "cash": 30,
       "debt": 25,
       "story": "東方匯理的墊款批得很快，快到讓人不安。經理只說法蘭西相信閣下的前途，至於抵押品，日後再談也不遲。"
@@ -953,7 +953,7 @@
       "foreign_power_key": "fr",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "法國關係 8+，且控制雲南：雲南所有城市每回合現金 +2、工廠 +2。",
+      "effect": "法國關係 6+，且控制雲南：雲南所有城市每回合現金 +2、工廠 +2。",
       "requires_provinces": [
         "雲南"
       ],
@@ -974,7 +974,7 @@
       "foreign_power_key": "us",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "美國關係 8+：預備隊步兵 +2、機槍 +1、砲兵 +1。",
+      "effect": "美國關係 6+：預備隊步兵 +2、機槍 +1、砲兵 +1。",
       "unit_reserves": {
         "machine_gun": 1,
         "artillery": 1,
@@ -992,7 +992,7 @@
       "foreign_power_key": "us",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "美國關係 8+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用花旗的授信額度。逾期未清償者債務照還，另由美方接管你產出最高 3 座城市的全部工廠產出，持續 5 回合。",
+      "effect": "美國關係 6+：現金 +50、負債 +40，利率每回合 5%，3 回合到期，且不佔用花旗的授信額度。逾期未清償者債務照還，另由美方接管你產出最高 3 座城市的全部工廠產出，持續 5 回合。",
       "cash": 50,
       "debt": 40,
       "interest_per_turn": 0.05,
@@ -1048,7 +1048,7 @@
       "foreign_power_key": "us",
       "requires_relation_min": 6,
       "cost": 0,
-      "effect": "美國關係 8+，且控制至少一座美租界城市：你控制的所有美租界城市每回合現金 +2、工廠 +4。",
+      "effect": "美國關係 6+，且控制至少一座美租界城市：你控制的所有美租界城市每回合現金 +2、工廠 +4。",
       "concession_power": "us",
       "cash": 2,
       "factory": 4,

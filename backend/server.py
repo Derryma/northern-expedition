@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .card_engine import DEFAULT_PLAYERS, GameEngine
 from .combat_adapter import simulate as simulate_combat
+from .combat_adapter import combat_outlook, simulate_with_modifiers
 from .data_store import REPO_ROOT
 
 
@@ -45,6 +46,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
                 self._send_json({
                     "revision": SHARED_REVISION,
                     "tactical": SHARED_TACTICAL_STATE,
+                    "loyalty": ENGINE.loyalty_report(SHARED_TACTICAL_STATE),
+                    "navy_outlook": ENGINE.navy_outlook(SHARED_TACTICAL_STATE),
                     "engine_state": ENGINE.snapshot(),
                 })
             return
@@ -119,18 +122,27 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/train-navy-unit": self._train_navy_unit,
             "/api/reinforce-army": self._reinforce_army,
             "/api/reinforce-navy": self._reinforce_navy,
+            "/api/quell-unrest": self._quell_unrest,
             "/api/repay-debt": self._repay_debt,
             "/api/loan-offers": self._loan_offers,
             "/api/take-loan": self._take_loan,
             "/api/pay-forced-march": self._pay_forced_march,
             "/api/pay-navy-move": self._pay_navy_move,
+            "/api/pay-engineering": self._pay_engineering,
+            "/api/turn-reinforcements": self._turn_reinforcements,
+            "/api/embark-army": self._embark_army,
+            "/api/refund-charge": self._refund_charge,
             "/api/repair-navy": self._repair_navy,
+            "/api/navy-duel": self._navy_duel,
+            "/api/army-navy-contact": self._army_navy_contact,
             "/api/capture-city": self._capture_city,
             "/api/recruit-captive-general": self._recruit_captive_general,
             "/api/attempt-defection": self._attempt_defection,
             "/api/shared-state": self._shared_state,
             "/api/restore-shared-state": self._restore_shared_state,
-            "/api/combat": lambda payload: simulate_combat(payload),
+            "/api/combat": lambda payload: simulate_with_modifiers(payload, ENGINE),
+            # 開打前的退卻預估：空跑一輪，只回傳數字，不改任何狀態。
+            "/api/combat-outlook": lambda payload: combat_outlook(payload, ENGINE),
         }
         parsed = urlparse(self.path)
         if parsed.path not in routes:
@@ -156,6 +168,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             city_garrisons=payload.get("city_garrisons") or {},
             contested_provinces=payload.get("contested_provinces"),
             fallen_marshals=payload.get("fallen_marshals"),
+            faction_trait_holders=payload.get("faction_trait_holders"),
             ultimatum_garrisons=payload.get("ultimatum_garrisons") or {},
             marshal_ids=payload.get("marshal_ids") or {},
         )
@@ -184,6 +197,11 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             return {
                 "revision": SHARED_REVISION,
                 "tactical": SHARED_TACTICAL_STATE,
+                # 忠誠的規則住在後端。前端送上來的是它擁有的事實（部隊編制、
+                # 忠誠覆寫、誰在誰手上），算出來的數字由後端回給它顯示——
+                # 同一套算式不該在兩邊各跑一次。
+                "loyalty": ENGINE.loyalty_report(SHARED_TACTICAL_STATE),
+                "navy_outlook": ENGINE.navy_outlook(SHARED_TACTICAL_STATE),
                 "engine_state": ENGINE.snapshot(),
             }
 
@@ -202,6 +220,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             return {
                 "revision": SHARED_REVISION,
                 "tactical": SHARED_TACTICAL_STATE,
+                "loyalty": ENGINE.loyalty_report(SHARED_TACTICAL_STATE),
+                "navy_outlook": ENGINE.navy_outlook(SHARED_TACTICAL_STATE),
                 "engine_state": restored_engine,
             }
 
@@ -253,21 +273,58 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         return ENGINE.take_loan(str(payload["player"]), str(payload["bank"]), int(payload["amount"]))
 
     def _pay_forced_march(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 金額由引擎的常數決定；payload 裡的 cash/factory 一律不採用。
         return ENGINE.pay_forced_march(
             str(payload["player"]),
-            cash=int(payload.get("cash", ENGINE.FORCED_MARCH_COST_CASH)),
-            factory=int(payload.get("factory", ENGINE.FORCED_MARCH_COST_FACTORY)),
             army_id=str(payload.get("army_id") or ""),
         )
 
     def _pay_navy_move(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 成本由艦隊現況算出來，不收前端送來的 factory。
         return ENGINE.pay_navy_move(
             str(payload["player"]),
-            factory=int(payload["factory"]) if payload.get("factory") is not None else None,
+            navy=payload.get("navy"),
+            navy_id=str(payload.get("navy_id") or "") or None,
         )
 
+    def _pay_engineering(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.pay_engineering(
+            str(payload["player"]),
+            str(payload["operation"]),
+            str(payload.get("cell_key") or "") or None,
+        )
+
+    def _refund_charge(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return ENGINE.refund_charge(str(payload["player"]), str(payload["charge_id"]))
+
+    def _turn_reinforcements(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 回合結束時的自動補兵：NPC 增援與野戰醫院。規則與擲骰都在後端，
+        # 用的是伺服器自己手上的編制，前端只把回傳的編制寫回去。
+        with SHARED_LOCK:
+            return ENGINE.turn_reinforcements(SHARED_TACTICAL_STATE, payload.get("turn"))
+
+    def _embark_army(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """陸軍上船的容量門檻由後端把關，不是只在前端擋一下。"""
+        return ENGINE.authorize_embark(payload.get("navy") or {},
+                                       payload.get("army_units") or {})
+
+    def _navy_duel(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """兩支艦隊對射。前端送兩支艦隊的現況，後端結算並回傳更新後的艦隊。"""
+        return ENGINE.resolve_navy_duel(payload["attacker"], payload["defender"])
+
+    def _army_navy_contact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """陸軍砲兵與艦隊接觸。"""
+        return ENGINE.resolve_army_navy_contact(payload.get("army_units") or {},
+                                                payload["navy"])
+
     def _repair_navy(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return ENGINE.repair_navy(str(payload["player"]), int(payload.get("hp", 0)))
+        # 前端送艦隊現況與目標 HP，補幾點、收多少工業點由後端算。
+        return ENGINE.repair_navy(
+            str(payload["player"]),
+            int(payload.get("hp", 0)),
+            payload.get("navy"),
+            payload.get("target_hp"),
+        )
 
     def _capture_city(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.capture_city(str(payload["city_id"]), str(payload["faction"]))
@@ -316,13 +373,20 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         )
 
     def _reinforce_army(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 戰力上限的基準值取自伺服器自己手上的部隊編制（SHARED_TACTICAL_STATE），
+        # 不是前端送來的 current_force——那個數字前端可以隨便報，報低就能無限補兵，
+        # 而且欄位是 Optional，乾脆不送整段檢查就被跳過。
+        army_id = str(payload["army_id"])
+        current_force = ENGINE.army_force_from_tactical(SHARED_TACTICAL_STATE, army_id)
+        if current_force is None:
+            current_force = payload.get("current_force")
         return ENGINE.reinforce_army(
             str(payload["player"]),
-            str(payload["army_id"]),
+            army_id,
             str(payload["city_id"]),
             str(payload["unit_type"]),
             int(payload.get("count", 1)),
-            payload.get("current_force"),
+            current_force,
         )
 
     def _reinforce_navy(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -332,6 +396,10 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             str(payload["unit_type"]),
             int(payload.get("count", 1)),
         )
+
+    def _quell_unrest(self, payload):
+        """付錢提前平息一起治安事件（罷工 $10、碼頭工潮／米騷動 $20）。"""
+        return ENGINE.quell_unrest(str(payload["player"]), str(payload["effect_id"]))
 
     def _repay_debt(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.repay_debt(str(payload["player"]), int(payload.get("amount", 0)))

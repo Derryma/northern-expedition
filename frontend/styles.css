@@ -3155,3 +3155,79 @@ button, select, input, textarea {
   color: #a3231d;
   font-weight: 800;
 }
+
+/* 廢兩改元這類「兩支只成真一支」的卡：把實際擲出的那一條標紅。 */
+.newspaper-effect-chosen {
+  color: #a3231d;
+  font-weight: 700;
+}
+.newspaper-effect-verdict {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid #a3231d;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  vertical-align: 1px;
+}
+
+/* 花錢平息治安事件：城市面板上的按鈕 */
+.tile-quell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.tile-quell button {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.86rem;
+  border-radius: 6px;
+  border: 1px solid rgba(214, 149, 90, 0.6);
+  background: rgba(214, 149, 90, 0.18);
+  color: #f0dcc6;
+  cursor: pointer;
+}
+.tile-quell button:hover:not(:disabled) { background: rgba(214, 149, 90, 0.32); }
+.tile-quell button:disabled { opacity: 0.45; cursor: not-allowed; }
+.tile-quell .quell-note { font-size: 0.78rem; opacity: 0.7; white-space: nowrap; }
+
+/* 可花錢平息的騷亂：常駐區塊，不與 #turnNotification 搶位置 */
+.unrest-notice {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(214, 149, 90, 0.45);
+  background: rgba(70, 40, 24, 0.55);
+  font-size: 0.86rem;
+  color: #f0dcc6;
+}
+.unrest-notice > b { display: block; margin-bottom: 6px; }
+.unrest-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+}
+.unrest-row span { flex: 1; opacity: 0.9; }
+.unrest-row button,
+.unrest-actions button {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  border-radius: 6px;
+  border: 1px solid rgba(214, 149, 90, 0.6);
+  background: rgba(214, 149, 90, 0.2);
+  color: #f0dcc6;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.unrest-row button:hover:not(:disabled),
+.unrest-actions button:hover { background: rgba(214, 149, 90, 0.34); }
+.unrest-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+.unrest-actions { margin-top: 6px; text-align: right; }
+.unrest-actions button { background: transparent; opacity: 0.75; }
