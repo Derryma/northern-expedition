@@ -48,6 +48,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
                     "tactical": SHARED_TACTICAL_STATE,
                     "loyalty": ENGINE.loyalty_report(SHARED_TACTICAL_STATE),
                     "navy_outlook": ENGINE.navy_outlook(SHARED_TACTICAL_STATE),
+                    "railway_access": ENGINE.railway_access(),
                     "engine_state": ENGINE.snapshot(),
                 })
             return
@@ -202,6 +203,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
                 # 同一套算式不該在兩邊各跑一次。
                 "loyalty": ENGINE.loyalty_report(SHARED_TACTICAL_STATE),
                 "navy_outlook": ENGINE.navy_outlook(SHARED_TACTICAL_STATE),
+                "railway_access": ENGINE.railway_access(),
                 "engine_state": ENGINE.snapshot(),
             }
 
@@ -222,6 +224,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
                 "tactical": SHARED_TACTICAL_STATE,
                 "loyalty": ENGINE.loyalty_report(SHARED_TACTICAL_STATE),
                 "navy_outlook": ENGINE.navy_outlook(SHARED_TACTICAL_STATE),
+                "railway_access": ENGINE.railway_access(),
                 "engine_state": restored_engine,
             }
 

@@ -379,9 +379,13 @@ class GameEngine:
             # 事件卡：抽剩的池子、已發生的歷史、正在等待回應的那一輪。
             # pool_copies：同一張卡在池子裡放幾份（最後通牒每國 10 張）。
             # never_drawn：不進池子，只由機制直接插進 pending（日蘇戰況報導）。
+            # not_in_pool：卡與報導已建檔，但效果的後端機制還沒補齊（NPC 行動那一批）。
+            #   與 never_drawn 不同——那批是「永遠不抽，也沒有效果」；這批是
+            #   「效果寫好了但引擎還接不上」，所以先擋在池外，補齊之後把旗標拿掉即可。
+            #   擋在池外是刻意的：抽得到卻什麼都不發生，比抽不到更糟。
             "event_pool": [card["id"]
                            for card in (self.data.get("event_cards") or {}).get("cards", [])
-                           if not card.get("never_drawn")
+                           if not card.get("never_drawn") and not card.get("not_in_pool")
                            for _ in range(max(1, int(card.get("pool_copies", 1))))],
             "event_history": [],
             "pending_events": None,
@@ -3752,6 +3756,73 @@ class GameEngine:
             if int(effect.get("remaining_turns", 0)) > 0
         ]
 
+    def foreign_railways(self) -> Dict[str, str]:
+        """列強鐵路 → 該國的關係鍵。
+
+        資料出自 scenario/data/strategic_map.json：標了 foreign 的線必須同時
+        寫明 power。這裡不在程式碼裡另寫一份對照表——寫了就是第二份真源，
+        遲早跟地圖對不上。
+        """
+        out: Dict[str, str] = {}
+        for line in self.data["strategic_map"].get("railroads", []):
+            if not line.get("foreign"):
+                continue
+            name = str(line.get("name") or "").strip()
+            power = str(line.get("power") or "").strip()
+            if not name:
+                raise ValueError("strategic_map 裡有一條沒有名字的鐵路")
+            if not power:
+                raise ValueError(f"{name} 標了 foreign 卻沒有寫 power")
+            if power not in RELATION_KEYS:
+                raise ValueError(f"{name} 的 power「{power}」不是有效的關係鍵")
+            out[name] = power
+        return out
+
+    def locked_foreign_railways(self, player: str) -> list:
+        """關係沒到友好門檻，人家就不讓你用他的線調兵。
+
+        門檻是 FOREIGN_FRIENDLY_THRESHOLD，與 perk 卡、優惠借貸同一個切點，
+        全都由 foreign_powers.json 的 friendly_at_or_above 導出。
+        """
+        profile = self.state.get("players", {}).get(player) or {}
+        relations = profile.get("foreign_relations") or {}
+        return sorted(
+            name for name, power in self.foreign_railways().items()
+            if int(relations.get(power, 0)) < FOREIGN_FRIENDLY_THRESHOLD
+        )
+
+    def unusable_railways(self, player: str) -> list:
+        """這位玩家現在做不了鐵路運輸的線：搶修中 ∪ 路權被封 ∪ 關係不到。
+
+        沿線地格仍可當普通地格走過去——不能走的是「一次三格」的鐵路運輸。
+        """
+        return sorted(set(self.disabled_railways())
+                      | set(self.banned_railways(player))
+                      | set(self.locked_foreign_railways(player)))
+
+    def railway_access(self) -> Dict[str, Any]:
+        """鐵路可用性的完整判定結果，前端照著畫就好，不必自己算門檻。"""
+        foreign = self.foreign_railways()
+        disabled = sorted(set(self.disabled_railways()))
+        by_player: Dict[str, Any] = {}
+        for code, profile in (self.state.get("players") or {}).items():
+            relations = (profile or {}).get("foreign_relations") or {}
+            locked = self.locked_foreign_railways(code)
+            by_player[code] = {
+                "locked": locked,
+                "banned": self.banned_railways(code),
+                "unusable": self.unusable_railways(code),
+                "relations": {name: int(relations.get(power, 0))
+                              for name, power in foreign.items()},
+            }
+        return {
+            "friendly_threshold": FOREIGN_FRIENDLY_THRESHOLD,
+            "hostile_threshold": FOREIGN_HOSTILE_THRESHOLD,
+            "foreign_railways": foreign,
+            "disabled": disabled,
+            "by_player": by_player,
+        }
+
     # 可以被 action_ban 禁掉的行動。寫死成清單是刻意的——卡片打錯字會當場報錯，
     # 而不是安靜地禁了一個不存在的行動（那就等於沒禁）。
     BANNABLE_ACTIONS = {"train_unit", "train_navy_unit", "reinforce_army", "reinforce_navy"}
@@ -4052,6 +4123,9 @@ class GameEngine:
                 # 路徑（2.4 東方會議的標籤加張）都能繞過那道防線，所以這裡再擋一次：
                 # 這種卡只能由機制直接插進 pending，永遠不該被抽出來。
                 and not (self._event_template(card_id) or {}).get("never_drawn")
+                # not_in_pool 同理：機制還沒補齊的卡就算被塞進池子也不准抽出來，
+                # 否則玩家會收到一張什麼都不會發生的報紙。
+                and not (self._event_template(card_id) or {}).get("not_in_pool")
                 and not self.event_is_spent(card_id)
                 and not self._event_locked(card_id)
                 and self._event_eligible_players(self._event_template(card_id))
@@ -4324,6 +4398,7 @@ class GameEngine:
         owned = [row["id"] for row in self._player(owner).get("city_economy", [])]
         # 「有警政單位保護者免疫」是逐省的（14.2 黑幫動亂）——先把有護盾的
         # 省份剔掉再抽，不然抽中了才發現免疫，等於這張卡對他少了一次機會。
+        spared = []
         if spec.get("respect_police"):
             kept = self._drop_police_shielded(owner, owned)
             spared = sorted(set(owned) - set(kept))
@@ -4336,7 +4411,7 @@ class GameEngine:
             count = min(int(spec.get("cities", 2)), len(owned))
             picks = [owned[i] for i in self.random.sample(range(len(owned)), count)] if count else []
         if not picks:
-            return {"skipped": "no_cities"}
+            return {"skipped": "no_cities", "spared": spared}
         effect = {
             "id": f"{card.get('id')}:{self.state['turn']}:{owner}",
             "card_id": card.get("id"),
@@ -4352,7 +4427,13 @@ class GameEngine:
         self.state.setdefault("city_output_effects", []).append(deepcopy(effect))
         self._refresh_city_income()
         self._notify(owner, f"{card.get('name')}：{len(picks)} 座城市發生暴動，產出歸零，需派兵平息。")
-        return {"cities": list(picks), "riot_kind": effect["kind"]}
+        if spared:
+            # 部分免疫也要講出來。全省被護住時回的是 skipped=police_shielded，
+            # 但只護住其中幾座時原本什麼都不回報，玩家看不出警政單位有作用。
+            self._notify(owner,
+                         f"{card.get('name')}：警政單位駐防的省份免疫，"
+                         f"{len(spared)} 座城市未受波及。")
+        return {"cities": list(picks), "riot_kind": effect["kind"], "spared": spared}
 
     def _sabotage_railway_as_punishment(self, owner: str, spec: Dict[str, Any],
                                         card: Dict[str, Any]) -> Dict[str, Any]:
@@ -4532,6 +4613,31 @@ class GameEngine:
             if city_id in (effect.get("city_ids") or []):
                 return True
         return False
+
+    def _eligible_region_count(self, card: Dict[str, Any], player: str) -> int:
+        """這位玩家控制了幾個「這張卡點名的地區」。
+
+        「控制 a、b 或 c 者本回合獲得 $xx」的收益是**一個地區發一次、可疊加**，
+        所以要數的是數量而不是有無。地區清單一律讀卡片 entry_condition 上的那一份
+        （controls_provinces_any／controls_cities_any），不在別處再抄一次。
+        """
+        condition = card.get("entry_condition") or {}
+        provinces = condition.get("controls_provinces_any") or []
+        cities = condition.get("controls_cities_any") or []
+        count = 0
+        for province in provinces:
+            if any(self.state["city_owners"].get(city["id"], city["faction"]) == player
+                   for city in self.data["strategic_map"]["cities"]
+                   if city.get("province") == province):
+                count += 1
+        for city_id in cities:
+            city = next((c for c in self.data["strategic_map"]["cities"]
+                         if c["id"] == city_id), None)
+            if city is None:
+                raise ValueError(f"{card.get('id')} 點名了不存在的城市：{city_id}")
+            if self.state["city_owners"].get(city_id, city["faction"]) == player:
+                count += 1
+        return count
 
     def _event_eligible_players(self, card: Dict[str, Any]) -> list:
         """這張事件卡現在有哪些玩家可以抽到。沒有進入條件就是全部。"""
@@ -5020,7 +5126,8 @@ class GameEngine:
                 # 12.20／12.22 兩張日軍獲勝的戰況報導剛好也掛著 [軍事]＋日，
                 # 於是被一起塞進池子，之後真的抽得到——變成一則從沒打過的仗的戰報。
                 ids = [cid for cid in ids
-                       if not (self._event_template(cid) or {}).get("never_drawn")]
+                       if not (self._event_template(cid) or {}).get("never_drawn")
+                       and not (self._event_template(cid) or {}).get("not_in_pool")]
                 if not ids:
                     # 目前資料檔裡沒有符合的卡（例如 [軍事] 類事件卡尚未建檔）。
                     # 誠實記下來，不要假裝加成功了。
@@ -5127,23 +5234,41 @@ class GameEngine:
         # 這是城市本身的屬性，跟誰持有無關，日後易主也帶著走。
         upgrade = payload.get("city_level_upgrade")
         if upgrade:
+            # 兩種寫法：
+            #   絕對——`to_level` 指定升到第幾級（晏陽初辦學鄉村：二級升三級）。
+            #   相對——`delta` 指定加幾級（NPC 那批「某某城市等級 +1」）。
+            #          相對的寫法可以只點名城市（`cities`），不必整省一起動。
             provinces = set(upgrade.get("provinces") or [])
-            to_level = int(upgrade["to_level"])
+            named = [str(cid) for cid in (upgrade.get("cities") or [])]
+            delta = upgrade.get("delta")
+            to_level = upgrade.get("to_level")
+            if delta is None and to_level is None:
+                raise ValueError("city_level_upgrade 要嘛給 to_level，要嘛給 delta")
             from_level = upgrade.get("from_level")
+            max_level = int(upgrade.get("max_level", 5))
+            if named:
+                known = {c["id"] for c in self.data["strategic_map"]["cities"]}
+                unknown = [cid for cid in named if cid not in known]
+                if unknown:
+                    raise ValueError(f"city_level_upgrade 點名了不存在的城市：{unknown}")
             overrides = self.state.setdefault("city_level_overrides", {})
             touched = []
             for city in self.data["strategic_map"]["cities"]:
+                if named and city["id"] not in named:
+                    continue
                 if provinces and city.get("province") not in provinces:
                     continue
                 current = int(self._with_level(city).get("level", 1))
                 if from_level is not None and current != int(from_level):
                     continue
-                if current >= to_level:
+                target = (min(current + int(delta), max_level)
+                          if delta is not None else int(to_level))
+                if current >= target:
                     continue
-                overrides[city["id"]] = to_level
+                overrides[city["id"]] = target
                 touched.append({"id": city["id"], "name": city["name"],
                                 "province": city["province"],
-                                "from": current, "to": to_level})
+                                "from": current, "to": target})
             if touched:
                 self._refresh_city_income()
                 applied.append({"kind": "city_level_upgrade", "cities": touched})
@@ -5554,19 +5679,25 @@ class GameEngine:
                                     "amount": int(hostile), "powers": touched})
 
         # ---- 一次性入帳（交涉卡的「一次性金錢 +10」「一次性工廠 +10」）----
+        #
+        # `per: "eligible_regions"` 是「控制 a、b 或 c 者獲得 $xx」那一類卡的疊加規則：
+        # 收益以**每控制一個地區發一次**計算，控制三個地區就是三倍。地區清單不在
+        # 這裡再抄一份——直接讀卡片 entry_condition 上那一份，永遠只有一個來源。
         grant_once = payload.get("grant")
         if grant_once:
+            per_region = str(grant_once.get("per") or "") == "eligible_regions"
             for code in targets:
                 profile = self._player(code)
-                cash = int(grant_once.get("cash", 0))
-                factory = int(grant_once.get("factory", 0))
+                times = self._eligible_region_count(card, code) if per_region else 1
+                cash = int(grant_once.get("cash", 0)) * times
+                factory = int(grant_once.get("factory", 0)) * times
                 if cash:
                     profile["treasury"] = max(0, int(profile.get("treasury", 0)) + cash)
                 if factory:
                     profile["factory_points"] = max(
                         0, int(profile.get("factory_points", 0)) + factory)
                 applied.append({"kind": "grant", "player": code,
-                                "cash": cash, "factory": factory})
+                                "cash": cash, "factory": factory, "regions": times})
 
         # ---- 每回合的永久增減（日商設廠：工廠 +2、金錢 −2）----
         for spec in payload.get("player_output_bonus") or []:

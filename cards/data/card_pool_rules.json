@@ -20,11 +20,12 @@
     "high_defense_bonus_against_assassination": 6
   },
   "foreign_relation_rules": {
-    "scale": "0-10",
-    "hostile_below": 3,
-    "friendly_at_or_above": 8,
+    "scale": "-10~10",
+    "hostile_at_or_below": -4,
+    "friendly_at_or_above": 6,
+    "source": "數值以 foreign_powers/data/foreign_powers.json 的 relation_scale 為準；這裡是同一組切點的副本，backend/test_backend.py 會逐項比對，對不上就紅燈。",
     "relation_cards": "common foreign relation cards grant +2 to one selected power and are capped at 10",
-    "friendly_unlock": "friendly powers add one copy of each unique perk card to the player deck",
+    "friendly_unlock": "friendly powers add FOREIGN_PERK_CARD_COPIES copies of each perk card to the player deck (communist_riot and red_army_uprising get one extra)",
     "hostile_filler": "hostile powers add three no-effect condemnation cards until relations recover"
   }
 }

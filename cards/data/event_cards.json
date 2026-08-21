@@ -6306,7 +6306,7 @@
       "power_note": "",
       "tags": [],
       "repeatable": true,
-      "effect": "控制江蘇、浙江、福建或廣東者立即獲現金 `+8`",
+      "effect": "**每控制江蘇、浙江、福建、廣東其中一省，立即獲現金 `+8`**（可疊加：控制兩省 `+16`、四省全控 `+32`）",
       "condition": "控制江蘇、浙江、福建或廣東其中一省",
       "newspaper": {
         "headline": "絲茶出口暢旺　東南各埠豐收",
@@ -6331,7 +6331,8 @@
       "apply": {
         "eligible_only": true,
         "grant": {
-          "cash": 8
+          "cash": 8,
+          "per": "eligible_regions"
         }
       }
     },
@@ -6343,7 +6344,7 @@
       "power_note": "",
       "tags": [],
       "repeatable": true,
-      "effect": "控制江蘇、浙江、四川或山東者立即獲現金 `+10`；此後該四省所有城市每回合 `$+1`（永久）",
+      "effect": "**每控制江蘇、浙江、四川、山東其中一省，立即獲現金 `+10`**（可疊加：控制兩省 `+20`、四省全控 `+40`）；此後該四省所有城市每回合 `$+1`（永久）",
       "condition": "控制江蘇、浙江、四川或山東其中一省",
       "newspaper": {
         "headline": "鹽務稽核所整頓場產　鹽稅大增",
@@ -6368,7 +6369,8 @@
       "apply": {
         "eligible_only": true,
         "grant": {
-          "cash": 10
+          "cash": 10,
+          "per": "eligible_regions"
         },
         "city_output": {
           "select": {
@@ -6391,7 +6393,7 @@
       "power_note": "",
       "tags": [],
       "repeatable": true,
-      "effect": "控制臨汾、瀘州、遵義或紹興者立即獲現金 `+5`；此後該四座城市每回合 `$+1`（永久）",
+      "effect": "**每控制臨汾、瀘州、遵義、紹興其中一座，立即獲現金 `+5`**（可疊加：控制兩座 `+10`、四座全控 `+20`）；此後該四座城市每回合 `$+1`（永久）",
       "condition": "控制臨汾、瀘州、遵義或紹興其中一座",
       "newspaper": {
         "headline": "中國名酒博覽會　汾酒茅台同獲金獎",
@@ -6416,7 +6418,8 @@
       "apply": {
         "eligible_only": true,
         "grant": {
-          "cash": 5
+          "cash": 5,
+          "per": "eligible_regions"
         },
         "city_output": {
           "cities": [
@@ -6437,7 +6440,7 @@
       "power_note": "",
       "tags": [],
       "repeatable": true,
-      "effect": "控制江西或湖南者立即獲現金 `+5`；此後該兩省所有城市每回合 `$+1`（永久）",
+      "effect": "**每控制江西、湖南其中一省，立即獲現金 `+5`**（可疊加：兩省全控 `+10`）；此後該兩省所有城市每回合 `$+1`（永久）",
       "condition": "控制江西或湖南其中一省",
       "newspaper": {
         "headline": "倫敦瓷器拍賣　景德鎮舊器價逾萬鎊",
@@ -6460,7 +6463,8 @@
       "apply": {
         "eligible_only": true,
         "grant": {
-          "cash": 5
+          "cash": 5,
+          "per": "eligible_regions"
         },
         "city_output": {
           "select": {
@@ -6481,7 +6485,7 @@
       "power_note": "",
       "tags": [],
       "repeatable": true,
-      "effect": "控制福建、安徽、江蘇或浙江者立即獲現金 `+5`；此後該四省所有城市每回合 `$+1`（永久）",
+      "effect": "**每控制福建、安徽、江蘇、浙江其中一省，立即獲現金 `+5`**（可疊加：控制兩省 `+10`、四省全控 `+20`）；此後該四省所有城市每回合 `$+1`（永久）",
       "condition": "控制福建、安徽、江蘇或浙江其中一省",
       "newspaper": {
         "headline": "中國精品茶博覽會　武夷祁門並列第一",
@@ -6506,7 +6510,8 @@
       "apply": {
         "eligible_only": true,
         "grant": {
-          "cash": 5
+          "cash": 5,
+          "per": "eligible_regions"
         },
         "city_output": {
           "select": {
@@ -7641,7 +7646,1339 @@
         }
       },
       "pool_copies": 1
+    },
+    {
+      "id": "yan_xishan_blocks_narrow_gauge",
+      "ref": "15.1",
+      "name": "閻錫山封鎖窄軌鐵路",
+      "category": "npc_or_other_force",
+      "power_note": "晉系",
+      "effect": "晉系封閉山西路網：正太鐵路、京漢鐵路全線停擺（同〈崩鐵玩家〉的封路機制，**但這次無法維修**）。該事件生效至閻錫山被俘虜為止",
+      "newspaper": {
+        "headline": "晉省鐵路一夕改軌　正太京漢兩線同告斷絕",
+        "paragraphs": [
+          "　　太原十四日訊——晉省當局昨日下令，正太鐵路即日起停止對外聯運，娘子關以東各站一律封閉；同時京漢線石家莊以北路段亦奉令停駛。石家莊車站昨晚起旅客滯留逾三千人，行李堆積如山，票房前爭執終夜不絕。",
+          "　　訪員按：晉省之路軌本較他省為窄，貨物出入必須在娘子關換車，本已費時。今索性封斷，則山西一省自成一國矣。閻氏之意，路窄則兵不易入，路斷則兵更不能入——這是把一省的鐵路當作城牆來用。",
+          "　　路局人員稱，此番並非損毀，而是撤軌封站，故亦無從搶修；欲通車者，須待太原方面自行啟封。晉軍一日不易主，這兩條線便一日不通。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "閻錫山",
+            "still_with": "Y"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "railway_permanent_block"
+        ],
+        "notes": [
+          "封路本身可沿用 railway_sabotage，但『無法維修』與『生效至閻錫山被俘』兩件事引擎都還沒有。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "fu_zuoyi_fortifies",
+      "ref": "15.2",
+      "name": "傅作義加固城防",
+      "category": "npc_or_other_force",
+      "power_note": "晉系",
+      "effect": "傅作義督修城垣：傅作義部生命 `+8%`",
+      "newspaper": {
+        "headline": "涿州城垣加築三重　守將日夜督工",
+        "paragraphs": [
+          "　　涿州二十日訊——晉軍傅作義部近日於城外增築土壘三重，壕深逾丈，並將城內民房之磚石盡數起出以充工料。傅氏親自巡工，夜以繼日，士卒與民夫同食同宿，旬日之間城貌大異。",
+          "　　訪員按：傅氏治軍，向以工事見長。他曾言守城不在城高，而在壕深、在糧足、在人不慌。三者之中最難者是第三樣，而工事築得愈厚，人心便愈不慌——所以他築的其實是人心。",
+          "　　城中父老謂，涿州城牆自前清以來未曾修葺，今番一修，反較昔年更為堅厚。過往行商見壕溝縱橫，皆繞道而行。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "傅作義",
+            "still_with": "Y"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ],
+        "notes": [
+          "傅作義部生命 +8%：需要能對單一 NPC 將領的部隊掛戰鬥修正。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "feng_yuxiang_wuyuan_oath",
+      "ref": "15.3",
+      "name": "馮玉祥五原誓師",
+      "category": "npc_or_other_force",
+      "power_note": "西北軍",
+      "effect": "馮玉祥歸國誓師：馮玉祥獲步兵 `×1`、機槍 `×1`、砲兵 `×1`；其他所有西北軍將領也都獲得步兵 `×1`",
+      "newspaper": {
+        "headline": "馮玉祥自庫倫返國　五原誓師誓復舊部",
+        "paragraphs": [
+          "　　五原十七日電——馮玉祥氏自莫斯科取道庫倫返國，昨日於五原設壇誓師。壇高三尺，四面樹旗，舊部自綏遠、寧夏、甘肅各處來會者號稱十萬，實數雖遠不及此，然聲勢已足撼動西北。",
+          "　　訪員按：馮氏去國不過半載，歸來便有此局面，可見西北軍之根柢仍在。其在庫倫所得者，不止於一紙盟約——隨他南下的車隊裡，據稱有步槍萬餘枝與機槍數十挺，皆非中國所造。",
+          "　　誓師之日，馮氏令全軍易旗，並當眾宣讀誓詞八條。當夜各部即開始整編補充，槍械分發至旅團一級，砲隊亦於五原城外試放。西北自此又有一支能戰之師。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "馮玉祥",
+            "still_with": "G"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ],
+        "notes": [
+          "對 NPC 陣營與指定 NPC 將領加兵：引擎目前只有玩家的 unit_reserves，沒有 NPC 的。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "northwest_jin_war",
+      "ref": "15.4",
+      "name": "西北軍與晉系開戰",
+      "category": "npc_or_other_force",
+      "power_note": "西北軍／晉系",
+      "effect": "西北軍總戰力 `−15%`，晉系總戰力 `−20%`",
+      "newspaper": {
+        "headline": "西北軍東出娘子關　晉綏兩軍鏖戰旬日",
+        "paragraphs": [
+          "　　石家莊二十六日電——西北軍前鋒本月中旬東出，與晉軍接戰於娘子關一線。兩軍互有進退，至昨日仍未分勝負。傷兵沿正太路西運者日以千計，太原城內各廟宇皆已改作臨時醫院。",
+          "　　訪員按：西北與晉，本皆北方之師，同飲一河之水，今日卻在關口相殺。論者謂兩家所爭者不過綏遠幾縣之地，然打到如今，兩家的元氣都填進了這幾縣的溝壑裡。",
+          "　　據前線來人稱，晉軍損折尤重，砲隊幾去其半；西北軍雖略佔上風，然糧彈兩缺，亦難再進。此戰無論誰勝，得利者恐皆不在關內。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "faction": "G",
+            "at_least_one_general": true
+          },
+          {
+            "faction": "Y",
+            "at_least_one_general": true
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ],
+        "notes": [
+          "對整個 NPC 陣營掛戰力百分比修正。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "northwest_allies_ma_clique",
+      "ref": "15.5",
+      "name": "西北軍結盟馬家軍",
+      "category": "npc_or_other_force",
+      "power_note": "西北軍／馬家軍",
+      "effect": "馬福祥加入西北軍陣營，並移防張家口周邊一格",
+      "newspaper": {
+        "headline": "馬福祥率部東來　西北馬隊改懸新旗",
+        "paragraphs": [
+          "　　張家口九日訊——甘寧馬福祥部騎兵昨日抵察哈爾境，於張家口城外紮營。據隨行者言，馬氏已與西北軍議定，此後聽其節制。營中旗幟昨夜已全數更換，惟士卒服色仍舊，遠望之如兩軍雜處。",
+          "　　訪員按：西北之馬隊，向來自成一格。他們不打陣地，只打奔襲；不守城，只擇水草。今番與西北軍合流，於馮氏而言，等於憑空添了一雙腿。",
+          "　　馬氏本人未至，遣其子代行，然所部三千餘騎確已東來。察哈爾一帶商旅近日多改走夜路，畏其徵發馬匹。察哈爾一帶商旅近日多改走夜路，畏其徵發馬匹。西北軍方面則已撥發糧秣與冬衣，並允其防地照舊自理——結盟之事，說到底是各取所需：一方要腿，一方要糧。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "馬福祥",
+            "still_with": "M"
+          },
+          {
+            "city": "zhangjiakou",
+            "held_by_faction": "G"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_general_transfer",
+          "npc_army_relocate"
+        ],
+        "notes": [
+          "NPC 將領換陣營並移防到指定城市周邊一格：牽涉地圖位置，需與前端的移動層對齊。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "northwest_soviet_aid",
+      "ref": "15.6",
+      "name": "西北軍獲得蘇援",
+      "category": "npc_or_other_force",
+      "power_note": "西北軍",
+      "effect": "西北軍所有部隊都步兵 `+1`；鹿鍾麟與馮玉祥部額外再各獲機槍 `+1`",
+      "newspaper": {
+        "headline": "駝隊自庫倫南下　西北軍得械數千",
+        "paragraphs": [
+          "　　包頭二十三日訊——自庫倫南下之駝隊本月連日抵包，載運木箱數百口，沿途有西北軍騎兵護衛，外人不得近視。箱上俄文標記歷歷可辨，啟封後為步槍與機槍，另有彈藥若干車。",
+          "　　訪員按：蘇俄之援，向來不是白給的。槍到了西北，顧問也就跟著到了；顧問到了，訓練的章程、編制的名目、乃至於營中掛誰的像，都要跟著改。這筆帳現在看不出來，日後總要算。",
+          "　　據悉此番所得步槍足敷全軍換裝，機槍則優先撥予馮玉祥與鹿鍾麟兩部。包頭市面槍價因之大跌，私販者叫苦不迭。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "鹿鍾麟",
+            "still_with": "G"
+          },
+          {
+            "general": "馮玉祥",
+            "still_with": "G"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "tang_shengzhi_seeks_help",
+      "ref": "15.7",
+      "name": "唐生智求援",
+      "category": "npc_or_other_force",
+      "power_note": "湘軍",
+      "effect": "唐生智因湘軍內戰對外求援：唐生智與趙恒惕戰力都 `−50%`。**控制漢口或廣州者**可於該回合付 `$25`，使唐生智率部整體歸附。若多方都想招募唐生智，則所有要招募者都要付 `$25`，且招募成功率由所有參與招募的玩家平分",
+      "newspaper": {
+        "headline": "湘中自相攻伐　唐生智四出乞援",
+        "paragraphs": [
+          "　　長沙十一日電——湘軍內訌逾月，唐生智與趙恒惕兩部在湘江兩岸對峙，互以砲火相加。長沙城內市面全停，米價三日之內漲逾一倍，居民扶老攜幼出城者途為之塞。",
+          "　　訪員按：湘人素稱能戰，然能戰之師用以自相殘殺，則所謂能戰者，不過是死得快些。兩部至今各折三成以上，而勝負仍未可知。",
+          "　　唐氏近日遣使分赴漢口、廣州，備陳苦況，願率所部聽命於能予接濟者。兩處聞皆已接見來使，惟開價若干，尚無確聞。使者言，唐氏所求不多，一句話與二十五萬元而已。兩軍相持既久，士卒逃亡日增，湘江兩岸浮橋屢架屢毀。長沙紳商公推代表往兩造請和，皆未得要領。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "controls_cities_any": [
+          "hankou",
+          "guangzhou"
+        ],
+        "npc_requires": [
+          {
+            "general": "唐生智",
+            "still_with": "H"
+          },
+          {
+            "general": "趙恒惕",
+            "still_with": "H"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier",
+          "contested_npc_recruit"
+        ],
+        "notes": [
+          "競標招募：多方各付 $25，成功率由參與人數平分。引擎沒有這個結構。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "liu_xiang_expands",
+      "ref": "15.8",
+      "name": "劉湘防區擴軍",
+      "category": "npc_or_other_force",
+      "power_note": "川軍",
+      "effect": "劉湘以鹽稅擴軍：劉湘步兵 `+2`、騎兵 `+1`",
+      "newspaper": {
+        "headline": "川鹽加征三成　重慶新軍兩旅成軍",
+        "paragraphs": [
+          "　　重慶十九日訊——劉湘部近日於自流井、犍為兩處鹽場加征井稅三成，所得盡充軍費。旬日之間招募新兵逾三千，於重慶城外設營訓練，槍械則向漢陽與外商分頭採辦。",
+          "　　訪員按：四川之富，半在鹽井。誰握鹽井，誰就養得起兵；養得起兵，就守得住鹽井。這個圈子在四川轉了幾十年，轉一圈就多幾個師，也多幾成鹽價。",
+          "　　鹽商聯名呈請減征，未獲允准。市上鹽價已漲，川東各縣淡食者日眾。新募之卒多為鹽場失業之工，識途且耐勞，教練月餘即可成列。所購槍械之中，另有騎兵用馬刀與鞍具數百副，聞係為新編騎兵一營所備。重慶城外校場日夜操演，圍觀者眾，市井間已有「劉督軍又要出川」之語。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "劉湘",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "sichuan_internal_war",
+      "ref": "15.9",
+      "name": "川軍防區內戰",
+      "category": "npc_or_other_force",
+      "power_note": "川軍",
+      "effect": "劉文輝與楊森交火：劉文輝、楊森戰力各 `−15%`",
+      "newspaper": {
+        "headline": "川軍防區交界啟釁　劉楊兩部互攻旬餘",
+        "paragraphs": [
+          "　　成都二十八日訊——劉文輝與楊森兩部因防區稅收劃分不協，本月中旬於沱江一帶交火，至今未息。兩部各據一岸，日夜砲擊，沿江市鎮焚毀者十餘處，居民逃入山中者不可勝數。",
+          "　　訪員按：四川的防區制，說穿了是把一省切成十幾塊，各人收各人的稅、養各人的兵。切得開的是地界，切不開的是稅源；稅源一有重疊，砲就響了。",
+          "　　據兩方戰報，各稱斃敵逾千。然訪員沿江所見，焚屋之多遠過於陣亡之數——真正吃虧的，是沿岸這十幾個鎮的人家。省署雖屢遣人調停，然兩部皆稱對方先啟釁，不肯先撤。至截稿時砲聲未歇，沱江上下之船戶已停航半月，川中鹽糖東運為之一滯。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "劉文輝",
+            "still_with": "C"
+          },
+          {
+            "general": "楊森",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "long_yun_coup_brewing",
+      "ref": "15.10",
+      "name": "龍雲政變醞釀",
+      "category": "npc_or_other_force",
+      "power_note": "滇系",
+      "effect": "滇軍龍雲離心：**控制廣西或貴州者**可於該回合付 `$25`，使龍雲率部整體歸附。若多方都想招募龍雲，則所有要招募者都要付 `$25`，且招募成功率由所有參與招募的玩家平分",
+      "newspaper": {
+        "headline": "昆明將領夜集　滇軍人事將有更張",
+        "paragraphs": [
+          "　　昆明二十二日訊——滇軍第五師師長龍雲近月屢與唐繼堯不協，昨夜召集所部團長以上軍官於私邸密議，至天明方散。城內謠諑紛起，商號多提早上板，五華山一帶戒備森嚴。",
+          "　　訪員按：唐氏主滇十餘年，恩威並用，然近年賦稅日重、鴉片日盛，部將之心早已渙散。龍氏出身彝族，起於行伍，在滇軍中素得士心——這種人一旦不服，便不是換個師長就能了的。",
+          "　　據近龍氏者言，其意在自立，惟顧慮外援不繼。近日已有使者取道百色、興義兩路東出，所攜者何物，無人肯言。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "controls_provinces_any": [
+          "廣西",
+          "貴州"
+        ],
+        "npc_requires": [
+          {
+            "general": "龍雲",
+            "still_with": "D"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "contested_npc_recruit"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "tang_jiyao_shaken",
+      "ref": "15.11",
+      "name": "唐繼堯統治動搖",
+      "category": "npc_or_other_force",
+      "power_note": "滇系",
+      "effect": "昆明政局不穩：唐繼堯戰力 `−10%`",
+      "newspaper": {
+        "headline": "滇省財政告匱　唐繼堯威望日替",
+        "paragraphs": [
+          "　　昆明六日訊——滇省庫款支絀，本月軍餉僅發五成，各營怨聲載道。省議會連日開會質問，唐繼堯稱病未出。滇越鐵路運出之錫價年來大跌，省庫所恃者惟煙稅一項，而煙稅之弊，人所共知。",
+          "　　訪員按：唐氏主滇之初，滇軍曾北出護國，天下側目。十年之後，護國之師成了守著煙土過日子的兵。餉發不出，話便說不響；話說不響，令便行不通。",
+          "　　省城近日盜案驟增，夜間鳴槍者屢有所聞。有滇軍老卒對訪員言：從前跟著唐帥出滇，是要打人的；如今守在昆明，是等著被人打的。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "唐繼堯",
+            "still_with": "D"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "ma_clique_expands",
+      "ref": "15.12",
+      "name": "馬家軍擴軍",
+      "category": "npc_or_other_force",
+      "power_note": "馬家軍",
+      "effect": "回族騎兵擴編：馬家軍所有部隊都騎兵 `+1`",
+      "newspaper": {
+        "headline": "河湟徵馬三千匹　馬家軍騎兵大舉擴編",
+        "paragraphs": [
+          "　　西寧十五日訊——馬家軍近日於河湟一帶大舉徵馬，凡回族各莊每十戶出馬一匹、出丁一名，旬日之間得馬逾三千。新編騎兵各營已於西寧城外校場合操，鞍轡多為自製，馬刀則向蘭州鐵廠訂造。",
+          "　　訪員按：西北之騎，與關內之騎不同。他們自幼在馬上，不需教練；徵馬即是徵兵，馬到人到。所以西北的軍隊擴充起來，比別處快得多，也便宜得多。",
+          "　　徵馬之令雖嚴，各莊尚無抗命者。惟今年青海草枯較早，馬匹多瘦，牧戶頗有怨言。軍中已令各營就近牧放，不得驅馳過度。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "faction": "M",
+            "at_least_one_general": true
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "ma_clique_submits",
+      "ref": "15.13",
+      "name": "馬家軍歸附",
+      "category": "npc_or_other_force",
+      "power_note": "馬家軍",
+      "effect": "馬家軍願歸順中央政府：馬家軍歸順**當前總戰力最高的玩家**，該玩家可併吞馬家軍地盤，所有馬家軍部隊視同被該玩家原地策反，馬家軍勢力自此退出地圖。若有多個玩家戰力並列最高，則由系統隨機擇一",
+      "newspaper": {
+        "headline": "西北馬部通電歸順　甘青兩省易幟",
+        "paragraphs": [
+          "　　蘭州二十九日電——西北馬家軍昨日聯名通電，宣布歸順中央，願受節制。電文稱回漢一家、共衛西陲，並請中央派員接收甘青兩省防務。西寧、寧夏各城昨日已易幟，未聞有一槍之抗。",
+          "　　訪員按：馬氏諸部之歸順，不在於信服何人，而在於算清了一筆帳。西北貧瘠，養兵全賴地方；地方既保不住，不如以全軍為聘，換一個名分與一份糧餉。這在西北是老規矩了。",
+          "　　據悉接收之後，馬部原有編制不動，防地亦不變，惟旗號與番號改易。此後西北一隅，地圖上將不再另有一色。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "faction": "M",
+            "at_least_one_general": true
+          }
+        ],
+        "player_rank": {
+          "metric": "total_force",
+          "position": "highest"
+        }
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "player_force_ranking",
+          "npc_faction_absorb"
+        ],
+        "notes": [
+          "整個 NPC 陣營連人帶地歸給戰力最高的玩家並退出地圖——地盤、部隊、將領三樣都要搬。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "liu_xiang_annexes_qian",
+      "ref": "15.14",
+      "name": "劉湘吞併黔軍",
+      "category": "npc_or_other_force",
+      "power_note": "川軍／黔軍",
+      "effect": "黔軍遭劉湘吞併，所有黔軍併入劉湘部；且黔軍地盤從此為川軍所屬，黔勢力自此退出地圖",
+      "newspaper": {
+        "headline": "川軍入黔　貴陽不戰而下",
+        "paragraphs": [
+          "　　貴陽二十五日訊——劉湘部三路入黔，前鋒於本月二十日抵貴陽城外。黔軍將領先期遣使乞降，二十二日開城，劉部入城時秩序如常，商號未閉一家。黔軍各部就地改編，番號並入川軍。",
+          "　　訪員按：黔省之兵，久苦無餉。黔中無鹽井、無大埠，稅源不及川之什一，養兵全靠過境的煙土抽釐。這種家底，遇上握著鹽稅的川軍，勝負在開仗之前就定了。",
+          "　　自此貴州全境歸川軍節制，黔軍之號不復存於世。城中父老言，二十年來貴陽數易其主，此番改旗，市上米價竟未動——大約是早已見慣了。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "劉湘",
+            "still_with": "C"
+          },
+          {
+            "faction": "Q",
+            "min_battalions": 1
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_faction_merge"
+        ],
+        "notes": [
+          "NPC 併 NPC：部隊併入、地盤轉屬、被併陣營退出地圖。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "wanxian_incident",
+      "ref": "15.15",
+      "name": "萬縣慘案",
+      "category": "npc_or_other_force",
+      "power_note": "英／川軍",
+      "effect": "英艦砲擊川軍：楊森戰力 `−10%`。所有 [學潮] 事件各 `+1` 回合，所有玩家對英關係 `−1`",
+      "newspaper": {
+        "headline": "英艦砲轟萬縣　死傷逾千　全城成墟",
+        "paragraphs": [
+          "　　萬縣八日電——英國長江艦隊軍艦三艘昨日下午駛抵萬縣，因商輪扣留交涉未諧，於五時許開砲轟擊城區，歷一時許方止。城內民房焚毀數百家，死傷軍民據縣署初步清點已逾千人，江邊浮屍終日不絕。",
+          "　　訪員按：所爭者不過兩艘商輪與一批貨。為了這批貨，砲彈落在了萬縣的民房上。英人稱係自衛——軍艦對著沒有砲台的縣城自衛，這兩個字如何解釋，還請英國領事賜教。",
+          "　　消息傳出，滬漢各校學生罷課遊行，抵制英貨之聲遍於通衢；川中民氣尤憤。楊森部駐萬縣者傷亡甚重，砲位盡失。此事一日不了，各地學潮便一日不歇。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "楊森",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "relations": {
+          "uk": -1
+        },
+        "event_duration_bonus": {
+          "tags": [
+            "學潮"
+          ],
+          "amount": 1,
+          "turns": 5
+        },
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ],
+        "notes": [
+          "對英 −1 與 [學潮] 事件 +1 回合都已接上引擎；只有『楊森戰力 −10%』還缺 NPC 戰鬥修正。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "nanjing_incident",
+      "ref": "15.16",
+      "name": "南京事件",
+      "category": "npc_or_other_force",
+      "power_note": "英／美／日",
+      "effect": "南京發生軍紀案件波及外國僑民，招致英美軍艦砲擊南京。**控制南京且南京有軍隊駐守**的玩家應表態：\n - **安撫列強** → 英、美、日各 `+1`，但所有 [學潮] 事件各 `+1` 回合，且南京全面停產 `5` 回合，期間也不可在南京補充兵力\n - **態度強硬** → 英、美、日各 `−2`",
+      "newspaper": {
+        "headline": "南京城內外僑遇害　英美軍艦砲擊下關",
+        "paragraphs": [
+          "　　南京二十四日電——本月二十三日入城部隊紀律不整，外僑住宅、教堂與領事館多處遭劫，英美領事館人員有死傷。次日英美軍艦於下關江面開砲，轟擊城北一帶，居民死傷數百，房屋焚毀成片。",
+          "　　訪員按：入城之師擾及外僑，是紀律問題；軍艦砲轟民居，是另一件事。兩件事湊在一起，交涉桌上便只剩一件——弱者要為自己的過失付兩份帳。",
+          "　　各國公使已聯名提出交涉，要求懲兇、賠償、道歉三事。城中議論分為兩派：一派主張速了此案以免決裂，一派主張決不低頭。無論走哪一條路，南京這座城，這幾個月是安生不了了。"
+        ]
+      },
+      "resolution": {
+        "type": "choice",
+        "scope": "eligible_players",
+        "prompt": "南京事件交涉：安撫列強，還是態度強硬？",
+        "options": [
+          {
+            "id": "appease",
+            "label": "安撫列強",
+            "effect_text": "英、美、日各 +1；此後所有 [學潮] 事件各 +1 回合；南京全面停產 5 回合，期間不可在南京補充兵力。",
+            "apply": {
+              "relations": {
+                "uk": 1,
+                "us": 1,
+                "jp": 1
+              },
+              "event_duration_bonus": {
+                "tags": [
+                  "學潮"
+                ],
+                "amount": 1,
+                "turns": 5
+              },
+              "city_halt": {
+                "cities": [
+                  "nanjing"
+                ],
+                "turns": 5,
+                "cash_multiplier": 0,
+                "factory_multiplier": 0,
+                "blocks_reinforcement": true,
+                "label": "南京事件：全面停產"
+              }
+            }
+          },
+          {
+            "id": "defiant",
+            "label": "態度強硬",
+            "effect_text": "拒絕懲兇賠償，英、美、日各 −2。",
+            "apply": {
+              "relations": {
+                "uk": -2,
+                "us": -2,
+                "jp": -2
+              }
+            }
+          }
+        ]
+      },
+      "entry_condition": {
+        "controls_cities_any": [
+          "nanjing"
+        ],
+        "requires_garrison_in_city": "nanjing"
+      },
+      "apply": {
+        "pending": [
+          "garrison_entry_condition"
+        ],
+        "notes": [
+          "兩支的效果本身都接得上；還缺的是進入條件裡『南京有軍隊駐守』——駐軍在 SHARED_TACTICAL_STATE，事件進入條件目前讀不到它。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "powers_punish_soviet_proxy",
+      "ref": "15.17",
+      "name": "列強懲戒蘇聯代理人",
+      "category": "npc_or_other_force",
+      "power_note": "英／日／西北軍",
+      "effect": "西北軍遭英日聯合施壓：**除馮玉祥外**，西北軍所有其他部隊戰力 `−7%`",
+      "newspaper": {
+        "headline": "英日聯手斷西北軍械路　各國銀行同拒匯兌",
+        "paragraphs": [
+          "　　天津十三日電——英日兩國公使近日照會北方各關監督，凡運往綏遠、寧夏之軍火一律扣留；同時滙豐、正金等行對西北軍所屬機關之匯兌一併停辦。津浦、京綏兩線之貨運亦受檢查，凡箱件過重者概予開驗。",
+          "　　訪員按：列強對付一支軍隊，未必要出兵。斷了他的槍路與銀路，這支軍隊自己就會瘦下去。西北軍的槍來自北方，銀子卻要經過天津——這一節，英日兩國看得比誰都清楚。",
+          "　　據西北軍某部軍需言，各營補充已停，冬衣亦無著落。惟馮玉祥本部所需，另有取道庫倫之駝隊接濟，尚不至匱乏；其餘各部則已開始就地籌措，沿途徵發之事時有所聞。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "馮玉祥",
+            "still_with": "G"
+          },
+          {
+            "faction": "G",
+            "at_least_one_other_general": true
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ],
+        "notes": [
+          "『除某位將領以外的同陣營部隊』需要能排除指定將領的 NPC 戰鬥修正。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "liu_xiang_denounces_zhili",
+      "ref": "15.18",
+      "name": "劉湘通電討直",
+      "category": "npc_or_other_force",
+      "power_note": "川軍",
+      "effect": "劉湘通電宣布討伐吳佩孚：**當下正對直系宣戰的玩家**可於該回合以 `$25` 原地招募劉湘。若多方都想招募劉湘，則所有要招募者都要付 `$25`，且招募成功率由所有參與招募的玩家平分",
+      "newspaper": {
+        "headline": "劉湘通電討吳　川軍出峽在即",
+        "paragraphs": [
+          "　　重慶十六日電——劉湘昨日通電全國，歷數吳佩孚禍川之罪十二條，宣布出師討伐，並令所部集結萬縣、夔州一帶，隨時東下。電文措辭激烈，末稱「川人治川之志已決，決不再為他人之前驅」。",
+          "　　訪員按：劉氏討吳，未必真為川人出氣。吳氏勢盛之時，川中諸將奉之惟謹；今日吳勢已頹，這一紙通電來得恰是時候。通電之於軍人，向來是一種投名狀——投給誰看，比罵誰更要緊。",
+          "　　據近劉氏者言，其部東下與否，尚視外間反應。凡與直系已成敵國者，若肯予以名分與接濟，川軍出峽即在旦夕之間。所索之數，聞為二十五萬元。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "at_war_with": "W",
+        "npc_requires": [
+          {
+            "general": "劉湘",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "at_war_entry_condition",
+          "contested_npc_recruit"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "jinsui_army_expands",
+      "ref": "15.19",
+      "name": "晉綏軍擴編",
+      "category": "npc_or_other_force",
+      "power_note": "晉系",
+      "effect": "晉軍擴編：晉系軍所有部隊都步兵 `+2`；傅作義與閻錫山部額外再各獲砲兵 `+1`",
+      "newspaper": {
+        "headline": "太原兵工廠日夜開工　晉軍新編六旅",
+        "paragraphs": [
+          "　　太原十八日訊——晉省近月大舉擴軍，於太原、大同兩處分設招募局，凡年十八至三十五之壯丁皆在募列。太原兵工廠日夜三班開工，步槍月產逾兩千枝，山砲亦已能自製，新編步兵六旅已陸續成軍。",
+          "　　訪員按：晉省之能自造槍砲，在北方諸省中獨此一家。他省擴軍要先籌款買械，晉省擴軍只須開工。這一層便宜，換算成兵，是別人的兩三倍。",
+          "　　新編各旅之械彈皆出自本省，砲隊則優先撥予閻錫山與傅作義兩部。省內糧秣亦已加征，各縣公糧較去年增三成，農戶頗有怨言，然無敢抗者。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "閻錫山",
+            "still_with": "Y"
+          },
+          {
+            "general": "傅作義",
+            "still_with": "Y"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "xu_yongchang_reorganises",
+      "ref": "15.20",
+      "name": "徐永昌整軍",
+      "category": "npc_or_other_force",
+      "power_note": "晉系",
+      "effect": "晉軍完成整編：所有晉系軍攻擊力 `+5%`，持續 `5` 回合",
+      "newspaper": {
+        "headline": "晉軍完成整編　番號步伐一律更新",
+        "paragraphs": [
+          "　　太原二日訊——晉軍整編月餘，昨日於太原校場舉行檢閱。徐永昌親自校閱，全軍改按新編制編成，番號、旗式、口令一律更新，各級軍官並經過為期三旬之講習。隊列步伐整齊，觀者稱前所未見。",
+          "　　訪員按：整編二字，說來簡單，做起來是把幾十支各有來歷的隊伍拆散重排。誰帶哪一團、誰聽誰的話，都要重新定過。徐氏能把這件事辦下來而未生譁變，在北方軍界算是難得。",
+          "　　據軍中人言，此次整編最見功者，在於統一了火力編組與號令。從前各旅口令不同，臨陣常誤；今番一律改用新章，操演之中已見成效。惟練成之效能維持多久，尚須看餉項是否接得上。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "徐永昌",
+            "still_with": "Y"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "han_fuju_defects_to_nanjing",
+      "ref": "15.21",
+      "name": "韓復榘投靠南京",
+      "category": "npc_or_other_force",
+      "power_note": "西北軍",
+      "effect": "西北軍韓復榘跳槽：**控制南京的玩家**可於該回合以 `$25` 原地招募韓復榘",
+      "newspaper": {
+        "headline": "韓復榘部按兵不進　南來使者頻繁",
+        "paragraphs": [
+          "　　鄭州二十七日訊——西北軍韓復榘部近日駐鄭不動，屢奉調令而未行。據近其幕者言，韓氏近月與南京方面往還甚密，使者兩月之內三度往返，所議者為何，兩造皆不肯明言。",
+          "　　訪員按：韓氏行伍出身，隨馮氏最久，然為人素不甘居人下。西北軍餉項久絀，而南京方面新得江浙財賦，出手闊綽——這筆帳，一個帶兵的人不會算不清楚。",
+          "　　鄭州市面近日槍聲不聞，然各營戒備森嚴，出入須驗符節。有隨韓氏多年之老部下私語：跟著馮先生吃了十年小米，也該換個地方吃兩天白麵了。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "controls_cities_any": [
+          "nanjing"
+        ],
+        "npc_requires": [
+          {
+            "general": "韓復榘",
+            "still_with": "G"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "contested_npc_recruit"
+        ],
+        "notes": [
+          "這一張只有控制南京者能招募，不存在多方競標，但仍走同一套付費招募機制。"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "song_zheyuan_broadsword_corps",
+      "ref": "15.22",
+      "name": "宋哲元大刀隊",
+      "category": "npc_or_other_force",
+      "power_note": "西北軍",
+      "effect": "西北軍大刀隊成軍：宋哲元部全軍攻擊額外 `+5%`，持續 `5` 回合",
+      "newspaper": {
+        "headline": "西北軍編成大刀隊　夜襲之技傳習全軍",
+        "paragraphs": [
+          "　　張家口二十一日訊——宋哲元部近日於軍中遍設大刀隊，凡步兵每連挑選精壯十人，另編一排，配以長柄厚背之刀，並延請武師教習劈刺。全軍每日拂曉練刀一時，已歷月餘。",
+          "　　訪員按：以刀對槍，聽來近乎迂闊。然西北軍彈藥素絀，一名士兵一戰不過數十發，打完便只剩刺刀；既然如此，不如索性把近身這一段練到極致。這不是好勇，是算過的。",
+          "　　據軍中人言，大刀隊專司夜襲與奪壕，衝入敵陣則不放一槍。上月演習，一隊三十人於夜間摸至假設陣地前沿而未被察覺。此技一旦成熟，於陣地戰中頗為可畏。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "宋哲元",
+            "still_with": "G"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "he_jian_holds_south_hunan",
+      "ref": "15.23",
+      "name": "何鍵固守湘南",
+      "category": "npc_or_other_force",
+      "power_note": "湘軍",
+      "effect": "何鍵固守湘南：何鍵部生命 `+10%`，持續 `5` 回合",
+      "newspaper": {
+        "headline": "何鍵部深溝高壘　湘南各隘盡築工事",
+        "paragraphs": [
+          "　　衡陽十日訊——湘軍何鍵部近月於湘南各隘口大築工事，衡陽、郴州、耒陽一線遍設碉堡，並沿湘江險要處築砲位十餘處。工程徵發民夫逾兩萬，日給米二升，怨言雖有而未至於變。",
+          "　　訪員按：湘南多山，隘口不過數處。守住這幾處，南來之師便寸步難行；守不住，則長沙門戶洞開。何氏所築者，正是這幾處。他不求出擊，只求別人打不進來。",
+          "　　據工程處人員言，各碉堡皆用三合土夯築，厚逾二尺，可禦野砲。惟民夫徵發過急，農時已誤，湘南今秋收成恐難樂觀。何部則稱工事一成，可保湘南數年無事。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "何鍵",
+            "still_with": "H"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "zhao_hengti_provincial_constitution",
+      "ref": "15.24",
+      "name": "趙恒惕省憲運動",
+      "category": "npc_or_other_force",
+      "power_note": "湘軍",
+      "effect": "湖南宣布省憲自治：趙恒惕整頓湖南，他本人所部戰力 `+10%`",
+      "newspaper": {
+        "headline": "湖南省憲公布施行　趙恒惕就省長職",
+        "paragraphs": [
+          "　　長沙五日電——湖南省憲法昨日公布施行，全文十三章一百四十一條，為各省制憲之首。趙恒惕依憲就省長職，並宣布裁併冗員、清理積案、整頓稅收三事，限三月內辦竣。省議會亦於同日改組成立。",
+          "　　訪員按：省憲之議，起於湘人不願再為南北兩軍之戰場。以一省之力自立於南北之間，這個念頭不能說沒有道理；然而憲法保不住邊界，保得住邊界的還是兵。趙氏想必也明白這一節。",
+          "　　省憲既行，湘省財政歸省庫統籌，趙氏本部餉項自此有著，軍心為之一振。惟南北兩方對此皆未表態，湘人自治之局能維持多久，尚在未定之天。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "趙恒惕",
+            "still_with": "H"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_combat_modifier"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "yang_sen_expands",
+      "ref": "15.25",
+      "name": "楊森擴軍",
+      "category": "npc_or_other_force",
+      "power_note": "川軍",
+      "effect": "楊森以關稅擴軍：楊森增步兵 `×2`、機槍 `×1`",
+      "newspaper": {
+        "headline": "萬縣設關抽釐　楊森新募兩團",
+        "paragraphs": [
+          "　　萬縣二十三日訊——楊森部於萬縣江面設卡抽釐，凡上下行商輪貨物一律課稅，月入頗豐。所得盡充軍費，旬日之間招募新兵兩團，並向宜昌洋行訂購機槍一批，已陸續運抵。",
+          "　　訪員按：長江上下，設卡抽釐者不止萬縣一處。從宜昌到重慶千餘里，關卡十餘道，一船之貨過完全程，稅比貨貴。商人叫苦，然叫苦無用——江上有砲艇的，說了才算。",
+          "　　新募之兵多為江邊縴夫與失業船工，體力健而識水性，楊部特編為兩團，專司江防。機槍到貨後即分配各團，於萬縣江岸架設。過往商輪見之，多不敢再爭釐金。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "楊森",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "liu_wenhui_expands",
+      "ref": "15.26",
+      "name": "劉文輝擴軍",
+      "category": "npc_or_other_force",
+      "power_note": "川軍",
+      "effect": "劉文輝以鹽稅擴軍：劉文輝增步兵 `×2`、砲兵 `×1`",
+      "newspaper": {
+        "headline": "犍為鹽稅預征三年　劉文輝新軍成列",
+        "paragraphs": [
+          "　　成都十二日訊——劉文輝部於犍為、樂山兩處鹽場預征三年井稅，所得逾百萬。以此招募新兵兩團，並購入山砲一連，砲手則由重慶講武堂速成班撥充。新軍已於成都城外編成，月內開赴防地。",
+          "　　訪員按：預征三年，是把後年的錢拿到今年來用。用在兵上，兵是有了；三年之後怎麼辦，那是三年之後的事。四川的防區制之下，人人都這樣算帳，於是人人都只看得到眼前三年。",
+          "　　鹽商聯名赴省請願，未得要領。樂山一帶鹽井已有因稅重而停工者，井戶星散。而劉部新編砲隊於城外試放，聲聞數十里，成都市民競往觀之。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "劉文輝",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_reserve_delta"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "liu_wenhui_annexes_qian",
+      "ref": "15.27",
+      "name": "劉文輝吞併黔軍",
+      "category": "npc_or_other_force",
+      "power_note": "川軍／黔軍",
+      "effect": "黔軍遭劉文輝吞併，所有黔軍併入劉文輝部；且黔軍地盤從此為川軍所屬，黔勢力自此退出地圖",
+      "newspaper": {
+        "headline": "劉文輝部南下入黔　黔軍就地改編",
+        "paragraphs": [
+          "　　貴陽十七日訊——劉文輝部自敘永、赤水兩路入黔，本月十四日進駐貴陽。黔軍未加抵抗，將領於城外迎降，所部就地改編為川軍第某師，原有官長多留原職，士卒亦未遣散。",
+          "　　訪員按：黔軍之降，與其說是打敗的，不如說是餓垮的。貴州一省之賦，養不起兩萬兵；而川人手裡有鹽、有江、有洋行的門路。兵最終總是跟著糧走的，這一點古今無異。",
+          "　　自此貴州全境改隸川軍，黔軍番號取消。省城秩序如常，惟原黔軍高級將領數人已攜眷赴滬。地圖之上，自此少了一色。改編之後，原黔軍各營餉項改由川中鹽稅支給，士卒聞之，多無異言。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "劉文輝",
+            "still_with": "C"
+          },
+          {
+            "faction": "Q",
+            "min_battalions": 1
+          }
+        ]
+      },
+      "apply": {
+        "pending": [
+          "npc_condition_gate",
+          "npc_faction_merge"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "tang_shengzhi_builds_temples",
+      "ref": "15.28",
+      "name": "唐生智建設佛寺",
+      "category": "npc_or_other_force",
+      "power_note": "湘軍",
+      "effect": "湖南四百八十寺，多少樓台煙雨中？：長沙城市等級 `+1`",
+      "newspaper": {
+        "headline": "長沙廣建梵剎　唐生智親題山門",
+        "paragraphs": [
+          "　　長沙十九日訊——湘軍唐生智近月於長沙城內外廣建佛寺，開福、麓山諸剎皆加修葺，另於瀏陽門外新建大寺一座，唐氏親題山門。工匠自江浙延聘，木石取自湘西，落成之日，全城士紳往觀者逾萬。",
+          "　　訪員按：南朝四百八十寺，多少樓台煙雨中。杜牧當年寫的是六朝金粉，唐氏今日建的是湘中香火。帶兵的人忽然禮佛，外間議論紛紛；然而寺一起，工匠來了、香客來了、市面也跟著活了。",
+          "　　寺成之後，長沙城內客棧茶樓生意大盛，瀏陽門外一帶新起商鋪數十家，地價亦漲。有老於商事者言：拜佛的人多，買賣自然多——這一層，恐怕比經卷上的道理更實在。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "唐生智",
+            "still_with": "H"
+          }
+        ]
+      },
+      "apply": {
+        "city_level_upgrade": {
+          "cities": [
+            "changsha"
+          ],
+          "delta": 1
+        },
+        "pending": [
+          "npc_condition_gate"
+        ],
+        "notes": [
+          "效果已接上引擎；還缺的只有『唐生智仍屬湘軍』這道 NPC 進入條件。"
+        ]
+      },
+      "story": "湖南四百八十寺，多少樓台煙雨中？",
+      "not_in_pool": true
+    },
+    {
+      "id": "zhao_hengti_liling_porcelain",
+      "ref": "15.29",
+      "name": "趙恒惕推廣醴陵瓷器",
+      "category": "npc_or_other_force",
+      "power_note": "湘軍",
+      "effect": "趙恒惕督辦醴陵窯現代化：岳陽城市等級 `+1`",
+      "newspaper": {
+        "headline": "醴陵窯改用新法　釉下五彩行銷海外",
+        "paragraphs": [
+          "　　岳陽二十六日訊——湖南省署督辦醴陵瓷業改良，於醴陵設瓷業學堂與模範窯廠，改用煤窯與石膏模，並聘日本技師二人指導。所產釉下五彩瓷本月首批經岳陽出口，運往南洋者已逾千件。",
+          "　　訪員按：醴陵之瓷，原以粗碗為大宗，一件不過數文。改良之後，一套茶具可售銀元數圓，價差在百倍以上。同樣是那一坯泥、那一窯火，差別只在燒的人懂不懂新法。",
+          "　　岳陽為湘瓷出口之口岸，近月因瓷貨麇集而市面大興，新設行棧十餘家，碼頭日夜起卸。地方人士謂，湘瓷若能持續外銷，岳陽將不止於一過路碼頭而已。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "趙恒惕",
+            "still_with": "H"
+          }
+        ]
+      },
+      "apply": {
+        "city_level_upgrade": {
+          "cities": [
+            "yueyang"
+          ],
+          "delta": 1
+        },
+        "pending": [
+          "npc_condition_gate"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "qian_army_moutai",
+      "ref": "15.30",
+      "name": "黔軍整頓茅台酒造",
+      "category": "npc_or_other_force",
+      "power_note": "黔軍",
+      "effect": "黔軍希望以貴州茅台籌措軍費：遵義城市等級 `+1`",
+      "newspaper": {
+        "headline": "茅台鎮諸坊合併　黔省設局專營酒稅",
+        "paragraphs": [
+          "　　遵義十四日訊——黔省當局於仁懷茅台鎮設酒務局，將鎮上燒坊十餘家併為三家，統一收購高粱、統一定價外銷，所收酒稅盡歸軍用。首批經遵義轉運出省之酒已達二千壇，行銷川、湘、滇三省。",
+          "　　訪員按：貴州無鹽、無鐵、無大埠，能拿得出手的貨色屈指可數。茅台一酒，價高而耐運，正是為數不多能換現銀的東西。黔軍打的正是這個主意——沒有鹽稅，就靠酒稅養兵。",
+          "　　遵義為出省孔道，酒務局既設於此，客商雲集，客棧馬幫日增。鎮上原有燒坊主人頗有怨言，謂併坊之後利歸公家；然運酒的騾馬隊確實一日多過一日。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "city": "zunyi",
+            "held_by_faction": "Q"
+          }
+        ]
+      },
+      "apply": {
+        "city_level_upgrade": {
+          "cities": [
+            "zunyi"
+          ],
+          "delta": 1
+        },
+        "pending": [
+          "npc_condition_gate"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "liu_xiang_luzhou_distillery",
+      "ref": "15.31",
+      "name": "劉湘重整瀘州老窖",
+      "category": "npc_or_other_force",
+      "power_note": "川軍",
+      "effect": "川軍延長江商路出口瀘州老酒籌措軍費：瀘州城市等級 `+1`",
+      "newspaper": {
+        "headline": "瀘州老窖擴建　沿江設棧直運滬漢",
+        "paragraphs": [
+          "　　瀘州八日訊——劉湘部整頓瀘州酒業，將城內舊窖池悉數起出修復，並於重慶、宜昌、漢口三處設轉運行棧，酒貨可由沱江入長江直運下游。首批東下之酒本月已抵漢口，滬上洋行亦有訂單。",
+          "　　訪員按：瀘州之窖，年代愈久酒愈醇，這是別處學不來的。從前苦於運道，出川一趟耗時逾月，酒未到而利已盡。今設行棧、走水路，時日減半——酒還是那個酒，值錢的是那條路。",
+          "　　酒稅所入盡歸軍用，劉部因之餉源稍裕。瀘州城內釀戶、箍桶匠、船戶皆得其利，市面較去歲大不相同。惟高粱價漲，農戶改種者眾，糧田日減，識者頗以為憂。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "劉湘",
+            "still_with": "C"
+          }
+        ]
+      },
+      "apply": {
+        "city_level_upgrade": {
+          "cities": [
+            "luzhou"
+          ],
+          "delta": 1
+        },
+        "pending": [
+          "npc_condition_gate"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "xu_yongchang_fenjiu",
+      "ref": "15.32",
+      "name": "徐永昌擴建汾酒生產基地",
+      "category": "npc_or_other_force",
+      "power_note": "晉系",
+      "effect": "徐永昌擴建汾陽酒廠：臨汾城市等級 `+1`",
+      "newspaper": {
+        "headline": "杏花村酒廠擴建　汾酒北運京綏",
+        "paragraphs": [
+          "　　臨汾二十日訊——晉省於汾陽杏花村擴建酒廠，新增窖池百餘口，並於臨汾設總棧，酒貨經同蒲、正太兩路北運，行銷平津、綏遠一帶。廠中僱工逾千，多為附近農戶農閒所充。",
+          "　　訪員按：汾酒之名，唐宋已著。然從前只在本省銷售，出了娘子關便少人識得。今番藉鐵路北運，一路可到張家口。晉商當年走西口靠的是駝隊，如今靠的是火車——貨還是那些貨。",
+          "　　臨汾為晉南轉運樞紐，酒棧既設，客商往來大增，城內新開票號分莊兩家。地方稱酒稅所入頗厚，惟盡歸省庫，縣中所得無幾。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "徐永昌",
+            "still_with": "Y"
+          }
+        ]
+      },
+      "apply": {
+        "city_level_upgrade": {
+          "cities": [
+            "linfen"
+          ],
+          "delta": 1
+        },
+        "pending": [
+          "npc_condition_gate"
+        ]
+      },
+      "not_in_pool": true
+    },
+    {
+      "id": "yan_xishan_promotes_education",
+      "ref": "15.33",
+      "name": "閻錫山督辦山西教育",
+      "category": "npc_or_other_force",
+      "power_note": "晉系",
+      "effect": "山西推廣國民義務教育：**山西所有城市**等級 `+1`",
+      "newspaper": {
+        "headline": "山西行義務教育　各縣遍設國民學校",
+        "paragraphs": [
+          "　　太原二十九日訊——晉省推行國民義務教育已歷數年，本年各縣國民學校已達兩萬餘所，學齡兒童入學者號稱七成，為各省之冠。省署並頒學制章程，凡適齡子弟不入學者，其家長科以罰金。",
+          "　　訪員按：閻氏辦教育，未必全為育才。他在《人民須知》裡把六政三事編成白話，發到每一個村塾去念——識了字的人，讀得懂告示，也算得清賦稅。這於治理一省，比多練兩個師還管用。",
+          "　　太原、大同、臨汾三處近年新設師範與工業學校多所，畢業者多入兵工廠與路局。省內識字者日眾，市面契約、帳簿之用日廣，商事因之較他省為便。"
+        ]
+      },
+      "resolution": {
+        "type": "acknowledge",
+        "scope": "all_players"
+      },
+      "entry_condition": {
+        "npc_requires": [
+          {
+            "general": "閻錫山",
+            "still_with": "Y"
+          }
+        ]
+      },
+      "apply": {
+        "city_level_upgrade": {
+          "provinces": [
+            "山西"
+          ],
+          "delta": 1
+        },
+        "pending": [
+          "npc_condition_gate"
+        ]
+      },
+      "not_in_pool": true
     }
   ],
-  "count": 174
+  "count": 207
 }
