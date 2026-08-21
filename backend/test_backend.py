@@ -52,8 +52,9 @@ class BackendTests(unittest.TestCase):
 
         self.assertGreater(data["metadata"]["function_cards"], 50)
         # 事件卡與後果卡整套移除之後，卡池裡只剩功能卡。
-        # 一到十一區塊 59 張 ＋ 十二（列強行動）71 ＋ 十三（經濟）29 ＋ 十四（治安）15。
-        self.assertEqual(data["metadata"]["event_cards"], 174)
+        # 一到十一區塊 59 張 ＋ 十二（列強行動）71 ＋ 十三（經濟）29 ＋ 十四（治安）15
+        # ＋ 十五（NPC 行動）33。
+        self.assertEqual(data["metadata"]["event_cards"], 207)
         repo = pathlib.Path(__file__).resolve().parent.parent
         cards = json.loads(
             (repo / "cards" / "data" / "event_cards.json").read_text(encoding="utf-8"))["cards"]
@@ -61,6 +62,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(counts["12"], 71)
         self.assertEqual(counts["13"], 29)
         self.assertEqual(counts["14"], 15)
+        self.assertEqual(counts["15"], 33)
         self.assertNotIn("injected_event_cards", data["metadata"])
         self.assertEqual(set(data["indexes"]), {"function_cards"})
         self.assertEqual(data["metadata"]["navy_divisions"], 4)
@@ -1387,14 +1389,17 @@ class EventCardTests(unittest.TestCase):
     def test_pool_holds_every_section_of_the_design(self):
         engine = GameEngine(seed=3)
         cards = engine.data["event_cards"]["cards"]
-        # 池子＝每張卡放 pool_copies 份（預設 1），never_drawn 的完全不進池子。
+        # 池子＝每張卡放 pool_copies 份（預設 1）。兩種卡完全不進池子：
+        #   never_drawn——只由機制直接插進 pending 的日蘇戰況報導；
+        #   not_in_pool——卡與報導已建檔但後端機制還沒補齊的 NPC 行動那一批。
         expected = sum(max(1, int(c.get("pool_copies", 1)))
-                       for c in cards if not c.get("never_drawn"))
+                       for c in cards
+                       if not c.get("never_drawn") and not c.get("not_in_pool"))
         self.assertEqual(len(engine.state["event_pool"]), expected)
         self.assertTrue([c for c in cards if c.get("never_drawn")],
                         "日蘇戰況報導應該存在且不進池子")
         for card in cards:
-            if card.get("never_drawn"):
+            if card.get("never_drawn") or card.get("not_in_pool"):
                 self.assertNotIn(card["id"], engine.state["event_pool"], card["name"])
         self.assertIsNone(engine.pending_event_view())
 
@@ -6754,14 +6759,28 @@ class EventCardCoverageTest(unittest.TestCase):
         source = pathlib.Path(__file__).read_text(encoding="utf-8")
         data = load_game_data()
         missing = []
+        deferred = []
         for card in data["event_cards"]["cards"]:
             apply_block = card.get("apply") or {}
-            has_effect = bool([k for k in apply_block if k != "notes"]) or any(
+            has_effect = bool([k for k in apply_block if k not in ("notes", "pending")]) or any(
                 option.get("apply")
                 for option in ((card.get("resolution") or {}).get("options") or []))
-            if has_effect and f'"{card["id"]}"' not in source:
-                missing.append(f'{card.get("ref")} {card["name"]} ({card["id"]})')
+            if not has_effect:
+                continue
+            if f'"{card["id"]}"' in source:
+                continue
+            # 還沒上線的卡（not_in_pool）由 NpcActionCardTests 整批守著：
+            # 一次性、報導齊備、待建機制名稱合法、且確實抽不到。等機制補齊、
+            # not_in_pool 拿掉的那一刻，這條就會要求它有自己的測試。
+            if card.get("not_in_pool"):
+                deferred.append(card["id"])
+                continue
+            missing.append(f'{card.get("ref")} {card["name"]} ({card["id"]})')
         self.assertEqual(missing, [], "這些事件卡有效果卻沒有任何測試引用：" + "、".join(missing))
+        for card_id in deferred:
+            card = next(c for c in data["event_cards"]["cards"] if c["id"] == card_id)
+            self.assertTrue((card.get("apply") or {}).get("pending"),
+                            f"{card_id} 掛了 not_in_pool 卻沒說還缺什麼機制")
 
 
 
@@ -8825,7 +8844,8 @@ class EconomyEventTests(unittest.TestCase):
             e._refresh_city_income()
 
         _, _, delta, _ = self._control(setup, "silk_tea_export_boom")
-        self.assertEqual(delta["F"], 8)
+        # 一個地區發一次：四省全控就是 $8 × 4。
+        self.assertEqual(delta["F"], 8 * len(target))
         for code in ("W", "S", "N"):
             self.assertEqual(delta[code], 0, f"{code} 沒有那四省，不該領到這 $8")
 
@@ -8835,8 +8855,9 @@ class EconomyEventTests(unittest.TestCase):
                 if c["province"] in target]
         engine, _, delta, _ = self._control(
             lambda e: self._give(e, "F", mine), "salt_administration_reform")
-        # 一次性的 $10，加上永久 $+1 當回合就開始生效的那一份（每座城 1 元）。
-        self.assertEqual(delta["F"], 10 + len(mine))
+        # 一次性的 $10 **每控制一省發一次**（這裡四省全控 ＝ $40），
+        # 加上永久 $+1 當回合就開始生效的那一份（每座城 1 元）。
+        self.assertEqual(delta["F"], 10 * len(target) + len(mine))
         development = engine.state["city_development"]
         for city_id in mine:
             self.assertEqual(int(development[city_id]["cash"]), 1, city_id)
@@ -8866,8 +8887,8 @@ class EconomyEventTests(unittest.TestCase):
         named = ["linfen", "luzhou", "zunyi", "shaoxing"]
         engine, _, delta, _ = self._control(
             lambda e: self._give(e, "F", named), "chinese_liquor_expo")
-        # $5 一次性 ＋ 四座城的永久 $+1（當回合結算就吃得到）。
-        self.assertEqual(delta["F"], 5 + len(named))
+        # $5 **每控制一座發一次**（四座全控 ＝ $20）＋ 四座城的永久 $+1。
+        self.assertEqual(delta["F"], 5 * len(named) + len(named))
         for city_id in named:
             self.assertEqual(int(engine.state["city_development"][city_id]["cash"]), 1, city_id)
 
@@ -8885,8 +8906,8 @@ class EconomyEventTests(unittest.TestCase):
         mine = [c for c in GameEngine(seed=3).data["strategic_map"]["cities"]
                 if c["province"] in target]
         _, _, delta, _ = self._control(setup, "chinese_tea_expo")
-        # $5 一次性 ＋ 該四省每座城的永久 $+1。
-        self.assertEqual(delta["S"], 5 + len(mine))
+        # $5 **每控制一省發一次**（四省全控 ＝ $20）＋ 該四省每座城的永久 $+1。
+        self.assertEqual(delta["S"], 5 * len(target) + len(mine))
         self.assertEqual(delta["W"], 0)
 
     def test_foreign_factories_only_reward_players_holding_a_concession_city(self):
@@ -12668,3 +12689,1022 @@ class ArmyActionWiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForeignRelationThresholdTests(unittest.TestCase):
+    """列強交好的門檻只有一個數字，而且住在 foreign_powers.json。
+
+    這一組測試的存在理由很簡單：這個數字曾經在三個地方各寫一份，其中一份是 8。
+    只要有人再複寫一份、或改了其中一份沒改其他份，下面就會紅。
+    """
+
+    def setUp(self):
+        self.repo = pathlib.Path(__file__).resolve().parents[1]
+        self.scale = json.loads(
+            (self.repo / "foreign_powers/data/foreign_powers.json")
+            .read_text(encoding="utf-8"))["global_rules"]["relation_scale"]
+
+    # ---- 一、真源本身 ----
+
+    def test_the_source_of_truth_says_six(self):
+        self.assertEqual(int(self.scale["friendly_at_or_above"]), 6)
+        self.assertEqual(int(self.scale["hostile_at_or_below"]), -4)
+
+    def test_the_engine_derives_its_constants_and_does_not_retype_them(self):
+        self.assertEqual(FOREIGN_FRIENDLY_THRESHOLD, int(self.scale["friendly_at_or_above"]))
+        self.assertEqual(FOREIGN_HOSTILE_THRESHOLD, int(self.scale["hostile_at_or_below"]))
+        source = pathlib.Path(__file__).with_name("card_engine.py").read_text(encoding="utf-8")
+        self.assertIn('FOREIGN_FRIENDLY_THRESHOLD = int(_RELATION_SCALE["friendly_at_or_above"])',
+                      source)
+        self.assertNotIn("FOREIGN_FRIENDLY_THRESHOLD = 6", source,
+                         "門檻要用導出的，不是再打一次 6")
+
+    # ---- 二、每一份副本都要對得上 ----
+
+    def test_the_loan_tiers_use_the_same_cut_points(self):
+        banks = json.loads((self.repo / "economy/data/banks.json").read_text(encoding="utf-8"))
+        tiers = banks["tiers"]
+        friendly = [t for t in tiers.values() if int(t["relation_min"]) == 6]
+        self.assertTrue(friendly, f"優惠借貸的下限應該是 6：{tiers}")
+        hostile = [t for t in tiers.values() if int(t["relation_max"]) == -4]
+        self.assertTrue(hostile, f"不可借貸的上限應該是 −4：{tiers}")
+
+    def test_the_card_pool_rules_copy_matches_the_source(self):
+        """這一份就是那個寫成 8 的副本。"""
+        rules = json.loads((self.repo / "cards/data/card_pool_rules.json")
+                           .read_text(encoding="utf-8"))["foreign_relation_rules"]
+        self.assertEqual(int(rules["friendly_at_or_above"]),
+                         int(self.scale["friendly_at_or_above"]))
+        self.assertEqual(int(rules["hostile_at_or_below"]),
+                         int(self.scale["hostile_at_or_below"]))
+        self.assertNotIn("hostile_below", rules, "舊刻度的欄位名要移除，不然兩個欄位會並存")
+        self.assertEqual(rules["scale"], "-10~10", "刻度不是 0-10")
+
+    def test_every_perk_card_gate_is_the_same_number(self):
+        cards = json.loads((self.repo / "cards/data/function_cards.json")
+                           .read_text(encoding="utf-8"))["cards"]
+        floors = {int(c["requires_relation_min"]) for c in cards
+                  if "requires_relation_min" in c}
+        self.assertEqual(floors, {int(self.scale["friendly_at_or_above"])},
+                         "所有列強 perk 卡的門檻一律是 6，沒有例外")
+
+    # ---- 三、前端不准留第二份 ----
+
+    def test_the_frontend_keeps_no_copy_of_the_threshold(self):
+        self.assertNotIn("FOREIGN_RAILWAY_RELATION_MIN", FRONTEND_SOURCE,
+                         "前端不該有自己的鐵路門檻常數")
+        self.assertNotIn("FOREIGN_RAILWAY_POWERS", FRONTEND_SOURCE,
+                         "哪條線是哪國的，資料在 strategic_map.json，前端不留對照表")
+        for banned in ('value >= 6', 'value <= -4'):
+            self.assertNotIn(banned, FRONTEND_SOURCE,
+                             f"關係分級不該寫死：{banned}")
+        self.assertIn("backendRailwayAccess?.friendly_threshold", FRONTEND_SOURCE,
+                      "友好門檻要從後端讀")
+
+    def test_the_frontend_reads_the_backend_verdict_instead_of_recomputing(self):
+        for expected in ("railwayAccessFor(faction).locked",
+                         "railwayAccessFor(faction).banned",
+                         "railwayAccessFor(faction).unusable",
+                         "if (remote.railway_access) backendRailwayAccess = remote.railway_access;",
+                         "if (result.railway_access) backendRailwayAccess = result.railway_access;"):
+            self.assertIn(expected, FRONTEND_SOURCE, expected)
+
+    def test_the_server_publishes_the_verdict_on_every_shared_state_path(self):
+        server = (pathlib.Path(__file__).resolve().parent / "server.py").read_text(encoding="utf-8")
+        self.assertEqual(server.count('"railway_access": ENGINE.railway_access(),'), 3,
+                         "三條 shared-state 出口都要帶上鐵路判定")
+
+
+class ForeignRailwayAccessTests(unittest.TestCase):
+    """列強鐵路：關係到門檻才借你調兵，判定在後端。"""
+
+    def setUp(self):
+        self.engine = GameEngine(seed=5)
+
+    def test_the_map_names_the_owner_of_every_foreign_line(self):
+        lines = self.engine.data["strategic_map"]["railroads"]
+        foreign = [l for l in lines if l.get("foreign")]
+        self.assertEqual({l["name"] for l in foreign},
+                         {"南滿鐵路", "中東鐵路", "滇越鐵路"})
+        for line in foreign:
+            self.assertIn(line.get("power"), ("jp", "su", "fr", "uk", "us"),
+                          f"{line['name']} 沒寫 power")
+        self.assertEqual(self.engine.foreign_railways(),
+                         {"南滿鐵路": "jp", "中東鐵路": "su", "滇越鐵路": "fr"})
+
+    def test_a_foreign_line_without_a_power_is_a_loud_error(self):
+        """標了 foreign 卻沒寫 power，要當場炸，不能安靜地變成「誰都能用」。"""
+        engine = GameEngine(seed=5)
+        engine.data = deepcopy(engine.data)
+        for line in engine.data["strategic_map"]["railroads"]:
+            if line.get("foreign"):
+                line.pop("power", None)
+                break
+        with self.assertRaises(ValueError):
+            engine.foreign_railways()
+
+    def test_a_foreign_line_with_a_bogus_power_is_a_loud_error(self):
+        engine = GameEngine(seed=5)
+        engine.data = deepcopy(engine.data)
+        for line in engine.data["strategic_map"]["railroads"]:
+            if line.get("foreign"):
+                line["power"] = "de"
+                break
+        with self.assertRaises(ValueError):
+            engine.foreign_railways()
+
+    def test_the_gate_opens_exactly_at_the_threshold(self):
+        """門檻是 >=，不是 >。差一分就是差一分，剛好到就該放行。"""
+        floor = FOREIGN_FRIENDLY_THRESHOLD
+        relations = self.engine.state["players"]["F"]["foreign_relations"]
+        for power, railway in (("jp", "南滿鐵路"), ("su", "中東鐵路"), ("fr", "滇越鐵路")):
+            relations[power] = floor - 1
+            self.assertIn(railway, self.engine.locked_foreign_railways("F"),
+                          f"{railway}：關係 {floor - 1} 應該還借不到")
+            relations[power] = floor
+            self.assertNotIn(railway, self.engine.locked_foreign_railways("F"),
+                             f"{railway}：關係剛好 {floor} 就該放行")
+            relations[power] = floor + 4
+            self.assertNotIn(railway, self.engine.locked_foreign_railways("F"))
+
+    def test_the_gate_is_not_five_and_not_seven_and_not_eight(self):
+        """把門檻挪一格就該有線路的判定跟著變——擋住「順手改成 8」那類回歸。"""
+        relations = self.engine.state["players"]["F"]["foreign_relations"]
+        for power in ("jp", "su", "fr"):
+            relations[power] = 5
+        self.assertEqual(len(self.engine.locked_foreign_railways("F")), 3,
+                         "關係 5 三條線都借不到；若這裡是 0，門檻被改小了")
+        for power in ("jp", "su", "fr"):
+            relations[power] = 6
+        self.assertEqual(self.engine.locked_foreign_railways("F"), [],
+                         "關係 6 三條線都該開；若這裡還鎖著，門檻被改大了")
+
+    def test_each_player_is_judged_on_their_own_relations(self):
+        self.engine.state["players"]["F"]["foreign_relations"]["jp"] = 9
+        self.engine.state["players"]["W"]["foreign_relations"]["jp"] = 0
+        self.assertNotIn("南滿鐵路", self.engine.locked_foreign_railways("F"))
+        self.assertIn("南滿鐵路", self.engine.locked_foreign_railways("W"))
+
+    def test_unusable_is_the_union_of_all_three_reasons(self):
+        engine = self.engine
+        for power in ("jp", "su", "fr"):
+            engine.state["players"]["F"]["foreign_relations"][power] = 10
+        self.assertEqual(engine.unusable_railways("F"), [])
+        engine.state["players"]["F"]["foreign_relations"]["fr"] = 5      # 關係不到
+        engine.state.setdefault("railway_effects", []).append(          # 搶修中
+            {"railway": "京漢鐵路", "remaining_turns": 3})
+        engine.state.setdefault("railway_bans", []).append(             # 路權被封
+            {"player": "F", "railway": "津浦鐵路",
+             "until_turn": int(engine.state["turn"]) + 2})
+        self.assertEqual(engine.unusable_railways("F"),
+                         sorted(["京漢鐵路", "滇越鐵路", "津浦鐵路"]))
+        # 搶修是全場的，封路權只罰一家
+        self.assertIn("京漢鐵路", engine.unusable_railways("W"))
+        self.assertNotIn("津浦鐵路", engine.unusable_railways("W"))
+
+    def test_the_published_verdict_matches_the_methods(self):
+        for power in ("jp", "su", "fr"):
+            self.engine.state["players"]["N"]["foreign_relations"][power] = 6
+        self.engine.state["players"]["S"]["foreign_relations"]["jp"] = 5
+        access = self.engine.railway_access()
+        self.assertEqual(access["friendly_threshold"], FOREIGN_FRIENDLY_THRESHOLD)
+        self.assertEqual(access["hostile_threshold"], FOREIGN_HOSTILE_THRESHOLD)
+        self.assertEqual(access["foreign_railways"], self.engine.foreign_railways())
+        for code in self.engine.state["players"]:
+            row = access["by_player"][code]
+            self.assertEqual(row["locked"], self.engine.locked_foreign_railways(code), code)
+            self.assertEqual(row["banned"], self.engine.banned_railways(code), code)
+            self.assertEqual(row["unusable"], self.engine.unusable_railways(code), code)
+        self.assertEqual(access["by_player"]["N"]["locked"], [])
+        self.assertIn("南滿鐵路", access["by_player"]["S"]["locked"])
+
+    def test_the_verdict_reports_the_relation_behind_each_line(self):
+        """前端要能寫出「對日本關係未達 6」，所以每條線的關係值也要送過去。"""
+        self.engine.state["players"]["F"]["foreign_relations"]["jp"] = 3
+        row = self.engine.railway_access()["by_player"]["F"]
+        self.assertEqual(row["relations"]["南滿鐵路"], 3)
+
+    def test_an_unknown_player_locks_everything_rather_than_opening_everything(self):
+        """查不到的人不該變成關係 0 以外的什麼——關係 0 本來就過不了門檻。"""
+        self.assertEqual(self.engine.locked_foreign_railways("ZZ"),
+                         sorted(["中東鐵路", "南滿鐵路", "滇越鐵路"]))
+
+
+class RegionBonusStackingTests(unittest.TestCase):
+    """「控制 a、b 或 c 者本回合獲得 $xx」——一個地區發一次，數量疊加。
+
+    這一組卡在改之前是**一次總付**：控制四省和控制一省拿到的錢一樣多。
+    """
+
+    CARDS = {
+        "silk_tea_export_boom": 8,
+        "salt_administration_reform": 10,
+        "chinese_liquor_expo": 5,
+        "sothebys_porcelain_auction": 5,
+        "chinese_tea_expo": 5,
+    }
+
+    def test_no_card_of_this_family_is_left_without_the_flag(self):
+        """掃全卡池：凡是「一次性發錢」＋「點名多個地區」的，一律要疊加。
+
+        這一條是給日後新增的卡用的——漏掛旗標就會在這裡紅燈，
+        不必再靠人記得有這條規則。
+        """
+        engine = GameEngine(seed=3)
+        missing = []
+        for card in engine.data["event_cards"]["cards"]:
+            grant = (card.get("apply") or {}).get("grant")
+            condition = card.get("entry_condition") or {}
+            regions = ((condition.get("controls_provinces_any") or [])
+                       + (condition.get("controls_cities_any") or []))
+            if grant and len(regions) > 1 and grant.get("per") != "eligible_regions":
+                missing.append(card["id"])
+        self.assertEqual(missing, [],
+                         f"這些卡點名了多個地區卻只發一次錢：{missing}")
+
+    def _template(self, engine, card_id):
+        return next(c for c in engine.data["event_cards"]["cards"] if c["id"] == card_id)
+
+    def _regions(self, card):
+        condition = card.get("entry_condition") or {}
+        return (condition.get("controls_provinces_any") or []
+                or condition.get("controls_cities_any") or [])
+
+    def _hand_over(self, engine, card, player, how_many):
+        """把卡片點名的前 how_many 個地區交給 player，其餘交給別人。"""
+        condition = card.get("entry_condition") or {}
+        provinces = condition.get("controls_provinces_any") or []
+        cities = condition.get("controls_cities_any") or []
+        groups = {p: [c["id"] for c in engine.data["strategic_map"]["cities"]
+                      if c.get("province") == p] for p in provinces}
+        groups.update({c: [c] for c in cities})
+        order = provinces + cities
+        for ids in groups.values():
+            for city_id in ids:
+                engine.state["city_owners"][city_id] = "W" if player != "W" else "S"
+        for key in order[:how_many]:
+            for city_id in groups[key]:
+                engine.state["city_owners"][city_id] = player
+        engine._refresh_city_income()
+
+    def test_every_such_card_declares_the_stacking_rule(self):
+        """疊加是靠 payload 上的旗標，不是靠引擎猜卡名。"""
+        engine = GameEngine(seed=3)
+        for card_id in self.CARDS:
+            card = self._template(engine, card_id)
+            self.assertEqual(card["apply"]["grant"].get("per"), "eligible_regions",
+                             f"{card_id} 少了疊加旗標")
+
+    def test_the_payout_is_one_helping_per_region_controlled(self):
+        for card_id, unit in self.CARDS.items():
+            engine = GameEngine(seed=3)
+            card = self._template(engine, card_id)
+            regions = self._regions(card)
+            self.assertTrue(regions, f"{card_id} 沒有地區清單")
+            for how_many in range(1, len(regions) + 1):
+                engine = GameEngine(seed=3)
+                card = self._template(engine, card_id)
+                self._hand_over(engine, card, "F", how_many)
+                paid = engine._eligible_region_count(card, "F")
+                self.assertEqual(paid, how_many,
+                                 f"{card_id}：控制 {how_many} 個地區卻數成 {paid}")
+
+    def test_controlling_four_regions_really_pays_four_times(self):
+        """不是只看計數函式——真的抽卡、真的看錢進了多少。"""
+        for card_id, unit in self.CARDS.items():
+            payouts = []
+            engine = GameEngine(seed=3)
+            regions = self._regions(self._template(engine, card_id))
+            for how_many in (1, len(regions)):
+                engine = GameEngine(seed=3)
+                card = self._template(engine, card_id)
+                self._hand_over(engine, card, "F", how_many)
+                engine.state["event_pool"] = [card_id]
+                view = None
+                for _ in range(8):
+                    engine.next_turn(active_player="F")
+                    view = engine.pending_event_view()
+                    if view:
+                        break
+                self.assertIsNotNone(view, f"{card_id} 沒抽出來")
+                grants = []
+                guard = 0
+                while view and guard < 24:
+                    guard += 1
+                    options = (view["card"].get("resolution") or {}).get("options") or []
+                    result = engine.respond_event(
+                        view.get("waiting_for") or view["drawer"],
+                        choice=options[0]["id"] if options else None)
+                    grants += [a for a in ((result or {}).get("applied") or [])
+                               if a.get("kind") == "grant" and a.get("player") == "F"]
+                    view = engine.pending_event_view()
+                self.assertTrue(grants, f"{card_id}：控制 {how_many} 個地區卻沒發錢")
+                payouts.append(sum(int(g["cash"]) for g in grants))
+            self.assertEqual(payouts[0], unit, f"{card_id}：控制一個地區應該發 {unit}")
+            self.assertEqual(payouts[1], unit * len(regions),
+                             f"{card_id}：控制 {len(regions)} 個地區應該發 {unit * len(regions)} "
+                             f"，實際 {payouts[1]}")
+            self.assertGreater(payouts[1], payouts[0],
+                               f"{card_id}：控制得多卻沒拿得多，等於沒有疊加")
+
+    def test_a_card_without_the_flag_still_pays_once(self):
+        """沒掛旗標的一次性入帳不該被這條規則波及。"""
+        engine = GameEngine(seed=3)
+        card = {"id": "fake", "name": "fake", "entry_condition":
+                {"controls_provinces_any": ["江蘇", "浙江"]}}
+        applied = engine._apply_event_payload({"grant": {"cash": 7}},
+                                              players=["F"], card=card)
+        grant = next(a for a in applied if a["kind"] == "grant")
+        self.assertEqual(grant["cash"], 7)
+        self.assertEqual(grant["regions"], 1)
+
+    def test_the_region_list_is_not_copied_into_the_engine(self):
+        """地區清單只有卡片上那一份，引擎不留副本。"""
+        source = pathlib.Path(__file__).with_name("card_engine.py").read_text(encoding="utf-8")
+        for name in ("臨汾", "瀘州", "遵義", "紹興"):
+            self.assertNotIn(name, source, f"引擎裡不該出現地區名 {name}")
+
+    def test_a_card_naming_a_city_that_does_not_exist_is_a_loud_error(self):
+        engine = GameEngine(seed=3)
+        card = {"id": "fake", "entry_condition": {"controls_cities_any": ["atlantis"]}}
+        with self.assertRaisesRegex(ValueError, "atlantis"):
+            engine._eligible_region_count(card, "F")
+
+
+class PolicePrecinctScopeTests(unittest.TestCase):
+    """〈警政單位〉只擋它自己宣告的那種機制，不是萬用護身符。"""
+
+    def setUp(self):
+        self.engine = GameEngine(seed=7)
+        for payload in self.engine.state["players"].values():
+            payload["treasury"] = 400
+            payload["factory_points"] = 400
+            payload["foreign_relations"]["su"] = 0
+        self.province = "河南"
+        for city in self.engine.data["strategic_map"]["cities"]:
+            if city.get("province") == self.province:
+                self.engine.state["city_owners"][city["id"]] = "W"
+        self.engine._refresh_city_income()
+        self.engine._player("W")["hand"].append("police_precinct")
+        self.engine.use_function("W", "police_precinct", target_province=self.province)
+
+    def test_it_shields_exactly_the_mechanics_it_declares(self):
+        shield = next(e for e in self.engine._player("W")["timed_effects"]
+                      if e.get("kind") == "gang_riot_shield")
+        self.assertEqual(shield["blocked_mechanics"], ["qing_gang_riot"])
+        self.assertTrue(self.engine._gang_riot_shielded("W", self.province, "qing_gang_riot"))
+        for other in ("security_event", "communist_riot", "red_army_uprising"):
+            self.assertFalse(
+                self.engine._gang_riot_shielded("W", self.province, other),
+                f"警政單位不該連 {other} 一起擋——它只宣告了黑幫暴動")
+
+    def test_the_shielded_province_is_still_exposed_to_student_unrest(self):
+        """學潮走的是 security_event，警政單位管不到。"""
+        candidates = [c["id"] for c in self.engine._student_unrest_candidates("W", 4)
+                      if c.get("province") == self.province]
+        self.assertTrue(candidates,
+                        "河南有警政單位，但學潮不歸它管，該省仍該留在學潮候選名單裡")
+
+    def test_no_timed_effect_ever_survives_with_a_spent_counter(self):
+        """倒數到 0 的效果會被 _tick_timed_effects 直接丟掉，不會留成殭屍。"""
+        for _ in range(6):
+            self.engine._tick_timed_effects()
+            for payload in self.engine.state["players"].values():
+                for effect in payload.get("timed_effects", []):
+                    if effect.get("permanent") or effect.get("remaining_turns") is None:
+                        continue
+                    self.assertGreater(int(effect["remaining_turns"]), 0,
+                                       f"殭屍效果留在狀態裡：{effect}")
+
+
+class DrillVersusPunishmentTests(unittest.TestCase):
+    """演習與軍事懲戒：同一種 kind、同一片水域，差別必須是機制上的。"""
+
+    DRILL = "royal_navy_yangtze_drill"
+    PUNISHMENT = "british_navy_blockades_yangtze"
+
+    def _hostile(self, seed=17):
+        engine = GameEngine(seed=seed)
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 400
+            payload["factory_points"] = 400
+            for power in payload.get("foreign_relations", {}):
+                payload["foreign_relations"][power] = -6
+        return engine
+
+    def _draw(self, engine, card_id):
+        engine.state["event_pool"] = [card_id]
+        view = None
+        for _ in range(10):
+            engine.next_turn(active_player="F")
+            view = engine.pending_event_view()
+            if view:
+                break
+        self.assertIsNotNone(view, f"{card_id} 沒抽出來")
+        guard = 0
+        while view and guard < 24:
+            guard += 1
+            options = (view["card"].get("resolution") or {}).get("options") or []
+            engine.respond_event(view.get("waiting_for") or view["drawer"],
+                                 choice=options[0]["id"] if options else None)
+            view = engine.pending_event_view()
+        return engine.state.get("foreign_punishments") or []
+
+    def _income(self, engine):
+        return {code: int(p.get("income", 0)) for code, p in engine.state["players"].items()}
+
+    def test_a_drill_is_marked_as_one_and_a_punishment_is_not(self):
+        drill = self._draw(self._hostile(), self.DRILL)
+        punishment = self._draw(self._hostile(), self.PUNISHMENT)
+        self.assertTrue(drill and drill[0]["drill"])
+        self.assertTrue(punishment and not punishment[0]["drill"])
+
+    def test_a_drill_carries_no_damage_and_a_punishment_does(self):
+        drill = self._draw(self._hostile(), self.DRILL)
+        punishment = self._draw(self._hostile(), self.PUNISHMENT)
+        self.assertEqual(drill[0]["damage"], {},
+                         "演習不是懲戒，不該帶任何傷害")
+        self.assertTrue(punishment[0]["damage"],
+                        "懲戒沒有傷害的話，它跟演習就沒有分別了")
+
+    def test_a_drill_leaves_every_purse_untouched(self):
+        engine = self._hostile()
+        before = self._income(engine)
+        self._draw(engine, self.DRILL)
+        self.assertEqual(self._income(engine), before,
+                         "演習期間城市生產照常，收入一分都不該少")
+
+    def test_a_punishment_really_cuts_somebody_income(self):
+        engine = self._hostile()
+        before = self._income(engine)
+        self._draw(engine, self.PUNISHMENT)
+        after = self._income(engine)
+        hurt = [code for code in before if after[code] < before[code]]
+        self.assertTrue(hurt, f"封鎖沒有砍到任何人的收入：{before} → {after}")
+
+    def test_a_drill_has_a_deadline_and_a_punishment_does_not(self):
+        drill = self._draw(self._hostile(), self.DRILL)
+        punishment = self._draw(self._hostile(), self.PUNISHMENT)
+        self.assertIsNotNone(drill[0]["until_turn"], "演習要有到期回合")
+        self.assertIsNone(punishment[0]["until_turn"],
+                          "懲戒不看時間，它看的是邦交")
+
+    def test_a_drill_runs_its_full_length_even_when_relations_are_perfect(self):
+        engine = GameEngine(seed=17)
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 400
+            payload["factory_points"] = 400
+            for power in payload.get("foreign_relations", {}):
+                payload["foreign_relations"][power] = 10
+        self._draw(engine, self.DRILL)
+        self.assertEqual(len(engine.state.get("foreign_punishments") or []), 1,
+                         "邦交再好也不能讓演習提早收隊")
+
+    def test_a_punishment_lifts_once_relations_stop_being_hostile(self):
+        engine = self._hostile()
+        self._draw(engine, self.PUNISHMENT)
+        self.assertEqual(len(engine.state["foreign_punishments"]), 1)
+        for payload in engine.state["players"].values():
+            payload["foreign_relations"]["uk"] = 0     # 非敵對，但還沒到友好
+        for _ in range(3):
+            engine.next_turn(active_player="F")
+            view = engine.pending_event_view()
+            guard = 0
+            while view and guard < 24:
+                guard += 1
+                options = (view["card"].get("resolution") or {}).get("options") or []
+                engine.respond_event(view.get("waiting_for") or view["drawer"],
+                                     choice=options[0]["id"] if options else None)
+                view = engine.pending_event_view()
+        self.assertEqual(engine.state.get("foreign_punishments") or [], [],
+                         "邦交回到非敵對之後，封鎖應該解除")
+
+
+class CrescentMoonReliefTests(unittest.TestCase):
+    """《新月》月刊的學潮減免——要看真的城市產出數字，不是只看旗標。"""
+
+    def _engine(self, relief):
+        engine = GameEngine(seed=7)
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 500
+            payload["factory_points"] = 500
+            payload["foreign_relations"]["su"] = 0
+        if relief:
+            engine.state["student_unrest_relief"] = True
+        engine.state["event_pool"] = ["revolutionary_literature"]
+        view = None
+        for _ in range(8):
+            engine.next_turn(active_player="F")
+            view = engine.pending_event_view()
+            if view:
+                break
+        self.assertIsNotNone(view)
+        guard = 0
+        while view and guard < 24:
+            guard += 1
+            options = (view["card"].get("resolution") or {}).get("options") or []
+            engine.respond_event(view.get("waiting_for") or view["drawer"],
+                                 choice=options[0]["id"] if options else None)
+            view = engine.pending_event_view()
+        return engine
+
+    def _hit_cities(self, engine):
+        out = []
+        for effect in engine.state["city_output_effects"]:
+            if effect.get("kind") == "student_unrest":
+                out += list(effect["city_ids"])
+        return out
+
+    def _shown(self, engine, city_id):
+        owner = engine.state["city_owners"].get(
+            city_id, next(c for c in engine.data["strategic_map"]["cities"]
+                          if c["id"] == city_id)["faction"])
+        for row in engine.state["players"][owner].get("city_economy", []):
+            if row["id"] == city_id:
+                return row["cash"], row["factory"]
+        return None
+
+    def test_the_relief_actually_changes_the_money_on_the_table(self):
+        plain = self._engine(False)
+        relieved = self._engine(True)
+        for engine, expected in ((plain, 0.5), (relieved, 0.75)):
+            cities = self._hit_cities(engine)
+            self.assertTrue(cities, "沒有城市進入學潮，這個案例不成立")
+            for effect in engine.state["city_output_effects"]:
+                if effect.get("kind") == "student_unrest":
+                    self.assertEqual(effect["cash_multiplier"], expected)
+                    self.assertEqual(effect["factory_multiplier"], expected)
+
+    def test_a_relieved_city_keeps_strictly_more_than_an_unrelieved_one(self):
+        plain = self._engine(False)
+        relieved = self._engine(True)
+        shared = set(self._hit_cities(plain)) & set(self._hit_cities(relieved))
+        self.assertTrue(shared, "兩個案例沒有共同受災的城市，比不出來")
+        better = 0
+        for city_id in shared:
+            low = self._shown(plain, city_id)
+            high = self._shown(relieved, city_id)
+            self.assertIsNotNone(low)
+            self.assertIsNotNone(high)
+            self.assertGreaterEqual(high[0], low[0], city_id)
+            if high[0] > low[0]:
+                better += 1
+        self.assertTrue(better, "減免之後沒有任何一座城市多留住錢，等於沒有減免")
+
+    def test_the_relief_never_lets_a_city_reinforce_during_unrest(self):
+        """減的是產出，不是「學潮期間不可補兵」這條。"""
+        for relief in (False, True):
+            engine = self._engine(relief)
+            for effect in engine.state["city_output_effects"]:
+                if effect.get("kind") == "student_unrest":
+                    self.assertTrue(effect["blocks_reinforcement"])
+                    for city_id in effect["city_ids"]:
+                        self.assertTrue(engine.city_in_student_unrest(city_id))
+
+
+class PoliceShieldAgainstEventCardsTests(unittest.TestCase):
+    """〈警政單位〉不只擋暴動類功能卡，也擋卡面點名它的那幾張事件卡。
+
+    卡面自己寫「該省有〈警政單位〉駐防者免疫」的只有兩張：
+    14.2 黑幫動亂、14.5 會黨滋事。
+    """
+
+    VICTIM = "W"
+
+    def _engine(self, seed=7):
+        engine = GameEngine(seed=seed)
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 500
+            payload["factory_points"] = 500
+            payload["foreign_relations"]["su"] = 0
+        return engine
+
+    def _econ(self, engine, owner):
+        return {row["id"]: (row["cash"], row["factory"])
+                for row in engine.state["players"][owner].get("city_economy", [])}
+
+    def _province(self, engine, city_id):
+        return next((c.get("province") for c in engine.data["strategic_map"]["cities"]
+                     if c["id"] == city_id), None)
+
+    def _largest_city(self, engine, owner):
+        rows = self._econ(engine, owner)
+        return max(rows, key=lambda cid: rows[cid][0] + rows[cid][1])
+
+    def _shield(self, engine, owner, province):
+        engine._player(owner)["hand"].append("police_precinct")
+        engine.use_function(owner, "police_precinct", target_province=province)
+
+    def _play(self, engine, card_id):
+        engine.state["event_pool"] = [card_id]
+        view = None
+        for _ in range(10):
+            engine.next_turn(active_player="F")
+            view = engine.pending_event_view()
+            if view:
+                break
+        self.assertIsNotNone(view, f"{card_id} 沒抽出來")
+        applied, guard = [], 0
+        while view and guard < 24:
+            guard += 1
+            options = (view["card"].get("resolution") or {}).get("options") or []
+            result = engine.respond_event(view.get("waiting_for") or view["drawer"],
+                                          choice=options[0]["id"] if options else None)
+            applied += (result or {}).get("applied") or []
+            view = engine.pending_event_view()
+        return applied
+
+    def _hit(self, engine, owner):
+        out = {}
+        for effect in engine.state.get("city_output_effects", []):
+            if effect.get("owner") != owner and effect.get("target_owner") != owner:
+                continue
+            for city_id in effect.get("city_ids") or []:
+                out[city_id] = effect.get("kind")
+        return out
+
+    # ---- 名冊本身：宣告與實作必須兩邊對得上 ----
+
+    def test_exactly_the_cards_that_name_the_precinct_honour_it(self):
+        """卡面寫了免疫就要有 respect_police，沒寫就不准偷偷有。"""
+        engine = GameEngine(seed=3)
+        says, does = set(), set()
+        for card in engine.data["event_cards"]["cards"]:
+            if "警政" in (card.get("effect") or ""):
+                says.add(card["id"])
+            if "respect_police" in json.dumps(card.get("apply") or {}, ensure_ascii=False):
+                does.add(card["id"])
+        self.assertEqual(says, does,
+                         f"卡面說免疫卻沒實作：{says - does}；"
+                         f"實作了卻沒寫在卡面：{does - says}")
+        self.assertEqual(says, {"gang_unrest", "secret_society_trouble"})
+
+    # ---- 14.2 黑幫動亂 ----
+
+    def test_gang_unrest_spares_the_garrisoned_province(self):
+        plain = self._engine()
+        self._play(plain, "gang_unrest")
+        hit = self._hit(plain, self.VICTIM)
+        self.assertTrue(hit, "沒有警政單位時這張卡本來就該打中人")
+        province = self._province(plain, sorted(hit)[0])
+
+        guarded = self._engine()
+        self._shield(guarded, self.VICTIM, province)
+        self._play(guarded, "gang_unrest")
+        still = [city_id for city_id in self._hit(guarded, self.VICTIM)
+                 if self._province(guarded, city_id) == province]
+        self.assertEqual(still, [],
+                         f"{province} 有警政單位駐防，不該有城市被黑幫動亂打中：{still}")
+
+    def test_gang_unrest_says_out_loud_which_cities_the_precinct_saved(self):
+        """部分免疫也要回報——玩家要看得見警政單位起了作用。"""
+        plain = self._engine()
+        self._play(plain, "gang_unrest")
+        province = self._province(plain, sorted(self._hit(plain, self.VICTIM))[0])
+        guarded = self._engine()
+        self._shield(guarded, self.VICTIM, province)
+        applied = self._play(guarded, "gang_unrest")
+        spared = [a for a in applied if a.get("spared")]
+        self.assertTrue(spared,
+                        "警政單位救下了城市卻沒有任何回報，玩家看不出它有作用")
+
+    def test_a_player_whose_every_province_is_guarded_is_skipped_entirely(self):
+        engine = self._engine()
+        provinces = {self._province(engine, city_id)
+                     for city_id in self._econ(engine, self.VICTIM)}
+        for province in provinces:
+            self._shield(engine, self.VICTIM, province)
+        self._play(engine, "gang_unrest")
+        self.assertEqual(self._hit(engine, self.VICTIM), {},
+                         "每一省都有警政單位，這張卡對他應該完全落空")
+
+    # ---- 14.5 會黨滋事 ----
+
+    def test_secret_society_trouble_leaves_a_guarded_city_untouched(self):
+        plain = self._engine()
+        city_id = self._largest_city(plain, self.VICTIM)
+        before = self._econ(plain, self.VICTIM)[city_id]
+        self._play(plain, "secret_society_trouble")
+        self.assertNotEqual(self._econ(plain, self.VICTIM)[city_id], before,
+                            "沒有警政單位時，最大城本來就該被砍")
+
+        guarded = self._engine()
+        city_id = self._largest_city(guarded, self.VICTIM)
+        self._shield(guarded, self.VICTIM, self._province(guarded, city_id))
+        before = self._econ(guarded, self.VICTIM)[city_id]
+        applied = self._play(guarded, "secret_society_trouble")
+        self.assertEqual(self._econ(guarded, self.VICTIM)[city_id], before,
+                         "該省有警政單位駐防，產出一分都不該少")
+        self.assertTrue([a for a in applied if a.get("kind") == "police_immunity"],
+                        "免疫生效卻沒有回報")
+
+    def test_the_shield_only_covers_the_province_it_was_placed_in(self):
+        engine = self._engine()
+        city_id = self._largest_city(engine, self.VICTIM)
+        mine = {self._province(engine, c) for c in self._econ(engine, self.VICTIM)}
+        elsewhere = next(p for p in sorted(mine - {self._province(engine, city_id)}))
+        self._shield(engine, self.VICTIM, elsewhere)
+        before = self._econ(engine, self.VICTIM)[city_id]
+        self._play(engine, "secret_society_trouble")
+        self.assertNotEqual(self._econ(engine, self.VICTIM)[city_id], before,
+                            f"警政單位擺在 {elsewhere}，救不到別省的城市")
+
+    # ---- 對照組：卡面沒點名的治安卡擋不到 ----
+
+    def test_security_cards_that_do_not_name_the_precinct_go_straight_through(self):
+        for card_id in ("student_demonstrations", "factory_accident"):
+            engine = self._engine()
+            city_id = self._largest_city(engine, self.VICTIM)
+            self._shield(engine, self.VICTIM, self._province(engine, city_id))
+            before = self._econ(engine, self.VICTIM)
+            self._play(engine, card_id)
+            after = self._econ(engine, self.VICTIM)
+            self.assertNotEqual(before, after,
+                                f"{card_id} 卡面沒有點名警政單位，不該被它擋下來")
+
+
+class NpcActionCardTests(unittest.TestCase):
+    """NPC 行動事件卡（15.x）：一次性、報導齊備，且機制沒到位就不准進池子。
+
+    這一批是分階段做的——卡與報導先建好，效果的後端機制逐批補。
+    這一組測試的作用是讓「還沒補」這件事**是機器看得見的**，
+    而不是靠人記得哪幾張還不能用。
+    """
+
+    # 已知的待建機制名稱。要新增只能往這裡加，不能隨手在卡上寫個新字串。
+    KNOWN_PENDING = {
+        "npc_condition_gate",          # 「某某將領仍屬某陣營」這類進入條件
+        "npc_reserve_delta",           # 對 NPC 陣營／將領加兵
+        "npc_combat_modifier",         # 對 NPC 部隊掛戰力百分比修正
+        "npc_general_transfer",        # NPC 將領換陣營
+        "npc_army_relocate",           # NPC 部隊移防到指定位置
+        "npc_faction_absorb",          # 整個 NPC 陣營歸給玩家並退出地圖
+        "npc_faction_merge",           # NPC 併 NPC
+        "contested_npc_recruit",       # 付費招募，多方競標平分成功率
+        "player_force_ranking",        # 「當前總戰力最高的玩家」
+        "at_war_entry_condition",      # 「正對某陣營宣戰」
+        "garrison_entry_condition",    # 「該城有軍隊駐守」
+        "railway_permanent_block",     # 封路且不可搶修
+    }
+
+    def setUp(self):
+        self.cards = [c for c in GameEngine(seed=3).data["event_cards"]["cards"]
+                      if str(c.get("ref", "")).startswith("15.")]
+
+    def test_the_whole_batch_landed(self):
+        self.assertEqual(len(self.cards), 33)
+        refs = sorted(int(c["ref"].split(".")[1]) for c in self.cards)
+        self.assertEqual(refs, list(range(1, 34)), "15.1–15.33 要連號，不能有洞")
+
+    def test_every_one_of_them_is_a_one_shot_card(self):
+        """這批全是一次性卡，抽到一次就不會再出現。"""
+        for card in self.cards:
+            self.assertFalse(card.get("repeatable"),
+                             f"{card['ref']} {card['name']} 不該是可重複抽取的")
+
+    def test_each_card_carries_a_full_newspaper_report(self):
+        engine = GameEngine(seed=3)
+        hoover = next(c for c in engine.data["event_cards"]["cards"]
+                      if c["id"] == "hoover_elected")
+        baseline = sum(len(p) for p in hoover["newspaper"]["paragraphs"])
+        for card in self.cards:
+            paragraphs = card["newspaper"]["paragraphs"]
+            self.assertEqual(len(paragraphs), 3,
+                             f"{card['ref']} 的報導應該是三段")
+            self.assertTrue(card["newspaper"]["headline"].strip(), card["ref"])
+            length = sum(len(p) for p in paragraphs)
+            self.assertGreaterEqual(
+                length, baseline * 0.88,
+                f"{card['ref']} {card['name']} 只有 {length} 字，比胡佛（{baseline}）短太多")
+
+    def test_no_english_leaked_into_any_report(self):
+        for card in self.cards:
+            blob = card["newspaper"]["headline"] + "".join(card["newspaper"]["paragraphs"])
+            found = re.findall(r"[A-Za-z]{2,}", blob)
+            self.assertEqual(found, [], f"{card['ref']} 報導裡有英文：{found}")
+
+    def test_a_card_whose_mechanics_are_missing_never_reaches_the_pool(self):
+        """機制沒到位就設 never_drawn——不能讓玩家抽到一張什麼都不會發生的卡。"""
+        for card in self.cards:
+            pending = (card.get("apply") or {}).get("pending") or []
+            if pending:
+                self.assertTrue(
+                    card.get("not_in_pool"),
+                    f"{card['ref']} {card['name']} 還有待建機制 {pending}，"
+                    f"卻沒有設 not_in_pool，會被抽出來卻什麼都不做")
+                self.assertFalse(
+                    card.get("never_drawn"),
+                    f"{card['ref']} 該用 not_in_pool，never_drawn 是留給日蘇戰況報導的")
+
+    def test_a_card_with_no_pending_work_must_be_drawable(self):
+        """反過來也要成立：機制補齊了就該把 never_drawn 拿掉，否則永遠上不了場。"""
+        for card in self.cards:
+            pending = (card.get("apply") or {}).get("pending") or []
+            if not pending:
+                self.assertFalse(
+                    card.get("not_in_pool"),
+                    f"{card['ref']} {card['name']} 已經沒有待建機制了，"
+                    f"not_in_pool 該拿掉")
+
+    def test_pending_mechanic_names_come_from_the_known_list(self):
+        """待建項目要用固定的名稱，才數得出還剩多少、才排得出順序。"""
+        for card in self.cards:
+            for name in (card.get("apply") or {}).get("pending") or []:
+                self.assertIn(name, self.KNOWN_PENDING,
+                              f"{card['ref']} 用了沒登記過的待建機制名稱：{name}")
+
+    def test_none_of_them_is_in_the_starting_pool(self):
+        """實跑確認：開局配池不會把這批卡放進去。"""
+        engine = GameEngine(seed=3)
+        pool = set(engine.state["event_pool"])
+        for card in self.cards:
+            self.assertNotIn(card["id"], pool,
+                             f"{card['ref']} 不該出現在卡池裡")
+
+    def test_the_city_level_cards_really_move_the_level(self):
+        """15.28–15.33 的效果本身已經接上引擎——直接叫 payload 驗一次。"""
+        expected = {
+            "tang_shengzhi_builds_temples": ["changsha"],
+            "zhao_hengti_liling_porcelain": ["yueyang"],
+            "qian_army_moutai": ["zunyi"],
+            "liu_xiang_luzhou_distillery": ["luzhou"],
+            "xu_yongchang_fenjiu": ["linfen"],
+        }
+        for card_id, cities in expected.items():
+            engine = GameEngine(seed=3)
+            card = engine._event_template(card_id)
+            before = {c: int(engine._with_level(
+                next(x for x in engine.data["strategic_map"]["cities"] if x["id"] == c)
+            )["level"]) for c in cities}
+            applied = engine._apply_event_payload(
+                {"city_level_upgrade": card["apply"]["city_level_upgrade"]},
+                players=["F"], card=card)
+            bumped = next(a for a in applied if a["kind"] == "city_level_upgrade")
+            moved = {row["id"]: (row["from"], row["to"]) for row in bumped["cities"]}
+            for city_id in cities:
+                self.assertIn(city_id, moved, f"{card_id} 沒有動到 {city_id}")
+                self.assertEqual(moved[city_id][1], before[city_id] + 1,
+                                 f"{card_id}：{city_id} 應該剛好 +1 級")
+
+    def test_the_shanxi_card_lifts_every_city_in_the_province(self):
+        engine = GameEngine(seed=3)
+        card = engine._event_template("yan_xishan_promotes_education")
+        shanxi = [c for c in engine.data["strategic_map"]["cities"]
+                  if c.get("province") == "山西"]
+        before = {c["id"]: int(engine._with_level(c)["level"]) for c in shanxi}
+        applied = engine._apply_event_payload(
+            {"city_level_upgrade": card["apply"]["city_level_upgrade"]},
+            players=["F"], card=card)
+        bumped = next(a for a in applied if a["kind"] == "city_level_upgrade")
+        moved = {row["id"]: row["to"] for row in bumped["cities"]}
+        for city_id, level in before.items():
+            if level >= 5:
+                continue
+            self.assertEqual(moved.get(city_id), level + 1,
+                             f"山西的 {city_id} 應該 +1 級")
+
+
+class RelativeCityLevelUpgradeTests(unittest.TestCase):
+    """city_level_upgrade 的相對寫法（delta）與絕對寫法（to_level）。"""
+
+    def setUp(self):
+        self.engine = GameEngine(seed=3)
+        self.card = {"id": "fake", "name": "fake"}
+
+    def _level(self, city_id):
+        city = next(c for c in self.engine.data["strategic_map"]["cities"]
+                    if c["id"] == city_id)
+        return int(self.engine._with_level(city)["level"])
+
+    def test_delta_adds_to_whatever_the_city_is_now(self):
+        before = self._level("luzhou")
+        self.engine._apply_event_payload(
+            {"city_level_upgrade": {"cities": ["luzhou"], "delta": 1}},
+            players=["F"], card=self.card)
+        self.assertEqual(self._level("luzhou"), before + 1)
+
+    def test_delta_stops_at_the_ceiling(self):
+        """五級是頂，不能再往上疊。"""
+        self.engine._apply_event_payload(
+            {"city_level_upgrade": {"cities": ["shanghai"], "delta": 3}},
+            players=["F"], card=self.card)
+        self.assertLessEqual(self._level("shanghai"), 5)
+
+    def test_the_absolute_form_still_works(self):
+        applied = self.engine._apply_event_payload(
+            {"city_level_upgrade": {"provinces": ["山西"], "from_level": 2,
+                                    "to_level": 3}},
+            players=["F"], card=self.card)
+        bumped = next(a for a in applied if a["kind"] == "city_level_upgrade")
+        self.assertTrue(bumped["cities"])
+        for row in bumped["cities"]:
+            self.assertEqual(row["from"], 2)
+            self.assertEqual(row["to"], 3)
+
+    def test_naming_a_city_that_does_not_exist_is_a_loud_error(self):
+        with self.assertRaisesRegex(ValueError, "atlantis"):
+            self.engine._apply_event_payload(
+                {"city_level_upgrade": {"cities": ["atlantis"], "delta": 1}},
+                players=["F"], card=self.card)
+
+    def test_giving_neither_form_is_a_loud_error(self):
+        with self.assertRaisesRegex(ValueError, "to_level|delta"):
+            self.engine._apply_event_payload(
+                {"city_level_upgrade": {"cities": ["luzhou"]}},
+                players=["F"], card=self.card)
+
+
+class ReportManuscriptTests(unittest.TestCase):
+    """`cards/事件卡報導文稿.md` 是三份擴寫對照稿、v5 設計稿與 NPC 新卡合併後的成品。
+
+    它由 `event_cards.json` 產生，所以這一組測試要守的是**它沒有跟資料檔漂移**——
+    一份手抄的副本遲早會跟正本說不同的話，那比沒有副本更糟。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        repo = pathlib.Path(__file__).resolve().parent.parent
+        cls.path = repo / "cards" / "事件卡報導文稿.md"
+        cls.text = cls.path.read_text(encoding="utf-8") if cls.path.exists() else ""
+        cls.cards = json.loads(
+            (repo / "cards" / "data" / "event_cards.json").read_text(encoding="utf-8"))["cards"]
+
+    @staticmethod
+    def _squash(text):
+        return re.sub(r"[\s　]+", "", text)
+
+    def test_the_manuscript_exists(self):
+        self.assertTrue(self.path.exists(), f"{self.path} 不見了")
+
+    def test_every_card_has_a_section_of_its_own(self):
+        missing = [c["ref"] for c in self.cards
+                   if f'\n## {c["ref"]}　{c["name"]}\n' not in self.text]
+        self.assertEqual(missing, [], f"文稿裡找不到這些卡：{missing}")
+
+    def test_every_line_of_every_report_is_in_the_manuscript(self):
+        """逐段比對——標題與每一個自然段都要一字不差地收進去。"""
+        body = self._squash(self.text)
+        missing = []
+        for card in self.cards:
+            for variant in (card.get("newspaper_variants") or [card["newspaper"]]):
+                for chunk in [variant["headline"]] + variant["paragraphs"]:
+                    if self._squash(chunk) not in body:
+                        missing.append(f'{card["ref"]} {chunk[:20]}…')
+        self.assertEqual(missing, [], f"這些報導文字沒進文稿：{missing[:5]}")
+
+    def test_the_dual_report_card_keeps_both_of_its_reports(self):
+        """11.5 廢兩改元是刻意設計成兩則的，兩則都要在。"""
+        card = next(c for c in self.cards if c["ref"] == "11.5")
+        variants = card.get("newspaper_variants") or []
+        self.assertEqual(len(variants), 2)
+        for variant in variants:
+            self.assertIn(self._squash(variant["headline"]), self._squash(self.text))
+
+    def test_the_superseded_comparison_drafts_are_gone(self):
+        """三份對照稿已併入文稿，不該再各留一份互相打架。"""
+        repo = pathlib.Path(__file__).resolve().parent.parent
+        for stale in ("報導擴寫對照_第一批_治安事件.md",
+                      "報導擴寫對照_第二批_經濟事件.md",
+                      "報導擴寫對照_第三批_列強行動.md"):
+            self.assertFalse((repo / "cards" / stale).exists(),
+                             f"{stale} 應該已經併進文稿並刪除")
+
+    def test_the_manuscript_says_how_many_cards_it_covers(self):
+        self.assertIn(f"**{len(self.cards)} 張**", self.text,
+                      "抬頭的張數要跟資料檔對得上")
+
+    def test_the_manuscript_carries_no_english_prose(self):
+        """報導本文不准有英文。
+
+        排除的是結構，不是內容：標題行、總覽表格、行內程式碼與 `<small>` 字數註記。
+        段落本身一個英文字母都不該有——「NPC」只出現在段落標題上，那是分類名稱，
+        不是報導文字。
+        """
+        lines = []
+        for line in self.text.splitlines():
+            if line.startswith(("#", "|", "類別 ", "本檔由", "> 素材：")):
+                continue
+            line = re.sub(r"`[^`]*`", "", line)
+            line = re.sub(r"</?small>", "", line)
+            lines.append(line)
+        found = sorted(set(re.findall(r"[A-Za-z]{2,}", "\n".join(lines))))
+        self.assertEqual(found, [], f"文稿報導內文出現英文：{found}")
+
+    def test_the_only_english_anywhere_is_the_category_labels(self):
+        """整份文稿裡允許出現的英文，只有分類代號與 NPC 這個段落名。"""
+        allowed = {"NPC", "foreign_power", "economic", "economy",
+                   "security", "npc_or_other_force", "event_cards", "cards",
+                   "data", "json", "small"}
+        found = set(re.findall(r"[A-Za-z_]{2,}", self.text))
+        self.assertEqual(found - allowed, set(),
+                         f"文稿裡出現預期外的英文：{sorted(found - allowed)}")
+
+    def test_cards_still_out_of_the_pool_are_marked_as_such(self):
+        """機制還沒補齊的卡要在文稿上寫明，免得誤以為已經上線。"""
+        for card in self.cards:
+            if not card.get("not_in_pool"):
+                continue
+            block = self.text.split(f'\n## {card["ref"]}　{card["name"]}\n')[1]
+            head = block.split("###")[0]
+            self.assertIn("機制建置中", head,
+                          f'{card["ref"]} 還沒進卡池，文稿上要標出來')

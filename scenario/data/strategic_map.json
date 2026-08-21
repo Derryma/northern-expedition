@@ -925,6 +925,7 @@
     {
       "name": "南滿鐵路",
       "foreign": true,
+      "power": "jp",
       "points": [
         [
           122.3,
@@ -951,6 +952,7 @@
     {
       "name": "中東鐵路",
       "foreign": true,
+      "power": "su",
       "points": [
         [
           117.4,
@@ -981,6 +983,7 @@
     {
       "name": "滇越鐵路",
       "foreign": true,
+      "power": "fr",
       "points": [
         [
           102.7,

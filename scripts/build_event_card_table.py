@@ -30,6 +30,7 @@ SECTIONS = {
     12: "十二、列強懲戒（可重複抽取）",
     13: "十三、經濟事件（可重複抽取）",
     14: "十四、治安事件（可重複抽取）",
+    15: "十五、NPC 行動（一次性，抽到一次即不再出現）",
 }
 
 CATEGORY = {
@@ -39,6 +40,11 @@ CATEGORY = {
     "npc_or_other_force": "其他勢力",
     "security": "治安事件",
 }
+
+NPC_FACTION_NAMES = {"Y": "晉系", "G": "西北軍", "M": "馬家軍", "H": "湘軍",
+                     "C": "川軍", "D": "滇系", "Q": "黔軍"}
+
+FACTION_NAMES = {"F": "奉系", "W": "直系", "S": "五省聯軍", "N": "國民革命軍"}
 
 POWER = {"uk": "英", "us": "美", "fr": "法", "de": "德",
          "jp": "日", "su": "蘇", "it": "義"}
@@ -136,6 +142,30 @@ def entry_condition_text(card: dict) -> str:
     if ports_in_waters:
         bits.append(f'控制至少 {ports_in_waters.get("count", 1)} 座'
                     + "或".join(ports_in_waters.get("waters") or []) + "港市")
+    # NPC 觸發條件（十五、NPC 行動）：「某某將領仍屬某陣營」「某城仍歸某勢力」。
+    for rule in (ec.get("npc_requires") or []):
+        if rule.get("general") and rule.get("still_with"):
+            bits.append(f'{rule["general"]}仍屬{NPC_FACTION_NAMES.get(rule["still_with"], rule["still_with"])}')
+        elif rule.get("faction") and rule.get("at_least_one_general"):
+            bits.append(f'{NPC_FACTION_NAMES.get(rule["faction"], rule["faction"])}至少仍有一位將領')
+        elif rule.get("faction") and rule.get("at_least_one_other_general"):
+            bits.append(f'{NPC_FACTION_NAMES.get(rule["faction"], rule["faction"])}至少仍有另一位將領')
+        elif rule.get("faction") and rule.get("min_battalions") is not None:
+            bits.append(f'{NPC_FACTION_NAMES.get(rule["faction"], rule["faction"])}'
+                        f'至少仍有 {rule["min_battalions"]} 營兵力')
+        elif rule.get("city") and rule.get("held_by_faction"):
+            bits.append(f'{CITY_NAMES.get(rule["city"], rule["city"])}仍歸'
+                        f'{NPC_FACTION_NAMES.get(rule["held_by_faction"], rule["held_by_faction"])}佔領')
+        else:
+            raise ValueError(f'npc_requires 無法轉成文字：{rule}（{card["ref"]}）')
+    if ec.get("at_war_with"):
+        bits.append(f'正對{FACTION_NAMES.get(ec["at_war_with"], ec["at_war_with"])}宣戰')
+    if ec.get("requires_garrison_in_city"):
+        city = ec["requires_garrison_in_city"]
+        bits.append(f'{CITY_NAMES.get(city, city)}有軍隊駐守')
+    rank = ec.get("player_rank") or {}
+    if rank:
+        bits.append("當前總戰力最高的玩家")
     if not bits:
         # 條件寫了卻一個字都印不出來，代表這裡漏認一個鍵——那正是 12.49 的舊病。
         raise ValueError(f'entry_condition 無法轉成文字：{sorted(ec)}（{card["ref"]}）')

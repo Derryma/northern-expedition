@@ -126,6 +126,10 @@ let skippedQuellPrompt = null;
 let backendLoyalty = {};
 // 艦隊「還能撐幾輪」由後端 navy_outlook 算好送來；前端不再自己跑退卻線公式。
 let backendNavyOutlook = {};
+// 鐵路能不能做運輸（搶修中／路權被封／列強關係不到友好門檻）由後端
+// railway_access 算好送來。門檻只有 foreign_powers.json 的
+// friendly_at_or_above 那一個數字，前端不留第二份，也不自己比較關係。
+let backendRailwayAccess = null;
 let cityEconomySync = Promise.resolve();
 const jailedGenerals = { F: [], W: [], S: [], N: [] };
 const recruitedGenerals = { F: [], W: [], S: [], N: [] };
@@ -1420,6 +1424,7 @@ async function pullSharedState() {
   sharedEngineHash = engineHash;
   if (remote.loyalty) backendLoyalty = remote.loyalty;
   if (remote.navy_outlook) backendNavyOutlook = remote.navy_outlook;
+  if (remote.railway_access) backendRailwayAccess = remote.railway_access;
   if (remote.tactical && remote.revision !== sharedRevision) {
     applyTacticalSnapshot(remote.tactical);
     sharedRevision = remote.revision;
@@ -1450,6 +1455,7 @@ async function publishSharedState(force = false) {
     const outlookChanged = result.navy_outlook
       && JSON.stringify(result.navy_outlook) !== JSON.stringify(backendNavyOutlook);
     if (result.navy_outlook) backendNavyOutlook = result.navy_outlook;
+    if (result.railway_access) backendRailwayAccess = result.railway_access;
     state = result.engine_state;
     syncStrategicCitiesFromState();
     sharedEngineHash = JSON.stringify(state);
@@ -3276,14 +3282,27 @@ function renderForeignPanel() {
       { key: "fr", name: "法國", territories: "法屬印度支那" },
       { key: "us", name: "美國", territories: "太平洋外交與商業利益" },
     ];
+    // 友好／敵對的切點與 perk 卡、優惠借貸、列強鐵路是同一組，由後端隨
+    // railway_access 送來（源頭是 foreign_powers.json）。這裡不再自己寫死。
+    const friendlyAt = backendRailwayAccess?.friendly_threshold;
+    const hostileAt = backendRailwayAccess?.hostile_threshold;
+    const bandOf = (value) => {
+      if (friendlyAt === undefined || hostileAt === undefined) return "";
+      if (value >= friendlyAt) return "friendly";
+      if (value <= hostileAt) return "hostile";
+      return "neutral";
+    };
     return tabs + `<div class="relations-list">${powers.map((power) => {
       const value = relations[power.key] ?? 0;
-      const relationText = value >= 6 ? "友好" : value <= -4 ? "敵對" : "中立";
+      const band = bandOf(value);
+      const relationText = band === "friendly" ? "友好"
+        : band === "hostile" ? "敵對"
+        : band === "neutral" ? "中立" : "—";
       return `
         <div class="relation-row">
           ${flagMarkup(power.key, "flag-chip relation-flag")}
           <div><b>${power.name}</b><small>${power.territories}</small></div>
-          <span class="power-relation ${value >= 6 ? "good" : value <= -4 ? "poor" : ""}">
+          <span class="power-relation ${band === "friendly" ? "good" : band === "hostile" ? "poor" : ""}">
             ${relationText} ${value > 0 ? "+" : ""}${value}
           </span>
         </div>
@@ -5703,9 +5722,13 @@ function selectTile(cell) {
 // 否則玩家會以為點得動卻走不了三格。
 function railwayStatusLabel(name) {
   if (disabledRailways().has(name)) return `${name}（搶修中）`;
-  const power = FOREIGN_RAILWAY_POWERS[name];
-  if (power && foreignRailwayRelation(name) < FOREIGN_RAILWAY_RELATION_MIN) {
-    return `${name}（對${POWER_NAME[power] || power}關係未達 ${FOREIGN_RAILWAY_RELATION_MIN}，僅可通行）`;
+  if (bannedRailways().has(name)) return `${name}（路權遭封鎖，僅可通行）`;
+  if (lockedForeignRailways().has(name)) {
+    const power = foreignRailwayPower(name);
+    const threshold = foreignRailwayThreshold();
+    const who = power ? `對${POWER_NAME[power] || power}` : "對該國";
+    const gate = threshold === null ? "關係未達友好" : `關係未達 ${threshold}`;
+    return `${name}（${who}${gate}，僅可通行）`;
   }
   return name;
 }
@@ -7053,49 +7076,54 @@ function undoLastNavyOrder() {
   publishSharedState(true).catch((error) => console.error("Undo navy publish failed:", error));
 }
 
-// ---- 崩鐵玩家：搶修中的鐵路 ----------------------------------------------
+// ---- 鐵路可用性：判定在後端，這裡只讀結果 --------------------------------
+// 三類擋路的原因（崩鐵搶修中、交涉破裂被封路權、列強關係不到友好門檻）全部由
+// card_engine.railway_access() 算好隨 shared-state 送來。前端不留門檻數字、
+// 不留「哪條線是哪國的」對照表，也不自己比較關係——那些一旦寫兩份就會對不上。
 
-function disabledRailways() {
-  return new Set((state?.railway_effects || [])
-    .filter((effect) => Number(effect.remaining_turns || 0) > 0)
-    .map((effect) => effect.railway));
+// 後端還沒回話時的保底：列強線一律當成不能用。寧可少走三格，也不要讓玩家
+// 靠「自己記得關係沒到」來遵守規則。
+function foreignRailwayNamesFromMap() {
+  return (bootstrap?.strategic_map?.railroads || [])
+    .filter((railroad) => railroad.foreign)
+    .map((railroad) => railroad.name);
 }
 
-// ---- 列強鐵路：關係不到就搭不上車 ---------------------------------------
-// 南滿是日本的、中東是蘇聯的、滇越是法國的。關係要到友好門檻（6）人家才讓你
-// 用它調兵；沒到門檻或線路正在搶修，沿線地格照樣走得過去，只是不能一次三格。
-const FOREIGN_RAILWAY_POWERS = {
-  南滿鐵路: "jp",
-  中東鐵路: "su",
-  滇越鐵路: "fr",
-};
-const FOREIGN_RAILWAY_RELATION_MIN = 6;
+function railwayAccessFor(faction = currentPlayer) {
+  const access = backendRailwayAccess?.by_player?.[faction];
+  if (access) return access;
+  console.error("shared-state 少了 railway_access，列強鐵路一律當成不可用");
+  const locked = foreignRailwayNamesFromMap();
+  return { locked, banned: [], unusable: locked, relations: {} };
+}
 
-function foreignRailwayRelation(railway, faction = currentPlayer) {
-  const power = FOREIGN_RAILWAY_POWERS[railway];
-  if (!power) return null;
-  return Number(state?.players?.[faction]?.foreign_relations?.[power] ?? 0);
+function foreignRailwayThreshold() {
+  return backendRailwayAccess?.friendly_threshold ?? null;
+}
+
+function foreignRailwayPower(name) {
+  return backendRailwayAccess?.foreign_railways?.[name] || null;
+}
+
+function disabledRailways() {
+  return new Set(backendRailwayAccess?.disabled
+    || (state?.railway_effects || [])
+      .filter((effect) => Number(effect.remaining_turns || 0) > 0)
+      .map((effect) => effect.railway));
 }
 
 function lockedForeignRailways(faction = currentPlayer) {
-  return new Set(Object.keys(FOREIGN_RAILWAY_POWERS)
-    .filter((railway) => foreignRailwayRelation(railway, faction) < FOREIGN_RAILWAY_RELATION_MIN));
+  return new Set(railwayAccessFor(faction).locked || []);
 }
 
 // 交涉破裂的路權封鎖：只罰拒絕的那一家，別人照走（與全場停運的崩鐵不同）。
 function bannedRailways(faction = currentPlayer) {
-  const turn = Number(state?.turn || 0);
-  return new Set((state?.railway_bans || [])
-    .filter((entry) => entry.player === faction && turn < Number(entry.until_turn || 0))
-    .map((entry) => entry.railway));
+  return new Set(railwayAccessFor(faction).banned || []);
 }
 
 // 鐵路運輸走不了的線：搶修中的 ∪ 關係不到的列強線 ∪ 自己被封鎖路權的線。
 function unusableRailways(faction = currentPlayer) {
-  const blocked = disabledRailways();
-  for (const railway of lockedForeignRailways(faction)) blocked.add(railway);
-  for (const railway of bannedRailways(faction)) blocked.add(railway);
-  return blocked;
+  return new Set(railwayAccessFor(faction).unusable || []);
 }
 
 // 一段鐵路連線只有在兩端共用一條「用得到」的鐵路時才算通。
@@ -9307,6 +9335,10 @@ window.__neDebug = {
   riverStepAllowed,
   cellUsableAsRural,
   cellUsableForForcedMarch,
+  // 鐵路運輸真正的判定入口：自動化檢查要能證明「關係不到就真的排不出路線」，
+  // 而不是只證明清單裡有那條線的名字。
+  railwayPath,
+  railLinkUsable,
   renderLoansMarkup,
   applyFrontendEventEffects,
   // 水患／決口的城市級凍結要能從測試夾具問得到，否則只能靠肉眼點地圖驗。
@@ -9347,8 +9379,10 @@ window.__neDebug = {
   hasPermanentForcedMarch,
   unusableRailways,
   lockedForeignRailways,
-  FOREIGN_RAILWAY_POWERS,
-  FOREIGN_RAILWAY_RELATION_MIN,
+  bannedRailways,
+  disabledRailways,
+  railwayStatusLabel,
+  get railwayAccess() { return backendRailwayAccess; },
   armyCanBeCaptured,
   annihilateArmy,
   applyGeneralDeath,
