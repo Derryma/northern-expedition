@@ -274,7 +274,7 @@
     },
     "xining_garrison": {
       "name": "西寧鎮守",
-      "background": "馬麒。青海地方的實際統治者，部隊根植鄉里；馬福祥或馬鴻賓同場時，兩人的部隊也一併受惠。",
+      "background": "馬麒。青海地方的實際統治者，部隊根植鄉里；馬福祥或馬鴻逵同場時，兩人的部隊也一併受惠。",
       "modifiers": [
         {
           "stat": "hp",
@@ -300,7 +300,7 @@
     },
     "valiant_horse": {
       "name": "驍騎",
-      "background": "馬鴻賓。馬家軍騎兵的骨幹，衝擊迅猛。",
+      "background": "馬鴻逵。馬家軍騎兵的骨幹，衝擊迅猛。",
       "modifiers": [
         {
           "stat": "attack",

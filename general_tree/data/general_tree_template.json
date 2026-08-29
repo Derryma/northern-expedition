@@ -1,10 +1,11 @@
 {
   "version": "experimental-0.1",
+  "note": "建樹規則的測試夾具，不是對局資料。編制刻意與四家真正的樹不同（唐生智掛蔣介石、李宗仁掛白崇禧，並多一位薛岳），用來驗證三級指揮鏈與部屬名額的規則。這份檔不會送進 bootstrap，/api/general-tree 也取不到它；合併將領時必須跳過，否則會蓋掉 playtest 與湘軍的真正設定。",
   "great_general_id": "chiang_kai_shek",
   "generals": {
     "chiang_kai_shek": {
       "id": "chiang_kai_shek",
-      "name": "Chiang Kai-shek",
+      "name": "蔣介石",
       "role": "great_general",
       "faction": "中央軍",
       "core_faction": true,
@@ -12,7 +13,9 @@
       "loyalty_exempt": true,
       "body_guard_level": null,
       "command_cap": 80,
-      "traits": ["shock_column_leader"],
+      "traits": [
+        "shock_column_leader"
+      ],
       "skills": [],
       "units": {
         "infantry": 18,
@@ -22,12 +25,16 @@
       },
       "parent_id": null,
       "subordinate_slots": 3,
-      "subordinates": ["he_yingqin", "bai_chongxi", "tang_shengzhi"],
+      "subordinates": [
+        "he_yingqin",
+        "bai_chongxi",
+        "tang_shengzhi"
+      ],
       "status": "active"
     },
     "he_yingqin": {
       "id": "he_yingqin",
-      "name": "He Yingqin",
+      "name": "何應欽",
       "role": "lieutenant_general",
       "faction": "中央軍",
       "core_faction": true,
@@ -36,7 +43,9 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 42,
-      "traits": ["steady_drillmaster"],
+      "traits": [
+        "steady_drillmaster"
+      ],
       "skills": [],
       "units": {
         "infantry": 14,
@@ -46,12 +55,14 @@
       },
       "parent_id": "chiang_kai_shek",
       "subordinate_slots": 2,
-      "subordinates": ["xue_yue"],
+      "subordinates": [
+        "xue_yue"
+      ],
       "status": "active"
     },
     "bai_chongxi": {
       "id": "bai_chongxi",
-      "name": "Bai Chongxi",
+      "name": "白崇禧",
       "role": "lieutenant_general",
       "faction": "桂系",
       "core_faction": false,
@@ -59,7 +70,9 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 40,
-      "traits": ["fire_support_savant"],
+      "traits": [
+        "fire_support_savant"
+      ],
       "skills": [],
       "units": {
         "infantry": 12,
@@ -69,12 +82,14 @@
       },
       "parent_id": "chiang_kai_shek",
       "subordinate_slots": 2,
-      "subordinates": ["li_zongren"],
+      "subordinates": [
+        "li_zongren"
+      ],
       "status": "active"
     },
     "tang_shengzhi": {
       "id": "tang_shengzhi",
-      "name": "Tang Shengzhi",
+      "name": "唐生智",
       "role": "lieutenant_general",
       "faction": "湘系",
       "core_faction": false,
@@ -82,7 +97,9 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 34,
-      "traits": ["local_supply_boss"],
+      "traits": [
+        "local_supply_boss"
+      ],
       "skills": [],
       "units": {
         "infantry": 10,
@@ -97,7 +114,7 @@
     },
     "xue_yue": {
       "id": "xue_yue",
-      "name": "Xue Yue",
+      "name": "薛岳",
       "role": "major_general",
       "faction": "中央軍",
       "core_faction": true,
@@ -105,8 +122,12 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 20,
-      "traits": ["layered_defender"],
-      "skills": ["fortress_builder"],
+      "traits": [
+        "layered_defender"
+      ],
+      "skills": [
+        "fortress_builder"
+      ],
       "units": {
         "infantry": 8,
         "cavalry": 0,
@@ -120,7 +141,7 @@
     },
     "li_zongren": {
       "id": "li_zongren",
-      "name": "Li Zongren",
+      "name": "李宗仁",
       "role": "major_general",
       "faction": "桂系",
       "core_faction": false,
@@ -128,7 +149,9 @@
       "loyalty_exempt": false,
       "body_guard_level": null,
       "command_cap": 24,
-      "traits": ["cavalry_screen_commander"],
+      "traits": [
+        "cavalry_screen_commander"
+      ],
       "skills": [],
       "units": {
         "infantry": 9,

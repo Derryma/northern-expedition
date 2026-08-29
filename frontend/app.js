@@ -57,7 +57,7 @@ const PORTRAIT_BY_ID = {
   xu_yongchang: "/assets/portraits/徐永昌.jpg",
   yang_sen: "/assets/portraits/楊森.jpg",
   zhao_hengti: "/assets/portraits/趙恒惕.jpg",
-  ma_hongbin: "/assets/portraits/馬鴻賓.jpg",
+  ma_hongkui: "/assets/portraits/馬鴻逵.jpg",
   // 在野將領
   duan_qirui: "/assets/portraits/段祺瑞.jpg",
   chen_jiongming: "/assets/portraits/陳炯明.jpg",
@@ -382,6 +382,28 @@ function scaleNavyHp(navy, multiplier) {
   return lost;
 }
 
+// 移防到某座城周邊 N 格內的空地格。挑哪一格是地圖層的事（後端沒有座標），
+// 但「搬到哪座城、幾格內」是後端說了算——這裡不自己決定目的地。
+function relocationCellNear(city, army, within = 1) {
+  const home = Object.values(cells).find((cell) => cell.city?.id === city.id);
+  if (!home) return null;
+  let ring = [home];
+  const seen = new Set([home.key]);
+  for (let step = 0; step < Math.max(1, within); step += 1) {
+    const next = [];
+    for (const cell of ring) {
+      for (const neighbour of cellNeighbors(cell)) {
+        if (seen.has(neighbour.key)) continue;
+        seen.add(neighbour.key);
+        next.push(neighbour);
+      }
+    }
+    ring = next;
+  }
+  return ring.find((cell) => cell.land && !cell.city && !cell.power
+    && !allArmies().some((other) => other.id !== army.id && other.cellKey === cell.key)) || null;
+}
+
 // 把城內駐軍趕到鄰近的鄉野地格：不進城、不進租借地、不疊在別支部隊上。
 function evictArmyFromCity(army) {
   const cell = cells[army?.cellKey];
@@ -491,6 +513,26 @@ function setNavyHpFromBaseline(navy, chain, remaining) {
 // 最後通牒：回報每家「哪些指定城市的周邊一格有我方部隊」。
 // 旅順、香港、海參崴是列強城市（住在 map.js 的 FOREIGN_CITIES），
 // 通牒指定的正是它們，所以兩種城市都要算進去。
+// 哪些城市站著哪一方的多少營兵。這是**事實**不是規則——地圖與部隊位置本來就
+// 住在前端，後端只有編制沒有座標。規則（「南京有軍隊駐守才發南京事件」）在後端判。
+// 形狀與 ultimatumGarrisons() 同性質：前端報事實，後端套規則。
+function cityGarrisonReport() {
+  const out = {};
+  for (const army of allArmies()) {
+    if (["jailed", "killed", "destroyed"].includes(army.status)) continue;
+    const cell = cells[army.cellKey];
+    const city = cell?.city;
+    if (!city) continue;
+    const faction = factionForArmy(army);
+    const battalions = Object.values(armyUnits(army))
+      .reduce((sum, count) => sum + Number(count || 0), 0);
+    if (battalions <= 0) continue;
+    const bucket = out[city.id] || (out[city.id] = {});
+    bucket[faction] = (bucket[faction] || 0) + battalions;
+  }
+  return out;
+}
+
 function ultimatumGarrisons() {
   const adjacency = new Map();
   for (const cell of Object.values(cells)) {
@@ -549,6 +591,81 @@ const PENDING_EFFECT_HANDLERS = {
     const sign = amount > 0 ? `+${amount}` : `${amount}`;
     const names = picked.map((id) => generalById(id)?.name || id).join("、");
     return [`${factionLabel(faction, faction === currentPlayer)}${names} 忠誠 ${sign}`];
+  },
+
+  // NPC 部隊增減兵（15.3 五原誓師等）。後端已經算完加減、也箝好戰力上限，
+  // 送過來的 units 是**絕對編制**——這裡照抄，不在前端再加一次。
+  npc_army_units: (_faction, effect) => {
+    const notes = [];
+    for (const entry of effect.armies || []) {
+      const army = armyById(entry.armyId);
+      if (!army) continue;
+      army.units = { ...entry.units };
+      const changes = Object.entries(entry.changed || {})
+        .map(([unit, amount]) => `${amount > 0 ? "+" : ""}${amount} ${UNIT_META[unit]?.name || unit}`);
+      if (changes.length) {
+        notes.push(`${FACTIONS[entry.faction]?.shortName || entry.faction} ${army.designator}：${changes.join("、")}`);
+      }
+    }
+    return notes;
+  },
+
+  // NPC 將領換陣營（15.5 馬福祥加入西北軍）。換旗是後端算好的；
+  // 移防只有這裡做得到——後端沒有座標，它只說「搬到哪座城周邊幾格」。
+  npc_general_transferred: (_faction, effect) => {
+    const notes = [];
+    for (const entry of effect.armies || []) {
+      const army = armyById(entry.armyId);
+      if (!army) continue;
+      army.faction = effect.to_faction;
+      generalOwners[effect.general_id] = effect.to_faction;
+      const spec = effect.relocate;
+      let moved = "";
+      if (spec) {
+        const city = (bootstrap.strategic_map?.cities || [])
+          .find((item) => item.id === spec.near_city);
+        const target = city && relocationCellNear(city, army, Number(spec.within || 1));
+        if (target) {
+          moveArmyToCell(army, target);
+          moved = `，移防${city.name}周邊`;
+        } else if (city) {
+          moved = `，但${city.name}周邊沒有空地格可以進駐`;
+        }
+      }
+      notes.push(`${effect.general}改投${FACTIONS[effect.to_faction]?.shortName || effect.to_faction}${moved}`);
+    }
+    return notes;
+  },
+
+  // 整個 NPC 陣營歸附玩家（15.13 馬家軍歸附）：部隊原地換旗，地盤一併轉屬。
+  npc_faction_absorbed: (_faction, effect) => {
+    for (const entry of effect.armies || []) {
+      const army = armyById(entry.armyId);
+      if (!army) continue;
+      army.faction = effect.owner;
+      if (entry.generalId) generalOwners[entry.generalId] = effect.owner;
+    }
+    const owner = FACTIONS[effect.owner]?.shortName || effect.owner;
+    return [`${FACTIONS[effect.faction]?.shortName || effect.faction}全軍歸附${owner}，`
+      + `${(effect.cities || []).length} 座城一併轉屬`];
+  },
+
+  // NPC 併 NPC（15.14／15.27 黔軍遭吞併）：被併的部隊清空退場，
+  // 兵併進吞併者那一支——編制是後端算好的絕對值，這裡照抄。
+  npc_faction_merged: (_faction, effect) => {
+    const target = armyById(effect.into_army_id);
+    if (target) target.units = { ...effect.units };
+    for (const entry of effect.absorbed || []) {
+      const army = armyById(entry.armyId);
+      if (!army) continue;
+      // 逐鍵歸零，不要寫成 { infantry: 0, ... } 的字面量——那形狀會被
+      // UnitForcePointsSourceTests 誤認成前端自己寫死的戰力點表。
+      army.units = Object.fromEntries(Object.keys(UNIT_META).map((unit) => [unit, 0]));
+      army.status = "merged";
+    }
+    return [`${FACTIONS[effect.from_faction]?.shortName || effect.from_faction}`
+      + `全軍併入${generalById(effect.into_general_id)?.name || effect.into_general_id}部，`
+      + `${(effect.cities || []).length} 座城轉屬`];
   },
 
   loyalty_all: (faction, effect) => {
@@ -706,9 +823,9 @@ const TRAIT_DESCRIPTIONS = {
   shanxi_king: "閻錫山的山西體系。所部全體生命 +10%；傅作義或徐永昌同場作為友軍時，他們的部隊生命也 +10%。",
   iron_bulwark: "傅作義的守勢經營。陣地紮實，砲兵配置得宜。",
   chief_of_staff: "徐永昌的參謀作業。作戰計畫周密，少犯無謂損失。",
-  xining_garrison: "馬麒的青海根基。所部全體生命 +10%；馬福祥或馬鴻賓同場作為友軍時，他們的部隊生命也 +10%。",
+  xining_garrison: "馬麒的青海根基。所部全體生命 +10%；馬福祥或馬鴻逵同場作為友軍時，他們的部隊生命也 +10%。",
   desert_guard: "馬福祥的沙漠行軍經驗。步騎兵在惡地中仍能保存實力。",
-  valiant_horse: "馬鴻賓的騎兵衝擊。",
+  valiant_horse: "馬鴻逵的騎兵衝擊。",
   marshal_zhang: "張作霖的東北基業。所部全體生命 +10%；張學良同場作為友軍時，少帥的部隊生命也 +10%。",
   young_marshal: "張學良的新式軍事教育。善於運用騎兵與砲兵的協同機動。",
   white_russian_mercenaries: "張宗昌收容的白俄軍官與士兵。所屬陣營對蘇關係達 6 以上時本技能失效，且張宗昌忠誠 -5。",
@@ -2483,7 +2600,7 @@ function renderGeneralsPanel() {
   html += `
     <section class="exile-roster">
       <h3>在野將領</h3>
-      <p class="exile-note">下野賦閒、不屬於任何陣營，開局不在場上。打出〈在野名將投效〉並付其身價全額外加 $${EXILE_RECRUIT_SURCHARGE} 出山附加費，即可請人出山，帶著自帶部隊在大帥所在地現身。</p>
+      <p class="exile-note">下野賦閒、不屬於任何陣營，開局不在場上。打出〈在野名將投效〉並付其身價全額外加 $${exileRecruitSurcharge()} 出山附加費，即可請人出山，帶著自帶部隊在大帥所在地現身。</p>
       ${exiles.length ? exiles.map(({ general, recruitedBy, forbidden, price }) => `
         <div class="exile-general${recruitedBy ? " recruited" : ""}${forbidden ? " forbidden" : ""}">
           ${renderGeneralTreeCard(general, { includeCaptured: true })}
@@ -2494,7 +2611,7 @@ function renderGeneralsPanel() {
               ? `已由 ${FACTIONS[recruitedBy]?.name || recruitedBy} 延攬出山`
               : forbidden
                 ? `身價 ${general.recruit_value} · 不願投靠${FACTIONS[currentPlayer]?.name || currentPlayer}`
-                : `身價 ${general.recruit_value} · 延攬費 $${price}（全額 + 出山附加費 $${EXILE_RECRUIT_SURCHARGE}）`}</small>
+                : `身價 ${general.recruit_value} · 延攬費 $${price}（全額 + 出山附加費 $${exileRecruitSurcharge()}）`}</small>
           </div>
         </div>`).join("") : '<div class="empty-state compact">在野將領池已空</div>'}
     </section>`;
@@ -3580,7 +3697,20 @@ function exilePool() {
 }
 
 // 延攬費 = 身價全額 + 出山附加費。附加費是請人重新拉隊伍的開辦成本。
-const EXILE_RECRUIT_SURCHARGE = 15;
+// 這個數字是規則，住在後端；前端只讀不抄——名冊上印的價目與實際扣款
+// 必須是同一個來源，否則改了後端而畫面照舊，玩家會被價目表騙。
+function exileRecruitRules() {
+  return bootstrap?.exile_recruit || {};
+}
+function exileRecruitSurcharge() {
+  return Number(exileRecruitRules().surcharge ?? 0);
+}
+function exileRecruitPrice(general) {
+  const published = exileRecruitRules().prices?.[general?.id];
+  return published != null
+    ? Number(published)
+    : Number(general?.recruit_value || 0) + exileRecruitSurcharge();
+}
 
 // 有些在野將領有舊怨，不肯投靠特定陣營（盧永祥不投五省聯軍、陳炯明不投國民革命軍）。
 function exileForbiddenFor(general, faction = currentPlayer) {
@@ -3593,7 +3723,7 @@ function exilePoolEntries() {
     general,
     recruitedBy: taken[general.id] || null,
     forbidden: exileForbiddenFor(general),
-    price: Number(general.recruit_value || 0) + EXILE_RECRUIT_SURCHARGE,
+    price: exileRecruitPrice(general),
   }));
 }
 
@@ -3631,8 +3761,24 @@ function applyExileRecruit(outcome) {
   const list = ARMY_POSITIONS[owner] || (ARMY_POSITIONS[owner] = []);
   const anchorArmy = list.find((army) => army.generalId === greatId) || list[0];
   const occupied = new Set(allArmies(true).map((army) => army.cellKey).filter(Boolean));
-  const cell = anchorArmy ? cellAt(anchorArmy.lon, anchorArmy.lat, owner, occupied) : null;
-  if (!cell) return;
+  // 找不到空格時不能就這樣 return——上面已經把人塞進將領樹、後端也已經扣了錢，
+  // 那會留下一位「有將無兵」的將領，而且畫面上完全看不出哪裡出了錯。
+  // 退而求其次：跟大帥同格站著，並如實告訴玩家。
+  let cell = anchorArmy ? cellAt(anchorArmy.lon, anchorArmy.lat, owner, occupied) : null;
+  let stacked = false;
+  if (!cell && anchorArmy) {
+    cell = cells[anchorArmy.cellKey]
+      || cellAt(anchorArmy.lon, anchorArmy.lat, owner, new Set());
+    stacked = !!cell;
+  }
+  if (!cell) {
+    uiNotice = `${general.name}已出山，但大帥周圍找不到落腳處，`
+      + `部隊尚未進入地圖——請先騰出位置再重新整理。`;
+    return;
+  }
+  if (stacked) {
+    uiNotice = `${general.name}出山，因大帥周圍無空格，暫與大帥同格駐紮。`;
+  }
   const index = list.length + 1;
   list.push({
     id: `${owner}-${index}`,
@@ -9241,6 +9387,7 @@ async function advanceToNextTurn(force = false) {
       contested_provinces: contestedProvinces(),
       fallen_marshals: fallenMarshals(),
       ultimatum_garrisons: ultimatumGarrisons(),
+      city_garrison_report: cityGarrisonReport(),
       marshal_ids: factionMarshalIds(),
       faction_trait_holders: factionTraitHolders(),
     });
@@ -9345,6 +9492,11 @@ window.__neDebug = {
   movementFreezeForArmy,
   punishmentLockForArmy,
   factionTraitHolders,
+  cityGarrisonReport,
+  // 批次四的三個交辦處理器要能從自動化檢查直接叫——
+  // 它們處理的是地盤與移防，光看畫面驗不出「格子挑對了沒」。
+  pendingEffectHandlers: () => PENDING_EFFECT_HANDLERS,
+  relocationCellNear,
   tacticalSnapshot,
   resolveBattleRound,
   armyUnits,
@@ -9368,6 +9520,16 @@ window.__neDebug = {
   forcedPeaceEffect,
   withdrawBattlesForForcedPeace,
   fieldHospitalWindowActive,
+  // 在野將領：自動化檢查要能走完「請出山」的真實路徑——
+  // 讀在野池、打後端、把人放進將領樹與地圖，而不是只看名冊有沒有渲染。
+  exilePool,
+  exilePoolEntries,
+  exileForbiddenFor,
+  applyExileRecruit,
+  getGeneralPortrait,
+  getGeneralTrees: () => generalTrees,
+  getCurrentPlayer: () => currentPlayer,
+  api,
   armyRevealedByIntel,
   provinceForArmy,
   hasFieldHospital,

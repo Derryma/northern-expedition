@@ -272,6 +272,11 @@ class GameEngine:
         self.punishments = PunishmentBook(self)
         self.ultimatums = UltimatumBook(self)
         self.concession_controls = ConcessionControlBook(self)
+        # 抽卡時要判「閻錫山還在不在晉系」，而將領與編制住在 SHARED_TACTICAL_STATE。
+        # 伺服器在 next_turn 時把快照交進來；沒有快照時 NPC 條件一律判為不成立
+        # （見 _npc_requires_met），寧可卡不出現，也不要發一張人早就不在的報紙。
+        self._tactical: Optional[Dict[str, Any]] = None
+        self._city_garrisons: Dict[str, Dict[str, int]] = {}
         self.state = self.new_game(seed=seed)
 
     def new_game(self, *, players: Iterable[str] = DEFAULT_PLAYERS, seed: Optional[int] = None) -> Dict[str, Any]:
@@ -368,6 +373,12 @@ class GameEngine:
             "city_output_effects": [],
             # 崩鐵玩家癱瘓中的鐵路。
             "railway_effects": [],
+            # NPC 陣營的限時戰鬥修正。玩家的掛在 player["timed_effects"]，
+            # 但 NPC 不在 state["players"] 裡，所以另設一份全域清單。
+            "npc_combat_effects": [],
+            # 已經退出地圖的 NPC 陣營（被併吞或整批歸附）。退出之後它的將領
+            # 一律視為不在場，點名它的卡片就再也不會出現。
+            "retired_npc_factions": [],
             # 大港開炸癱瘓中的港口。
             "port_effects": [],
             # 政府內閣：五張單一玩家卡各自的持有者。同一張全場只能有一個人在檯面上。
@@ -551,6 +562,14 @@ class GameEngine:
             "features": FEATURES,
             # 工事的成本與工期是規則，前端只拿來顯示按鈕上的數字。
             "engineering": self.engineering_rules(),
+            # 出山附加費同理：前端要在名冊上印延攬費，但那個數字是規則，
+            # 只能有一份。前端自己抄一份的話，改了這裡而畫面照舊，玩家看到的價目
+            # 就會與實際扣款不符。
+            "exile_recruit": {
+                "surcharge": EXILE_RECRUIT_SURCHARGE,
+                "prices": {gid: int(g.get("recruit_value", 0)) + EXILE_RECRUIT_SURCHARGE
+                           for gid, g in self.data["generals_in_exile"]["generals"].items()},
+            },
             "cards": {
                 "function": self.data["function_cards"]["cards"],
                 "event": (self.data.get("event_cards") or {}).get("cards", []),
@@ -568,9 +587,14 @@ class GameEngine:
         contested_provinces: Optional[Iterable[str]] = None,
         fallen_marshals: Optional[Iterable[str]] = None,
         ultimatum_garrisons: Optional[Dict[str, list]] = None,
+        city_garrison_report: Optional[Dict[str, Dict[str, int]]] = None,
         marshal_ids: Optional[Dict[str, str]] = None,
         faction_trait_holders: Optional[Dict[str, Iterable[str]]] = None,
+        tactical: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        # 這一輪的抽卡要用它判 NPC 條件。傳 None 就是「這一輪沒有快照」，
+        # 於是所有帶 NPC 條件的卡都抽不到——這是刻意的保守作法。
+        self._tactical = tactical if isinstance(tactical, dict) else None
         if active_player is not None:
             self._player(active_player)
         blocked_players = [
@@ -596,6 +620,7 @@ class GameEngine:
         self._update_red_army_uprisings(city_garrisons or {})
         # 最後通牒：前端回報「哪些指定城市的周邊一格有我方部隊」，這裡結案。
         self.ultimatums.report_garrisons(ultimatum_garrisons or {})
+        self._city_garrisons = dict(city_garrison_report or {})
         # 引擎不持有將領資料，大帥是誰只有前端知道；暗殺類事件要靠這份名單擲骰。
         if marshal_ids:
             self.state["marshal_ids"] = {str(k): str(v) for k, v in marshal_ids.items() if v}
@@ -917,6 +942,7 @@ class GameEngine:
             payload["timed_effects"] = active_effects
         for player in self.state["players"]:
             self._expire_relation_locked_effects(player)
+        self._tick_npc_combat_effects()
         self._tick_railway_effects()
         self._tick_port_effects()
         active_city_effects = []
@@ -1313,12 +1339,43 @@ class GameEngine:
                    for unit, points in UNIT_FORCE_POINTS.items())
 
     @classmethod
-    def _clamp_to_force_cap(cls, units: Dict[str, Any]) -> Dict[str, int]:
-        """超過單一部隊上限就從最貴的兵種開始裁，直到回到上限以內。"""
+    def _trim_to_force(cls, units: Dict[str, Any], cap: int) -> Dict[str, int]:
+        """裁到戰力點不超過 cap，**從最貴的兵種開始裁**。
+
+        「最貴的先裁」是既有規則（前端 `clampUnitsToForceCap()` 一直是這樣做的，
+        12.x 列強行動那批的「部隊戰力一次性 −40%」就走這條），這裡只是把它搬到後端。
+        """
         out = {unit: max(0, int(units.get(unit) or 0)) for unit in UNIT_FORCE_POINTS}
         order = sorted(UNIT_FORCE_POINTS, key=lambda unit: -UNIT_FORCE_POINTS[unit])
-        while cls._force_of(out) > ARMY_FORCE_CAP:
+        while cls._force_of(out) > max(0, int(cap)):
             unit = next((u for u in order if out[u] > 0), None)
+            if unit is None:
+                break
+            out[unit] -= 1
+        return out
+
+    @classmethod
+    def _clamp_to_force_cap(cls, units: Dict[str, Any]) -> Dict[str, int]:
+        """超過單一部隊上限就從最貴的兵種開始裁，直到回到上限以內。"""
+        return cls._trim_to_force(units, ARMY_FORCE_CAP)
+
+    @classmethod
+    def _cut_down_to_force(cls, units: Dict[str, Any], target: int) -> Dict[str, int]:
+        """裁到戰力點**剛好等於** target，一樣從最貴的兵種先裁。
+
+        和 `_trim_to_force` 的差別是「不裁過頭」。那個函式的工作是把超編的部隊
+        壓回上限以內，裁多了無所謂；這裡的工作是命中一個指定的戰力值——
+        楊森 13 點打九折是 11 點，先砍掉那一營砲兵會直接掉到 9 點，
+        「戰力 −10%」實際變成 −31%。所以每一步只裁「裁下去還不會低於 target」的
+        最貴兵種；沒有這種兵種時就停手（剩下的都太貴，再裁就過頭了）。
+        """
+        out = {unit: max(0, int(units.get(unit) or 0)) for unit in UNIT_FORCE_POINTS}
+        order = sorted(UNIT_FORCE_POINTS, key=lambda unit: -UNIT_FORCE_POINTS[unit])
+        target = max(0, int(target))
+        while cls._force_of(out) > target:
+            unit = next((u for u in order
+                         if out[u] > 0
+                         and cls._force_of(out) - UNIT_FORCE_POINTS[u] >= target), None)
             if unit is None:
                 break
             out[unit] -= 1
@@ -1356,6 +1413,7 @@ class GameEngine:
                         and army.get("generalId") == marshal_id):
                     marshal_army_ids.add(army_id)
 
+        retired = self.retired_npc_factions()
         ended: list = []
         for army_id, army in armies.items():
             if self._home_faction(army_id) not in self.NPC_FACTIONS:
@@ -1376,6 +1434,10 @@ class GameEngine:
         for army_id in sorted(armies):
             army = armies[army_id]
             if self._home_faction(army_id) not in self.NPC_FACTIONS:
+                continue
+            # 已經退出地圖的陣營不再補兵。少了這一條，被併吞的黔軍會在
+            # 三回合後自己長出一營步兵，然後一路長回來。
+            if self._home_faction(army_id) in retired:
                 continue
             if army.get("npcGrowthEnded") or army_id in ended:
                 continue
@@ -3680,9 +3742,71 @@ class GameEngine:
         self.state["city_output_effects"] = active_effects
         self._refresh_city_income()
 
+    def _tick_npc_combat_effects(self) -> None:
+        """NPC 戰鬥修正的到期清理。
+
+        兩種效期：
+          * `remaining_turns` 走完（15.20／15.22／15.23 各 5 回合）；
+          * `until_general_leaves`——沒有回合上限，掛到那位將領離場為止（15.2）。
+
+        「離場」的判準用 `npc_situation()`，也就是**戰術快照**上的現況：
+        陣亡、被殲、被俘、跳槽都算。將領樹是唯讀的靜態資料檔，裡面的 status
+        永遠不會變，拿它來判離場等於這條效期永遠不會到期。
+        """
+        effects = self.state.get("npc_combat_effects") or []
+        if not effects:
+            return
+        situation = self.npc_situation(self._tactical) if self._tactical else None
+        alive: list = []
+        for effect in effects:
+            if effect.get("until_general_leaves"):
+                general_id = effect.get("general_id")
+                faction = effect.get("faction")
+                # 沒有快照就無從判斷，這一輪先留著——寧可多留一回合，
+                # 也不要因為前端還沒送狀態就把效果誤刪。
+                if situation and situation.get("available") and general_id and faction:
+                    here = (situation["factions"].get(faction) or {}).get("generals") or []
+                    if general_id not in here:
+                        continue
+            if effect.get("remaining_turns") is not None:
+                # 抽到的那一回合不倒數，否則 5 回合的效果只會活 4 回合。
+                if effect.pop("granted_this_turn", None):
+                    alive.append(effect)
+                    continue
+                remaining = int(effect["remaining_turns"]) - 1
+                if remaining <= 0:
+                    continue
+                effect["remaining_turns"] = remaining
+            else:
+                effect.pop("granted_this_turn", None)
+            alive.append(effect)
+        self.state["npc_combat_effects"] = alive
+
+    @staticmethod
+    def _railway_effect_active(effect: Dict[str, Any]) -> bool:
+        """這條封路現在還算不算數。
+
+        `remaining_turns` 是 None 代表**無限期**（15.1 閻錫山封鎖窄軌鐵路：
+        沒有回合上限，也修不好，解除條件是他本人被俘）。不能拿 None 去 int()。
+        """
+        remaining = effect.get("remaining_turns")
+        if remaining is None:
+            return True
+        return int(remaining) > 0
+
     def _tick_railway_effects(self) -> None:
         active = []
         for effect in self.state.get("railway_effects", []):
+            if effect.get("permanent"):
+                # 無限期封路。解除條件不是時間，是指定將領離場。
+                gate = effect.get("until_general_leaves") or {}
+                if gate and not self._npc_general_still_here(
+                        gate.get("general"), gate.get("faction")):
+                    self._notify_all(f'{effect.get("name")}：{gate.get("general")}已不在場，'
+                                     f'{effect.get("railway")}恢復通行。')
+                    continue
+                active.append(effect)
+                continue
             remaining = int(effect.get("remaining_turns", 0)) - 1
             if remaining > 0:
                 effect["remaining_turns"] = remaining
@@ -3753,7 +3877,7 @@ class GameEngine:
         return [
             str(effect.get("railway"))
             for effect in self.state.get("railway_effects", [])
-            if int(effect.get("remaining_turns", 0)) > 0
+            if self._railway_effect_active(effect)
         ]
 
     def foreign_railways(self) -> Dict[str, str]:
@@ -4445,7 +4569,7 @@ class GameEngine:
         allowed = list(spec.get("railways") or [])
         known = [line["name"] for line in self.data["strategic_map"].get("railroads", [])]
         busy = {e.get("railway") for e in self.state.get("railway_effects", [])
-                if int(e.get("remaining_turns", 0)) > 0}
+                if self._railway_effect_active(e)}
         pool = [name for name in (allowed or known) if name in known and name not in busy]
         if not pool:
             return {"skipped": "no_railway_available"}
@@ -4639,9 +4763,456 @@ class GameEngine:
                 count += 1
         return count
 
+    # ── NPC 事件卡的觸發條件 ────────────────────────────────────────────
+    #
+    # 十五、NPC 行動那 33 張的進入條件講的是 NPC 勢力的現況：
+    # 「閻錫山仍屬晉系」「黔軍至少還有 1 營兵力」「張家口仍歸西北軍佔領」。
+    # 這些判定要在後端做——前端算的話，一句 JS 就能讓馮玉祥「復活」。
+    #
+    # 資料來源分兩處，各有各的道理：
+    #   * 城市歸屬看 `state["city_owners"]`，那本來就是引擎自己的帳。
+    #   * 將領與兵力看 SHARED_TACTICAL_STATE——編制、將領樹、將領歸屬都在那裡。
+    #     引擎不持有將領樹（那是唯讀檔案），所以由伺服器把快照傳進來。
+    #
+    # **沒有快照時一律判為不合格**（fail closed）。寧可這張卡不出現，
+    # 也不要發一張「馮玉祥誓師」而馮玉祥早就陣亡的報紙。
+
+    def _npc_general_index(self) -> Dict[str, list]:
+        """將領姓名 → [(陣營代號, 將領代號), ...]。名字是卡片上寫的，代號是資料檔的。"""
+        index: Dict[str, list] = {}
+        for faction in self.NPC_FACTIONS:
+            tree = self.data.get("npc_general_trees", {}).get(faction) or {}
+            for general_id, general in (tree.get("generals") or {}).items():
+                index.setdefault(str(general.get("name") or ""), []).append(
+                    (faction, general_id))
+        return index
+
+    def npc_situation(self, tactical: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """從戰術快照導出各 NPC 陣營的現況：還在的將領、還剩幾營。
+
+        「還在」的定義：部隊沒有陣亡／被俘／被殲，且將領沒有跳槽
+        （`generalOwners` 指向別家，或部隊自己改掛了別家的旗）。
+        """
+        out: Dict[str, Any] = {"available": isinstance(tactical, dict),
+                               "factions": {}, "general_faction": {}}
+        armies = (tactical or {}).get("armies") or {}
+        owners = (tactical or {}).get("generalOwners") or {}
+        jailed = set((tactical or {}).get("jailedGenerals") or [])
+        index = self._npc_general_index()
+        id_to_name = {gid: name for name, pairs in index.items() for _, gid in pairs}
+
+        retired = self.retired_npc_factions()
+        for faction in self.NPC_FACTIONS:
+            generals: list = []
+            battalions = 0
+            # 已經退出地圖的陣營（被併吞或整批歸附）一律當成空的，
+            # 點名它的卡片就再也不會出現。
+            if faction in retired:
+                out["factions"][faction] = {"generals": [], "battalions": 0}
+                continue
+            for army_id, army in armies.items():
+                if self._home_faction(army_id) != faction:
+                    continue
+                if army.get("status") in self.DEAD_ARMY_STATUSES:
+                    continue
+                if self._npc_defected(army_id, army, owners):
+                    continue
+                general_id = army.get("generalId")
+                if general_id and general_id not in jailed:
+                    generals.append(general_id)
+                    name = id_to_name.get(general_id)
+                    if name:
+                        out["general_faction"][name] = faction
+                battalions += sum(max(0, int((army.get("units") or {}).get(unit) or 0))
+                                  for unit in UNIT_FORCE_POINTS)
+            out["factions"][faction] = {"generals": sorted(set(generals)),
+                                        "battalions": battalions}
+        return out
+
+    def _living_npc_armies(self, tactical: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """還在場上、還算自家人的 NPC 部隊。判準與 npc_reinforcements 同一套。"""
+        armies = (tactical or {}).get("armies") or {}
+        owners = (tactical or {}).get("generalOwners") or {}
+        jailed = set((tactical or {}).get("jailedGenerals") or [])
+        out: Dict[str, Dict[str, Any]] = {}
+        retired = self.retired_npc_factions()
+        for army_id, army in armies.items():
+            if self._home_faction(army_id) not in self.NPC_FACTIONS:
+                continue
+            if self._home_faction(army_id) in retired:
+                continue
+            if army.get("status") in self.DEAD_ARMY_STATUSES:
+                continue
+            if self._npc_defected(army_id, army, owners):
+                continue
+            if army.get("generalId") in jailed:
+                continue
+            out[army_id] = army
+        return out
+
+    def _npc_delta_targets(self, spec: Dict[str, Any], armies: Dict[str, Dict[str, Any]],
+                           card: Dict[str, Any]) -> list:
+        """一條 npc_unit_delta 規則點到哪些部隊。
+
+        三種點名方式（可組合）：
+          general / generals —— 指名將領，他的部隊。
+          faction            —— 整個 NPC 陣營的所有部隊。
+          except_generals    —— 從上面選出來的名單裡再剔除這些人（15.17 除馮玉祥外）。
+        點名了查無此人的將領、不存在的陣營代號，一律拋錯——這種錯誤靜默略過的話，
+        卡片會「生效了但什麼都沒發生」，比直接壞掉更難查。
+        """
+        index = self._npc_general_index()
+        card_id = card.get("id")
+
+        def ids_for(names: Any) -> set:
+            out: set = set()
+            for name in (names if isinstance(names, (list, tuple)) else [names]):
+                pairs = index.get(str(name))
+                if not pairs:
+                    raise ValueError(f"{card_id} 的 npc_unit_delta 點名了查無此人的將領：{name}")
+                out |= {gid for _, gid in pairs}
+            return out
+
+        picked: set = set()
+        named = spec.get("generals") if spec.get("generals") is not None else spec.get("general")
+        if named is not None:
+            wanted = ids_for(named)
+            picked |= {army_id for army_id, army in armies.items()
+                       if army.get("generalId") in wanted}
+        faction = spec.get("faction")
+        if faction is not None:
+            if str(faction) not in self.NPC_FACTIONS:
+                raise ValueError(f"{card_id} 的 npc_unit_delta 用了不是 NPC 陣營的代號：{faction}")
+            picked |= {army_id for army_id in armies
+                       if self._home_faction(army_id) == str(faction)}
+        if named is None and faction is None:
+            raise ValueError(f"{card_id} 的 npc_unit_delta 沒有指定 general 或 faction：{spec}")
+        excluded = spec.get("except_generals")
+        if excluded:
+            skip = ids_for(excluded)
+            picked = {army_id for army_id in picked
+                      if armies[army_id].get("generalId") not in skip}
+        return sorted(picked)
+
+    def npc_unit_delta_patch(self, specs: list, card: Dict[str, Any],
+                             tactical: Optional[Dict[str, Any]]) -> list:
+        """算出每支被點到的 NPC 部隊「加減完之後」的絕對編制。
+
+        規則有好幾條時（15.3：馮玉祥一條、其餘西北軍一條）先把同一支部隊的增減
+        全部累加起來，最後才寫一次——否則同一支部隊會出現兩筆互相覆蓋的補丁。
+        戰力一律受 ARMY_FORCE_CAP 箝制，兵種數量不會低於 0。
+        """
+        armies = self._living_npc_armies(tactical)
+        totals: Dict[str, Dict[str, int]] = {}
+        order: list = []
+        for spec in specs:
+            deltas = spec.get("units") or {}
+            if not deltas:
+                raise ValueError(f"{card.get('id')} 的 npc_unit_delta 少了 units：{spec}")
+            unknown = set(deltas) - set(UNIT_FORCE_POINTS)
+            if unknown:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_unit_delta 用了不認得的兵種：{sorted(unknown)}")
+            for army_id in self._npc_delta_targets(spec, armies, card):
+                if army_id not in totals:
+                    totals[army_id] = {}
+                    order.append(army_id)
+                for unit, amount in deltas.items():
+                    totals[army_id][unit] = totals[army_id].get(unit, 0) + int(amount)
+
+        patch: list = []
+        for army_id in order:
+            army = armies[army_id]
+            before = {unit: max(0, int((army.get("units") or {}).get(unit) or 0))
+                      for unit in UNIT_FORCE_POINTS}
+            after = dict(before)
+            # 先扣後補。減損一律生效（最低 0）；增援只補得進去的那部分——
+            # 部隊已經滿編時不該為了塞進新兵而把原來的老兵裁掉，那是「擴軍」
+            # 反而讓兵變少。補不完就補不完，下面 changed 會誠實報實際的數。
+            for unit, amount in totals[army_id].items():
+                if int(amount) < 0:
+                    after[unit] = max(0, after[unit] + int(amount))
+            for unit, amount in totals[army_id].items():
+                for _ in range(max(0, int(amount))):
+                    if self._force_of(after) + UNIT_FORCE_POINTS[unit] > ARMY_FORCE_CAP:
+                        break
+                    after[unit] += 1
+            gained = {unit: after[unit] - before[unit]
+                      for unit in UNIT_FORCE_POINTS if after[unit] != before[unit]}
+            if not gained:
+                continue
+            patch.append({"armyId": army_id, "faction": self._home_faction(army_id),
+                          "generalId": army.get("generalId"),
+                          "units": after, "changed": gained})
+        return patch
+
+    def npc_force_scale_patch(self, specs: list, card: Dict[str, Any],
+                              tactical: Optional[Dict[str, Any]]) -> list:
+        """按比例增減 NPC 部隊的**戰力**，回傳每支部隊調整後的絕對編制。
+
+        規則書裡「戰力」就是那個 100 點上限的兵力值（步兵／騎兵每營 1 點、
+        機槍 2 點、砲兵 4 點），所以「唐生智戰力 −50%」是**真的裁兵**，
+        不是打折的戰鬥乘數。這與 12.x 列強行動那批「部隊戰力一次性 −40%」同一套。
+
+        目標戰力點 = floor(現值 × 倍率)，上限仍是 ARMY_FORCE_CAP。
+          減損 → 從最貴的兵種裁起（既有規則）。
+          增益 → 補步兵，每營 1 點，補得最精準，也和 NPC 例行補兵一致。
+        一次性、不會自己回復。
+        """
+        armies = self._living_npc_armies(tactical)
+        factors: Dict[str, float] = {}
+        order: list = []
+        for spec in specs:
+            if "multiplier" not in spec:
+                raise ValueError(f"{card.get('id')} 的 npc_force_scale 少了 multiplier：{spec}")
+            multiplier = float(spec["multiplier"])
+            if multiplier < 0:
+                raise ValueError(f"{card.get('id')} 的 npc_force_scale 倍率不能是負的：{multiplier}")
+            for army_id in self._npc_delta_targets(spec, armies, card):
+                if army_id not in factors:
+                    factors[army_id] = 1.0
+                    order.append(army_id)
+                # 同一支部隊被多條規則點到時倍率相乘——先 −15% 再 −10%
+                # 是在剩下的兵上再砍一成，不是一口氣砍兩成五。
+                factors[army_id] *= multiplier
+
+        patch: list = []
+        for army_id in order:
+            army = armies[army_id]
+            before = {unit: max(0, int((army.get("units") or {}).get(unit) or 0))
+                      for unit in UNIT_FORCE_POINTS}
+            current = self._force_of(before)
+            # 四捨五入，不是無條件捨去。NPC 部隊普遍小，捨去小數的損失占比很重：
+            # 一張寫 −15% 的卡打在 7 點的部隊上，捨去會變成實際 −29%。
+            # 用 floor(x+0.5) 而不是 Python 的 round()——後者是銀行家捨入
+            # （.5 進到偶數），同樣的 .5 會依前一位數字給出不同答案。
+            target = min(ARMY_FORCE_CAP,
+                         int(math.floor(current * factors[army_id] + 0.5)))
+            if target < current:
+                after = self._cut_down_to_force(before, target)
+            else:
+                after = dict(before)
+                while self._force_of(after) + UNIT_FORCE_POINTS["infantry"] <= target:
+                    after["infantry"] += 1
+            changed = {unit: after[unit] - before[unit]
+                       for unit in UNIT_FORCE_POINTS if after[unit] != before[unit]}
+            if not changed:
+                continue
+            patch.append({"armyId": army_id, "faction": self._home_faction(army_id),
+                          "generalId": army.get("generalId"), "units": after,
+                          "changed": changed, "force_before": current,
+                          "force_after": self._force_of(after)})
+        return patch
+
+    def _land_npc_army_patch(self, kind: str, builder, specs: list,
+                             card: Dict[str, Any], label: str) -> list:
+        """把一份 NPC 部隊編制補丁落地：改後端那份，再掛一筆給前端。
+
+        `npc_unit_delta`（絕對增減）與 `npc_force_scale`（按比例）算法不同，
+        但算完之後要做的事一模一樣，所以共用這一段。
+        """
+        if not isinstance(self._tactical, dict):
+            # 走不到這裡：這批卡都有 npc_requires，沒有戰術快照時整張卡就不會出現。
+            # 真的走到了也不要靜默——記一筆，讓重播與測試看得見。
+            return [{"kind": f"{kind}_skipped", "reason": "no_tactical"}]
+        patch = builder(specs, card, self._tactical)
+        # 伺服器手上這份先改掉：同一個事件卡週期裡後面幾張卡的 npc_requires
+        # 要看的是改完之後的現況。
+        for entry in patch:
+            army = (self._tactical.get("armies") or {}).get(entry["armyId"])
+            if army is not None:
+                army["units"] = dict(entry["units"])
+        if patch:
+            # 前端那份是各 client 自己的副本，靠 pending_frontend_effects 補回去。
+            # 只掛在一位玩家的佇列上：這件事是全場共通的，掛給每個人會被套用多次。
+            # 內容是絕對編制，重複套用結果相同，但提示會重複，所以還是只掛一次。
+            holder = sorted(self.state["players"])[0]
+            self._player(holder).setdefault("pending_frontend_effects", []).append({
+                "kind": "npc_army_units", "label": label, "armies": patch})
+        return [{"kind": kind, "armies": patch}]
+
+    # ── 批次四：陣營級結構變動的共用零件 ────────────────────────────────
+
+    def _notify_all(self, text: str) -> None:
+        for code in self.state["players"]:
+            self._notify(code, text)
+
+    def retired_npc_factions(self) -> set:
+        return {str(code) for code in (self.state.get("retired_npc_factions") or [])}
+
+    def _npc_general_still_here(self, name: Optional[str],
+                               faction: Optional[str]) -> bool:
+        """這位 NPC 將領現在還在他原本的陣營裡嗎。
+
+        沒有戰術快照時回報「還在」——寧可效果多留一回合，也不要因為前端還沒送
+        狀態就把封路誤解除。這與 npc_combat_effects 的離場判定同一個道理。
+        """
+        if not name or not faction:
+            return True
+        if faction in self.retired_npc_factions():
+            return False
+        if not isinstance(self._tactical, dict):
+            return True
+        situation = self.npc_situation(self._tactical)
+        if not situation.get("available"):
+            return True
+        return situation["general_faction"].get(str(name)) == str(faction)
+
+    def _npc_faction_cities(self, faction: str) -> list:
+        """這個陣營現在握著哪些城市。以 city_owners 為準，沒有紀錄就看地圖的初始歸屬。"""
+        owners = self.state.get("city_owners") or {}
+        return [city["id"] for city in self.data["strategic_map"]["cities"]
+                if owners.get(city["id"], city["faction"]) == str(faction)]
+
+    def _retire_npc_faction(self, faction: str) -> None:
+        retired = self.state.setdefault("retired_npc_factions", [])
+        if str(faction) not in retired:
+            retired.append(str(faction))
+
+    def _hand_over_npc_armies(self, faction: str, new_owner: str) -> list:
+        """把一個 NPC 陣營的部隊整批換旗，回傳搬了哪些。
+
+        改的是伺服器手上那份戰術快照；前端那份靠 pending_frontend_effects 補。
+        """
+        moved: list = []
+        for army_id, army in sorted(self._living_npc_armies(self._tactical).items()):
+            if self._home_faction(army_id) != str(faction):
+                continue
+            army["faction"] = str(new_owner)
+            general_id = army.get("generalId")
+            if general_id and isinstance(self._tactical, dict):
+                self._tactical.setdefault("generalOwners", {})[general_id] = str(new_owner)
+            moved.append({"armyId": army_id, "generalId": general_id,
+                          "units": dict(army.get("units") or {})})
+        return moved
+
+    def player_force_ranking(self) -> list:
+        """各玩家的總戰力，由高到低。戰力就是那個 100 點上限用的兵力點。
+
+        資料來自戰術快照——部隊編制住在那裡。沒有快照就回空的，
+        呼叫端要自己決定怎麼辦（15.13 的作法是不發這張卡）。
+        """
+        if not isinstance(self._tactical, dict):
+            return []
+        totals = {code: 0 for code in self.state["players"]}
+        owners = (self._tactical.get("generalOwners") or {})
+        for army_id, army in (self._tactical.get("armies") or {}).items():
+            if army.get("status") in self.DEAD_ARMY_STATUSES:
+                continue
+            faction = (army.get("faction")
+                       or owners.get(army.get("generalId"))
+                       or self._home_faction(army_id))
+            if faction not in totals:
+                continue
+            totals[faction] += self._force_of(army.get("units"))
+        return sorted(totals.items(), key=lambda item: (-item[1], item[0]))
+
+    def _top_force_player(self) -> Optional[str]:
+        """總戰力最高的玩家。並列最高就隨機擇一（用有種子的亂數，可重播）。"""
+        ranking = self.player_force_ranking()
+        if not ranking:
+            return None
+        best = ranking[0][1]
+        tied = [code for code, force in ranking if force == best]
+        if len(tied) == 1:
+            return tied[0]
+        return tied[self.random.randrange(len(tied))]
+
+    def _npc_requires_met(self, card: Dict[str, Any],
+                          tactical: Optional[Dict[str, Any]]) -> bool:
+        """卡片的 `entry_condition.npc_requires` 是否全部成立。"""
+        rules = (card.get("entry_condition") or {}).get("npc_requires") or []
+        if not rules:
+            return True
+        situation = self.npc_situation(tactical)
+        index = self._npc_general_index()
+        named_ids: set = set()
+        # 先把本卡點名的將領收齊，`at_least_one_other_general` 的「其他」指的就是他們以外。
+        for rule in rules:
+            name = rule.get("general")
+            if name:
+                named_ids |= {gid for _, gid in index.get(name, [])}
+
+        for rule in rules:
+            if rule.get("general"):
+                name = str(rule["general"])
+                faction = str(rule["still_with"])
+                candidates = index.get(name) or []
+                if not candidates:
+                    raise ValueError(
+                        f"{card.get('id')} 點名了查無此人的將領：{name}")
+                if all(code != faction for code, _ in candidates):
+                    raise ValueError(
+                        f"{card.get('id')}：{name}不屬於 {faction}，"
+                        f"資料檔裡他在 {sorted({code for code, _ in candidates})}")
+                if not situation["available"]:
+                    return False
+                if situation["general_faction"].get(name) != faction:
+                    return False
+            elif rule.get("at_least_one_general"):
+                if not situation["available"]:
+                    return False
+                if not situation["factions"].get(str(rule["faction"]), {}).get("generals"):
+                    return False
+            elif rule.get("at_least_one_other_general"):
+                if not situation["available"]:
+                    return False
+                alive = set(situation["factions"]
+                            .get(str(rule["faction"]), {}).get("generals") or [])
+                if not (alive - named_ids):
+                    return False
+            elif rule.get("min_battalions") is not None:
+                if not situation["available"]:
+                    return False
+                have = situation["factions"].get(str(rule["faction"]), {}).get("battalions", 0)
+                if int(have) < int(rule["min_battalions"]):
+                    return False
+            elif rule.get("city"):
+                # 城市歸屬是引擎自己的帳，不必等戰術快照。
+                city_id = str(rule["city"])
+                city = next((c for c in self.data["strategic_map"]["cities"]
+                             if c["id"] == city_id), None)
+                if city is None:
+                    raise ValueError(f"{card.get('id')} 點名了不存在的城市：{city_id}")
+                if self.state["city_owners"].get(city_id, city["faction"]) \
+                        != str(rule["held_by_faction"]):
+                    return False
+            else:
+                raise ValueError(f"{card.get('id')} 有一條看不懂的 NPC 條件：{rule}")
+        return True
+
     def _event_eligible_players(self, card: Dict[str, Any]) -> list:
         """這張事件卡現在有哪些玩家可以抽到。沒有進入條件就是全部。"""
         condition = card.get("entry_condition") or {}
+        # NPC 條件是**整張卡**的閘門，不是逐玩家的：閻錫山不在了，
+        # 這張卡對誰都不該出現。不成立就直接回空的名單。
+        if condition.get("npc_requires") and not self._npc_requires_met(card, self._tactical):
+            return []
+        # 15.16 南京事件：南京得真的有軍隊駐守。駐軍位置住在地圖層（前端），
+        # 所以前端每回合把「哪座城有誰的幾營」這個**事實**報上來，規則在這裡判。
+        # 沒收到報告就一律不發（fail closed）——與 npc_requires 同一個道理。
+        # 15.13 馬家軍歸附：卡片本身要求「當前總戰力最高的玩家」存在才有意義。
+        # 排名要靠戰術快照，沒有快照就不發（fail closed）。
+        rank_rule = condition.get("player_rank")
+        if rank_rule:
+            metric = str(rank_rule.get("metric") or "total_force")
+            if metric != "total_force":
+                raise ValueError(f"{card.get('id')} 的 player_rank 用了不認得的 metric：{metric}")
+            position = str(rank_rule.get("position") or "highest")
+            if position != "highest":
+                raise ValueError(f"{card.get('id')} 的 player_rank 只支援 highest：{position}")
+            ranking = self.player_force_ranking()
+            if not ranking or ranking[0][1] <= 0:
+                return []
+
+        garrison_city = condition.get("requires_garrison_in_city")
+        if garrison_city:
+            city_id = str(garrison_city)
+            if not any(c["id"] == city_id for c in self.data["strategic_map"]["cities"]):
+                raise ValueError(f"{card.get('id')} 的 requires_garrison_in_city 指向不存在的城市：{city_id}")
+            here = (self._city_garrisons or {}).get(city_id) or {}
+            if not any(int(n) > 0 for n in here.values()):
+                return []
         players = list(self.state["players"])
         # [懲戒] 卡：對某人還生效中就不該再降臨同一個人，但**別人照樣抽得到**——
         # 兩個對日交惡的玩家可以同時挨日軍航空隊的轟炸。所以這是逐玩家的封鎖，
@@ -4695,12 +5266,20 @@ class GameEngine:
             "controls_ports_in_waters_min", "controls_port_level_min",
             "requires_concession_any", "treasury_below_last_turn",
             "controls_port_count_min",
+            # 十五、NPC 行動。npc_requires 與 requires_garrison_in_city 是**整張卡**
+            # 的閘門（在上面判）；at_war_with 是逐玩家的。player_rank 還沒實作，
+            # 先列在這裡讓守門的例外訊息說得出是哪一項。
+            "npc_requires", "at_war_with", "requires_garrison_in_city", "player_rank",
         }
         unknown = set(condition) - known_conditions
         if unknown:
             raise ValueError(f"entry_condition 不認得的條件：{sorted(unknown)}")
+        # 15.18 劉湘通電討直：「當下正對直系宣戰的玩家」才抽得到。逐玩家判。
+        at_war_with = condition.get("at_war_with")
         eligible = []
         for code in players:
+            if at_war_with and not self._at_war(code, str(at_war_with)):
+                continue
             if ignored_ultimatum and str(ignored_ultimatum) not in self.ultimatums.failed_powers(code):
                 continue
             if port_level_rule and not self._select_cities(
@@ -4937,6 +5516,23 @@ class GameEngine:
             "turn": (turn_result or {}).get("turn"),
             "state": self.snapshot(),
         }
+
+    def _event_responses(self, card: Dict[str, Any]) -> Dict[str, str]:
+        """這張卡目前收到的表態：{玩家代號: 選項 id}。
+
+        卡片層級的 `apply` 是在**所有人都回應完**之後才跑一次的（見 respond_event
+        的 card_done 分支），所以競標類的效果只能寫在那裡——寫在選項的 apply 裡
+        會在每個人各自回應的當下就結算，那時候只看得到他一個人的選擇。
+        """
+        pending = self.state.get("pending_events") or {}
+        cards = pending.get("cards") or []
+        index = int(pending.get("index") or 0)
+        if not (0 <= index < len(cards)):
+            return {}
+        entry = cards[index]
+        if str(entry.get("card_id") or "") != str(card.get("id") or ""):
+            return {}
+        return dict(entry.get("responses") or {})
 
     def _apply_event_payload(
         self, payload: Dict[str, Any], *, players: Optional[list], card: Dict[str, Any],
@@ -5176,6 +5772,316 @@ class GameEngine:
                     after = int(self._player(code)["unit_reserves"].get(unit, 0))
                     applied.append({"kind": "reserve_delta", "player": code, "unit_type": unit,
                                     "amount": after - before})
+
+        # ---- NPC 部隊增減兵（15.3、15.6、15.8、15.12、15.19、15.25、15.26）----
+        # 這是 NPC 的兵，不是玩家的預備隊，所以不走 reserve_delta：NPC 沒有預備隊，
+        # 兵直接加在場上的部隊編制裡。編制住在 SHARED_TACTICAL_STATE，伺服器手上就有，
+        # 因此**加減與上限箝制全在後端算完**，前端拿到的是絕對編制，照抄即可。
+        npc_specs = payload.get("npc_unit_delta") or []
+        if npc_specs:
+            applied += self._land_npc_army_patch(
+                "npc_unit_delta", self.npc_unit_delta_patch, npc_specs, card, label)
+
+        # ---- NPC 部隊按比例增減戰力（15.4、15.7、15.9、15.11、15.15、15.17、15.24）----
+        # 規則書裡「戰力」就是那個 100 點上限的兵力值，所以這是真的裁兵／補兵，
+        # 不是戰鬥時打折。落地方式與上面那條完全相同。
+        scale_specs = payload.get("npc_force_scale") or []
+        if scale_specs:
+            applied += self._land_npc_army_patch(
+                "npc_force_scale", self.npc_force_scale_patch, scale_specs, card, label)
+
+        # ---- NPC 戰鬥修正（15.2、15.20、15.22、15.23）----
+        # 「生命」是 hp、「攻擊」是 attack；「戰力」是第三個詞，指兵力，走 npc_force_scale。
+        for spec in (payload.get("npc_combat_modifier") or []):
+            faction = spec.get("faction")
+            general_name = spec.get("general")
+            general_id = None
+            if general_name:
+                pairs = self._npc_general_index().get(str(general_name))
+                if not pairs:
+                    raise ValueError(
+                        f"{card.get('id')} 的 npc_combat_modifier 點名了查無此人的將領：{general_name}")
+                faction_from_name, general_id = pairs[0]
+                if faction and faction != faction_from_name:
+                    raise ValueError(
+                        f"{card.get('id')}：{general_name} 不屬於 {faction}，"
+                        f"資料檔裡他在 {faction_from_name}")
+                faction = faction_from_name
+            if not faction:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_combat_modifier 沒有指定 faction 或 general：{spec}")
+            if faction not in self.NPC_FACTIONS:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_combat_modifier 用了不是 NPC 陣營的代號：{faction}")
+            modifiers = list(spec.get("modifiers") or [])
+            if not modifiers:
+                raise ValueError(f"{card.get('id')} 的 npc_combat_modifier 少了 modifiers：{spec}")
+            unknown = {str(m.get("stat")) for m in modifiers} - {"hp", "attack", "harm_taken"}
+            if unknown:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_combat_modifier 用了不認得的 stat：{sorted(unknown)}")
+            turns = spec.get("turns")
+            until_leaves = bool(spec.get("until_general_leaves"))
+            if turns is None and not until_leaves:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_combat_modifier 既沒有 turns 也沒有 "
+                    f"until_general_leaves——效期不明的效果會永遠掛著：{spec}")
+            if until_leaves and not general_id:
+                raise ValueError(
+                    f"{card.get('id')} 的 until_general_leaves 沒有指定將領，無從判斷離場：{spec}")
+            entry = {"name": label, "card_id": str(card.get("id") or ""),
+                     "faction": faction, "general_id": general_id,
+                     "modifiers": deepcopy(modifiers),
+                     "remaining_turns": None if turns is None else int(turns),
+                     "until_general_leaves": until_leaves,
+                     # 抽到的這一回合不倒數，否則 5 回合的效果只會活 4 回合。
+                     "granted_this_turn": True}
+            self.state.setdefault("npc_combat_effects", []).append(entry)
+            applied.append({"kind": "npc_combat_modifier", "faction": faction,
+                            "general_id": general_id, "general": general_name,
+                            "modifiers": entry["modifiers"], "turns": entry["remaining_turns"],
+                            "until_general_leaves": until_leaves})
+
+        # ---- NPC 付費招募（15.7、15.10、15.18、15.21）----
+        # 「多方都想招募，則所有要招募者都要付 $25，且成功率由所有參與招募的玩家平分」。
+        # 付錢的一律扣款——競標輸了錢也不退，這是卡片寫的。抽籤用 self.random（有種子，
+        # 可重播），不是 Python 的全域亂數。
+        recruit = payload.get("contested_npc_recruit")
+        if recruit:
+            general_name = str(recruit.get("general") or "")
+            pairs = self._npc_general_index().get(general_name)
+            if not pairs:
+                raise ValueError(
+                    f"{card.get('id')} 的 contested_npc_recruit 點名了查無此人的將領：{general_name}")
+            home_faction, general_id = pairs[0]
+            cost = int(recruit.get("cost", 25))
+            option_id = str(recruit.get("option_id") or "recruit")
+
+            # 誰表態要招募：看這張卡的回應。表態了但錢不夠的算棄權——
+            # 事件卡不該讓人負債，也不該無聲把他算進分母稀釋別人的機率。
+            bidders, broke = [], []
+            for code in sorted(self._event_responses(card)):
+                if self._event_responses(card).get(code) != option_id:
+                    continue
+                if int(self._player(code).get("treasury", 0)) < cost:
+                    broke.append(code)
+                    continue
+                bidders.append(code)
+
+            entry = {"kind": "contested_npc_recruit", "general": general_name,
+                     "general_id": general_id, "from_faction": home_faction,
+                     "cost": cost, "bidders": bidders, "winner": None}
+            if broke:
+                entry["skipped_no_funds"] = broke
+
+            if bidders:
+                for code in bidders:
+                    self._player(code)["treasury"] = int(self._player(code)["treasury"]) - cost
+                # 成功率平分：n 個人各 1/n，所以必定有人成功——卡片沒有寫「可能全部失敗」。
+                winner = bidders[self.random.randrange(len(bidders))]
+                entry["winner"] = winner
+                entry["odds"] = f"1/{len(bidders)}"
+                # 連人帶部隊整體歸附。將領樹與地圖住在前端，所以照既有的通道
+                # 掛一筆交辦事項；後端這邊先把伺服器手上的快照改掉。
+                moved = []
+                for army_id, army in sorted(self._living_npc_armies(self._tactical).items()):
+                    if army.get("generalId") != general_id:
+                        continue
+                    army["faction"] = winner
+                    moved.append({"armyId": army_id, "units": dict(army.get("units") or {})})
+                if isinstance(self._tactical, dict):
+                    self._tactical.setdefault("generalOwners", {})[general_id] = winner
+                entry["armies"] = moved
+                holder = sorted(self.state["players"])[0]
+                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                    "kind": "npc_general_recruited", "label": label,
+                    "general_id": general_id, "general": general_name,
+                    "from_faction": home_faction, "owner": winner, "armies": moved})
+                for code in bidders:
+                    self._notify(code, f"{label}：付了 ${cost}，"
+                                       + (f"{general_name}率部歸附。" if code == winner
+                                          else f"{general_name}投了別家，錢沒退。"))
+            applied.append(entry)
+
+        # ---- 無限期封路（15.1 閻錫山封鎖窄軌鐵路）----
+        # 效果與〈崩鐵玩家〉同一份 railway_effects，差別有二：沒有回合上限、
+        # 也沒有搶修攤派（修不好），解除條件是指定將領被俘或離場。
+        block = payload.get("railway_permanent_block")
+        if block:
+            known = {line["name"] for line in self.data["strategic_map"].get("railroads", [])}
+            wanted = [str(name) for name in (block.get("railways") or [])]
+            if not wanted:
+                raise ValueError(f"{card.get('id')} 的 railway_permanent_block 沒有指定鐵路")
+            missing = [name for name in wanted if name not in known]
+            if missing:
+                raise ValueError(f"{card.get('id')} 點名了地圖上沒有的鐵路：{missing}")
+            gate = block.get("until_general_leaves") or {}
+            if gate:
+                name = str(gate.get("general") or "")
+                pairs = self._npc_general_index().get(name)
+                if not pairs:
+                    raise ValueError(
+                        f"{card.get('id')} 的 until_general_leaves 點名了查無此人的將領：{name}")
+                gate = {"general": name, "faction": pairs[0][0]}
+            blocked = []
+            for railway in wanted:
+                if any(e.get("railway") == railway and self._railway_effect_active(e)
+                       for e in self.state.get("railway_effects", [])):
+                    continue          # 這條線已經停運了，不重複掛
+                entry = {"id": f"{card.get('id')}:{self.state['turn']}:{railway}",
+                         "card_id": card.get("id"), "name": label, "railway": railway,
+                         "initiator": str(block.get("initiator") or ""),
+                         "remaining_turns": None, "permanent": True,
+                         # 修不好，所以沒有搶修費用可以攤派——不要留一個 0 元的空帳。
+                         "no_repair": True, "repair_charges": {},
+                         "until_general_leaves": gate or None}
+                self.state.setdefault("railway_effects", []).append(entry)
+                blocked.append(railway)
+            if blocked:
+                self._notify_all(f'{label}：' + "、".join(blocked)
+                                 + "全線停擺，且無法搶修。")
+            applied.append({"kind": "railway_permanent_block", "railways": blocked,
+                            "until_general_leaves": gate or None})
+
+        # ---- NPC 將領換陣營（15.5 馬福祥加入西北軍）----
+        transfer = payload.get("npc_general_transfer")
+        if transfer:
+            name = str(transfer.get("general") or "")
+            pairs = self._npc_general_index().get(name)
+            if not pairs:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_general_transfer 點名了查無此人的將領：{name}")
+            home_faction, general_id = pairs[0]
+            to_faction = str(transfer.get("to_faction") or "")
+            if to_faction not in self.NPC_FACTIONS:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_general_transfer 目標不是 NPC 陣營：{to_faction}")
+            if to_faction == home_faction:
+                raise ValueError(f"{card.get('id')}：{name} 本來就在 {to_faction}")
+            moved = []
+            for army_id, army in sorted(self._living_npc_armies(self._tactical).items()):
+                if army.get("generalId") != general_id:
+                    continue
+                army["faction"] = to_faction
+                moved.append({"armyId": army_id, "units": dict(army.get("units") or {})})
+            if moved and isinstance(self._tactical, dict):
+                self._tactical.setdefault("generalOwners", {})[general_id] = to_faction
+            entry = {"kind": "npc_general_transfer", "general": name,
+                     "general_id": general_id, "from_faction": home_faction,
+                     "to_faction": to_faction, "armies": moved}
+
+            # 移防：後端沒有座標，所以只說「搬到哪座城周邊幾格」，
+            # 由前端挑格子——和列強砲擊把駐軍趕出城（evictArmyFromCity）同一個分工。
+            relocate = payload.get("npc_army_relocate")
+            if relocate:
+                city_id = str(relocate.get("near_city") or "")
+                if not any(c["id"] == city_id for c in self.data["strategic_map"]["cities"]):
+                    raise ValueError(
+                        f"{card.get('id')} 的 npc_army_relocate 指向不存在的城市：{city_id}")
+                entry["relocate"] = {"near_city": city_id,
+                                     "within": int(relocate.get("within", 1))}
+            if moved:
+                holder = sorted(self.state["players"])[0]
+                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                    "kind": "npc_general_transferred", "label": label,
+                    "general": name, "general_id": general_id,
+                    "from_faction": home_faction, "to_faction": to_faction,
+                    "armies": moved, "relocate": entry.get("relocate")})
+            applied.append(entry)
+
+        # ---- 整個 NPC 陣營歸附玩家（15.13 馬家軍歸附）----
+        absorb = payload.get("npc_faction_absorb")
+        if absorb:
+            faction = str(absorb.get("faction") or "")
+            if faction not in self.NPC_FACTIONS:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_faction_absorb 不是 NPC 陣營：{faction}")
+            rule = str(absorb.get("to") or "highest_total_force")
+            if rule != "highest_total_force":
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_faction_absorb 用了不認得的歸屬規則：{rule}")
+            winner = self._top_force_player()
+            if not winner:
+                applied.append({"kind": "npc_faction_absorb_skipped",
+                                "reason": "no_tactical_or_no_force"})
+            else:
+                armies = self._hand_over_npc_armies(faction, winner)
+                cities = self._npc_faction_cities(faction)
+                for city_id in cities:
+                    self.state["city_owners"][city_id] = winner
+                self._retire_npc_faction(faction)
+                self._refresh_city_income()
+                holder = sorted(self.state["players"])[0]
+                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                    "kind": "npc_faction_absorbed", "label": label,
+                    "faction": faction, "owner": winner,
+                    "armies": armies, "cities": cities})
+                self._notify_all(f'{label}：{faction} 全軍歸附 {winner}，'
+                                 f'地盤 {len(cities)} 座城一併轉屬。')
+                applied.append({"kind": "npc_faction_absorb", "faction": faction,
+                                "owner": winner, "armies": armies, "cities": cities,
+                                "ranking": self.player_force_ranking()})
+
+        # ---- NPC 併 NPC（15.14／15.27 黔軍遭吞併）----
+        merge = payload.get("npc_faction_merge")
+        if merge:
+            source = str(merge.get("from_faction") or "")
+            if source not in self.NPC_FACTIONS:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_faction_merge 來源不是 NPC 陣營：{source}")
+            name = str(merge.get("into_general") or "")
+            pairs = self._npc_general_index().get(name)
+            if not pairs:
+                raise ValueError(
+                    f"{card.get('id')} 的 npc_faction_merge 點名了查無此人的將領：{name}")
+            winner_faction, winner_general = pairs[0]
+            if winner_faction == source:
+                raise ValueError(f"{card.get('id')}：{name} 就在 {source}，併不了自己")
+            living = self._living_npc_armies(self._tactical)
+            target_id = next((aid for aid, army in sorted(living.items())
+                              if army.get("generalId") == winner_general), None)
+            absorbed, overflow = [], {}
+            if target_id is None:
+                applied.append({"kind": "npc_faction_merge_skipped",
+                                "reason": "no_target_army", "into_general": name})
+            else:
+                target = living[target_id]
+                units = {unit: max(0, int((target.get("units") or {}).get(unit) or 0))
+                         for unit in UNIT_FORCE_POINTS}
+                for army_id, army in sorted(living.items()):
+                    if self._home_faction(army_id) != source:
+                        continue
+                    absorbed.append({"armyId": army_id,
+                                     "units": dict(army.get("units") or {})})
+                    for unit in UNIT_FORCE_POINTS:
+                        # 併進來的兵一營一營塞，塞不下的如實記在 overflow——
+                        # 單一部隊的戰力上限不因為併吞而放寬。
+                        for _ in range(max(0, int((army.get("units") or {}).get(unit) or 0))):
+                            if self._force_of(units) + UNIT_FORCE_POINTS[unit] > ARMY_FORCE_CAP:
+                                overflow[unit] = overflow.get(unit, 0) + 1
+                                continue
+                            units[unit] += 1
+                    army["units"] = {unit: 0 for unit in UNIT_FORCE_POINTS}
+                    army["status"] = "merged"
+                target["units"] = units
+                cities = self._npc_faction_cities(source)
+                for city_id in cities:
+                    self.state["city_owners"][city_id] = winner_faction
+                self._retire_npc_faction(source)
+                self._refresh_city_income()
+                holder = sorted(self.state["players"])[0]
+                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                    "kind": "npc_faction_merged", "label": label,
+                    "from_faction": source, "into_faction": winner_faction,
+                    "into_general_id": winner_general, "into_army_id": target_id,
+                    "units": dict(units), "absorbed": absorbed, "cities": cities})
+                self._notify_all(f'{label}：{source} 全軍併入{name}部，'
+                                 f'地盤 {len(cities)} 座城轉屬 {winner_faction}。')
+                applied.append({"kind": "npc_faction_merge", "from_faction": source,
+                                "into_general": name, "into_general_id": winner_general,
+                                "into_army_id": target_id, "units": dict(units),
+                                "absorbed": absorbed, "cities": cities,
+                                "overflow": overflow})
 
         # ---- 永久改寫功能卡的利率（11.3 不裁兵：軍閥公債利率永久 12%）----
         rate = payload.get("loan_rate_override")

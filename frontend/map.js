@@ -412,7 +412,7 @@ export const ARMY_POSITIONS = {
   M: [
     { id: 'M-1', generalId: 'ma_qi', general: '馬麒', designator: '第一軍', startCityId: 'xining', lon: 101.8, lat: 36.6, units: { infantry: 7, cavalry: 5, artillery: 0, machine_gun: 1 } },
     { id: 'M-2', generalId: 'ma_fuxiang', general: '馬福祥', designator: '第二軍', startCityId: 'xining', lon: 101.8, lat: 36.6, units: { infantry: 6, cavalry: 4, artillery: 0, machine_gun: 1 } },
-    { id: 'M-3', generalId: 'ma_hongbin', general: '馬鴻賓', designator: '第三軍', startCityId: 'xining', lon: 101.8, lat: 36.6, units: { infantry: 5, cavalry: 4, artillery: 0, machine_gun: 1 } },
+    { id: 'M-3', generalId: 'ma_hongkui', general: '馬鴻逵', designator: '第三軍', startCityId: 'xining', lon: 101.8, lat: 36.6, units: { infantry: 5, cavalry: 4, artillery: 0, machine_gun: 1 } },
   ],
   H: [
     { id: 'H-1', generalId: 'tang_shengzhi', general: '唐生智', designator: '第一軍', startCityId: 'changsha', lon: 112.9, lat: 28.2, units: { infantry: 9, cavalry: 3, artillery: 1, machine_gun: 2 } },

@@ -241,6 +241,9 @@ def build() -> str:
         by_section.setdefault(int(str(card["ref"]).split(".")[0]), []).append(card)
 
     partial = [c["ref"] for c in cards if _collect(c)[1]]
+    # 「還缺機制」與「暫不進牌堆」是兩件事，句子要分開講：
+    # 前者是機制沒建，後者是連抽都抽不到。混在一句裡會讀成「都做好了只差資料」。
+    blocked = [c["ref"] for c in cards if _collect(c)[1] and c.get("not_in_pool")]
     frontend = [c["ref"] for c in cards if c["id"] in FRONTEND_CARDS]
     choice = [c["ref"] for c in cards
               if (c.get("resolution") or {}).get("type") == "choice"]
@@ -257,13 +260,14 @@ def build() -> str:
            f"{len(gated)} 張有條件（{'、'.join(gated)}）。",
            "- **結算方式**：多數卡是閱報即可；`choice` 卡要表態，"
            f"其中 {len(choice)} 張（{'、'.join(choice)}）是**四家各自表態、各自結算**。",
-           "- **實作狀態**：機制**全部自動化**，沒有任何一張要玩家自己動手。"
+           "- **實作狀態**：已上線的卡機制**全部自動化**，沒有任何一張要玩家自己動手。"
            f"其中 {len(frontend)} 張（{'、'.join(frontend)}）的效果後端碰不到"
            "（部隊編制、將領忠誠、強制撤退），由前端 `applyFrontendEventEffects()` 補完，"
            "算在全自動裡。"
-           f"另有 {len(partial)} 張（{'、'.join(partial)}）機制已建好但**目標卡尚未建檔**"
-           "（[軍事]／[幫會] 標籤的卡還沒收錄），所以現階段空轉——"
-           "那批卡進資料檔就自動生效，不必再改程式。", ""]
+           f"另有 {len(partial)} 張（{'、'.join(partial)}）**機制尚未建置**，"
+           "各張「實作狀態」欄列出還缺哪些機制；"
+           f"其中 {len(blocked)} 張（{'、'.join(blocked)}）掛著 `not_in_pool`，"
+           "在機制補齊之前**不會進牌堆、抽不到**。", ""]
 
     for index in sorted(by_section):
         out.append(f"#### {SECTIONS[index]}（{len(by_section[index])} 張）")

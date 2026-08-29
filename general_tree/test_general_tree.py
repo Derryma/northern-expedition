@@ -210,7 +210,7 @@ class ShippedTreeDataTest(unittest.TestCase):
         "song_zheyuan": "broadsword_corps", "lu_zhonglin": "northwest_vanguard",
         "yan_xishan": "shanxi_king", "fu_zuoyi": "iron_bulwark",
         "xu_yongchang": "chief_of_staff", "ma_qi": "xining_garrison",
-        "ma_fuxiang": "desert_guard", "ma_hongbin": "valiant_horse",
+        "ma_fuxiang": "desert_guard", "ma_hongkui": "valiant_horse",
         "zhang_zuolin": "marshal_zhang", "zhang_xueliang": "young_marshal",
         "zhang_zongchang": "white_russian_mercenaries", "yang_yuting": "elite_artillery",
         "sun_chuanfang": "five_provinces_alliance", "zhou_yinren": "riverine_warfare",

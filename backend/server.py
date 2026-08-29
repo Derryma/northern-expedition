@@ -171,7 +171,11 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             fallen_marshals=payload.get("fallen_marshals"),
             faction_trait_holders=payload.get("faction_trait_holders"),
             ultimatum_garrisons=payload.get("ultimatum_garrisons") or {},
+            # 哪些城市有誰的駐軍——前端報事實，規則在後端判（15.16 南京事件）。
+            city_garrison_report=payload.get("city_garrison_report") or {},
             marshal_ids=payload.get("marshal_ids") or {},
+            # NPC 事件卡的觸發條件要看將領與編制的現況，那份資料在共享戰術狀態裡。
+            tactical=SHARED_TACTICAL_STATE,
         )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:

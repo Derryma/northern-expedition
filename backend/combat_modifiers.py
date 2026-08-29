@@ -23,7 +23,7 @@ AURA_TRAITS: Dict[str, Dict[str, Any]] = {
     "advantage_is_ours": {"partners": ["he_yingqin"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
     "northwest_overlord": {"partners": ["song_zheyuan", "lu_zhonglin"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
     "shanxi_king": {"partners": ["fu_zuoyi", "xu_yongchang"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
-    "xining_garrison": {"partners": ["ma_fuxiang", "ma_hongbin"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
+    "xining_garrison": {"partners": ["ma_fuxiang", "ma_hongkui"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
     "marshal_zhang": {"partners": ["zhang_xueliang"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
     "five_provinces_alliance": {"partners": ["meng_zhaoyue", "lu_xiangting"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
     "wu_peifu_admired": {"partners": ["jin_yun_e", "kou_yingjie", "chen_jiamo"], "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
@@ -165,6 +165,39 @@ class CombatModifierBuilder:
                     for m in (effect.get("modifiers") or [])]
         return out
 
+    def npc_combat_modifiers(self, faction: Optional[str],
+                             general_id: Optional[str]) -> List[Dict[str, Any]]:
+        """NPC 勢力吃到的限時戰鬥修正（15.2、15.20、15.22、15.23）。
+
+        玩家的限時修正掛在 `player["timed_effects"]`，但 NPC 陣營不在
+        `state["players"]` 裡，所以另設一份全域清單 `state["npc_combat_effects"]`。
+
+        一筆效果可以指定陣營（整個晉系）、指定將領（只有傅作義部），或兩者都給。
+        兩個都沒給的效果不生效——那是資料寫錯，不該無差別套在所有 NPC 身上。
+        """
+        # 只擋「沒有陣營」。不必再擋玩家陣營：每一筆效果的 faction 都保證是
+        # NPC 代號（寫別的會在建檔時就拋錯），所以玩家永遠對不上——
+        # 多加一道 `faction in state["players"]` 是永遠不會生效的死碼，
+        # 突變測試把它整條拿掉時沒有任何一條測試變紅，所以直接不留。
+        if not faction:
+            return []
+        out: List[Dict[str, Any]] = []
+        for effect in self.engine.state.get("npc_combat_effects", []):
+            want_faction = effect.get("faction")
+            want_general = effect.get("general_id")
+            if not want_faction and not want_general:
+                continue
+            if want_faction and want_faction != faction:
+                continue
+            if want_general and want_general != general_id:
+                continue
+            remaining = effect.get("remaining_turns")
+            if remaining is not None and int(remaining) <= 0:
+                continue
+            out += [{**m, "source_effect": effect.get("name")}
+                    for m in (effect.get("modifiers") or [])]
+        return out
+
     def situational_modifiers(self, *, faction: str, defending: bool,
                               fortress: bool) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
@@ -226,5 +259,6 @@ class CombatModifierBuilder:
                 modifiers += self.timed_modifiers(faction, opponent)
                 modifiers += self.situational_modifiers(
                     faction=faction, defending=bool(army.get("defending")), fortress=fortress)
+                modifiers += self.npc_combat_modifiers(faction, army.get("general_id"))
                 out[army["id"]] = modifiers
         return out

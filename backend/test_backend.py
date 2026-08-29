@@ -16,8 +16,12 @@ from backend.card_engine import (
     GameEngine,
     RECRUIT_COSTS,
     FACTION_LEVEL_TRAITS,
+    EXILE_RECRUIT_SURCHARGE,
+    ARMY_FORCE_CAP,
+    UNIT_FORCE_POINTS,
 )
 from copy import deepcopy
+from backend.combat_modifiers import AURA_TRAITS
 from backend.combat_adapter import simulate
 from backend.data_store import load_game_data
 from economy import LoanBook
@@ -5971,6 +5975,33 @@ class ChoiceCardBothBranchesTests(unittest.TestCase):
     # 設計稿明寫「沒有效果」的選項，唯一的合法例外。
     DELIBERATE_NO_OPS = {("extraterritoriality_talks", "refuse")}
 
+    # 競標型的選項：按下去本身不落地任何效果，因為它是**表態**而不是動作。
+    # 四個人各自出價之後才知道誰要付錢、誰抽中，所以結算只能等所有人回應完，
+    # 在卡片層級的 apply（contested_npc_recruit）裡一次做完。
+    # 這和「刻意沒有效果」是兩回事，所以另立一類，並且下面會驗證它們確實
+    # 掛在有 contested_npc_recruit 的卡上——不是拿來當免死金牌用的。
+    BID_OPTIONS = {
+        ("tang_shengzhi_seeks_help", "recruit"), ("tang_shengzhi_seeks_help", "decline"),
+        ("long_yun_coup_brewing", "recruit"), ("long_yun_coup_brewing", "decline"),
+        ("liu_xiang_denounces_zhili", "recruit"), ("liu_xiang_denounces_zhili", "decline"),
+        ("han_fuju_defects_to_nanjing", "recruit"), ("han_fuju_defects_to_nanjing", "decline"),
+    }
+
+    def test_every_bid_option_belongs_to_a_card_that_settles_it(self):
+        """列在 BID_OPTIONS 裡的選項，它那張卡一定要真的有 contested_npc_recruit。
+
+        少了這條，BID_OPTIONS 就變成「把測不過的選項丟進來就好」的後門。
+        """
+        engine = GameEngine(seed=3)
+        for card_id, option_id in sorted(self.BID_OPTIONS):
+            card = engine._event_template(card_id)
+            spec = (card.get("apply") or {}).get("contested_npc_recruit")
+            self.assertTrue(spec, f"{card_id} 的選項掛在 BID_OPTIONS，卡片卻沒有競標結算")
+            ids = {o.get("id") for o in (card["resolution"].get("options") or [])}
+            self.assertIn(option_id, ids, f"{card_id} 沒有 {option_id} 這個選項")
+            self.assertIn(str(spec.get("option_id") or "recruit"), ids,
+                          f"{card_id} 的 option_id 指向不存在的選項")
+
     def _choice_cards(self):
         engine = GameEngine(seed=3)
         return engine, [c for c in engine.data["event_cards"]["cards"]
@@ -6015,6 +6046,11 @@ class ChoiceCardBothBranchesTests(unittest.TestCase):
                 before = self._fingerprint(engine)
                 engine._apply_event_payload(option.get("apply") or {},
                                             players=["F"], card=card)
+                if key in self.BID_OPTIONS:
+                    # 競標型：本來就不該自己落地，另有一條測試證明它的卡會結算。
+                    self.assertEqual(self._fingerprint(engine), before,
+                                     f'{key} 是競標表態，不該自己改狀態')
+                    continue
                 if self._fingerprint(engine) == before:
                     inert.append(f'{card.get("ref")} {card["name"]}／{option.get("label")}')
                     continue
@@ -12687,10 +12723,6 @@ class ArmyActionWiringTests(unittest.TestCase):
         self.assertIn("ENGINE.loyalty_report(SHARED_TACTICAL_STATE)", server)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ForeignRelationThresholdTests(unittest.TestCase):
     """列強交好的門檻只有一個數字，而且住在 foreign_powers.json。
 
@@ -13513,13 +13545,35 @@ class NpcActionCardTests(unittest.TestCase):
                 self.assertIn(name, self.KNOWN_PENDING,
                               f"{card['ref']} 用了沒登記過的待建機制名稱：{name}")
 
-    def test_none_of_them_is_in_the_starting_pool(self):
-        """實跑確認：開局配池不會把這批卡放進去。"""
+    def test_only_the_finished_ones_reach_the_pool(self):
+        """實跑確認：機制沒補齊的進不了卡池，補齊的則要進得去。"""
         engine = GameEngine(seed=3)
         pool = set(engine.state["event_pool"])
         for card in self.cards:
-            self.assertNotIn(card["id"], pool,
-                             f"{card['ref']} 不該出現在卡池裡")
+            pending = (card.get("apply") or {}).get("pending") or []
+            if pending:
+                self.assertNotIn(card["id"], pool,
+                                 f"{card['ref']} 還缺 {pending}，不該出現在卡池裡")
+            else:
+                self.assertIn(card["id"], pool,
+                              f"{card['ref']} 機制已齊，卻進不了卡池")
+
+    def test_the_finished_ones_are_gated_on_a_live_world_condition(self):
+        """已上線的那幾張都帶著看現況的觸發條件，而且條件真的擋得住。
+
+        絕大多數靠 `npc_requires`（某某將領還在不在）。15.16 南京事件是例外：
+        它的閘門是「南京有軍隊駐守」——同樣是看戰場現況，只是看的是駐軍不是將領。
+        兩者都會在條件不成立時把整張卡擋在牌堆外，所以都算數。
+        """
+        for card in self.cards:
+            if (card.get("apply") or {}).get("pending"):
+                continue
+            condition = card.get("entry_condition") or {}
+            gates = list(condition.get("npc_requires") or [])
+            if condition.get("requires_garrison_in_city"):
+                gates.append({"requires_garrison_in_city":
+                              condition["requires_garrison_in_city"]})
+            self.assertTrue(gates, f"{card['ref']} 上線了卻沒有觸發條件")
 
     def test_the_city_level_cards_really_move_the_level(self):
         """15.28–15.33 的效果本身已經接上引擎——直接叫 payload 驗一次。"""
@@ -13708,3 +13762,2022 @@ class ReportManuscriptTests(unittest.TestCase):
             head = block.split("###")[0]
             self.assertIn("機制建置中", head,
                           f'{card["ref"]} 還沒進卡池，文稿上要標出來')
+
+
+class GeneralIdentityConsistencyTests(unittest.TestCase):
+    """將領的代號與姓名只有一份，改名時不准只改一半。
+
+    起因是一次將領改名——一個人的名字散落在將領樹、特性說明、戰鬥光環的搭檔名單、
+    地圖初始部隊與肖像檔名五個地方。漏掉任何一處，畫面上就會出現一個查無此人的將領，
+    或是一張讀不到的肖像。
+
+    舊名與舊代號在本檔中一律用組字的方式寫（見 RETIRED_NAMES），
+    這樣全庫掃描才能連這個測試檔本身一起掃，不會因為測試自己寫了舊名而誤判。
+    """
+
+    # 退役的寫法：不留字面，否則這個檔案自己就會踩到下面那條全庫掃描。
+    RETIRED_NAMES = ("馬鴻" + "賓",)
+    RETIRED_IDS = ("ma_" + "hongbin",)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = pathlib.Path(__file__).resolve().parent.parent
+        # general_tree_template.json 是建樹用的骨架，裡面的人物與實際對局無關；
+        # 合併時要跳過，否則它會蓋掉 playtest（國民革命軍）與湘軍的真正設定。
+        # 在野將領住在 generals_in_exile.json——他們開局不在任何陣營的樹上，
+        # 由〈在野名將投效〉請出山，所以也要一併算進「認得的人」。
+        cls.trees = {}
+        for path in sorted((cls.repo / "general_tree" / "data").glob("general_tree_*.json")):
+            if path.name == "general_tree_template.json":
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for general_id, general in (data.get("generals") or {}).items():
+                cls.trees[general_id] = general
+        exile = json.loads(
+            (cls.repo / "general_tree" / "data" / "generals_in_exile.json").read_text(encoding="utf-8"))
+        cls.exiles = dict(exile.get("generals") or {})
+        cls.everyone = {**cls.trees, **cls.exiles}
+        cls.app = (cls.repo / "frontend" / "app.js").read_text(encoding="utf-8")
+        cls.map = (cls.repo / "frontend" / "map.js").read_text(encoding="utf-8")
+
+    def test_every_general_declares_the_same_id_as_its_key(self):
+        for general_id, general in self.trees.items():
+            self.assertEqual(general.get("id"), general_id,
+                             f"{general_id} 的 id 欄位與鍵值對不上")
+
+    def test_every_aura_partner_is_a_real_general(self):
+        """光環寫了搭檔，那個搭檔就得真的存在——否則加成永遠不會觸發。"""
+        missing = {}
+        for trait, spec in AURA_TRAITS.items():
+            unknown = [p for p in spec["partners"] if p not in self.trees]
+            if unknown:
+                missing[trait] = unknown
+        self.assertEqual(missing, {}, f"這些光環的搭檔查無此人：{missing}")
+
+    def test_every_general_on_the_map_exists_in_a_tree(self):
+        """地圖上的初始部隊掛的 generalId 要查得到人，名字也要對得上。"""
+        pairs = re.findall(r"generalId:\s*'([^']+)',\s*general:\s*'([^']+)'", self.map)
+        self.assertTrue(pairs, "map.js 裡找不到任何初始部隊")
+        unknown = [gid for gid, _ in pairs if gid not in self.trees]
+        self.assertEqual(unknown, [], f"地圖上這些 generalId 查無此人：{unknown}")
+        mismatched = sorted(f"{gid}：樹上「{self.trees[gid].get('name')}」／地圖「{name}」"
+                            for gid, name in pairs
+                            if self.trees[gid].get("name") != name)
+        self.assertEqual(mismatched, [], f"將領樹與地圖的姓名對不上：{mismatched}")
+
+    def test_every_general_anywhere_has_a_chinese_name(self):
+        """所有將領在 UI 上一律用中文名——連建樹骨架也不例外。
+
+        骨架（general_tree_template.json）本身不進對局，但它是新樹的範本；
+        範本留著拼音，抄出來的新樹就會帶著拼音上場。
+        """
+        offenders = []
+        for path in sorted((self.repo / "general_tree" / "data").glob("*.json")):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for general_id, general in (data.get("generals") or {}).items():
+                name = str(general.get("name") or "")
+                if not re.search(r"[\u4e00-\u9fff]", name):
+                    offenders.append(f"{path.name}:{general_id}={name!r}")
+        self.assertEqual(offenders, [], f"這些將領的姓名不是中文：{offenders}")
+
+    def test_the_skill_catalogue_is_in_chinese_too(self):
+        """技能名稱也隨 bootstrap 送到前端，同樣不留英文。"""
+        catalogue = json.loads(
+            (self.repo / "general_tree" / "data" / "skill_catalog.json").read_text(encoding="utf-8"))
+        offenders = [f"{key}={skill.get('name')!r}"
+                     for key, skill in (catalogue.get("skills") or {}).items()
+                     if not re.search(r"[\u4e00-\u9fff]", str(skill.get("name") or ""))]
+        self.assertEqual(offenders, [], f"這些技能名稱不是中文：{offenders}")
+
+    def test_every_portrait_mapping_points_at_a_file_that_exists(self):
+        """肖像對照表裡的每一條都要指到真的存在的圖檔。"""
+        broken = []
+        for general_id, rel in re.findall(r"^\s*([a-z_]+):\s*\"(/assets/portraits/[^\"]+)\"",
+                                          self.app, re.M):
+            path = self.repo / "frontend" / rel.lstrip("/")
+            if not path.exists():
+                broken.append(f"{general_id} → {rel}")
+        self.assertEqual(broken, [], f"這些肖像檔不存在：{broken}")
+
+    def test_every_portrait_belongs_to_somebody_real(self):
+        """肖像表裡的每一個代號都要查得到人——在陣營樹上或在在野池裡。"""
+        orphans = sorted(general_id for general_id, _ in
+                         re.findall(r"^\s*([a-z_]+):\s*\"(/assets/portraits/[^\"]+)\"",
+                                    self.app, re.M)
+                         if general_id not in self.everyone)
+        self.assertEqual(orphans, [], f"肖像表裡這些人查無其人：{orphans}")
+
+    def test_every_exile_general_has_a_portrait(self):
+        """在野將領出山之後會出現在畫面上，每一位都要有肖像。"""
+        mapped = {general_id for general_id, _ in
+                  re.findall(r"^\s*([a-z_]+):\s*\"(/assets/portraits/[^\"]+)\"",
+                             self.app, re.M)}
+        missing = sorted(set(self.exiles) - mapped)
+        self.assertEqual(missing, [], f"這些在野將領沒有肖像：{missing}")
+
+    def test_the_renamed_general_is_consistent_everywhere(self):
+        """馬鴻逵：五個地方都要是新名字，舊名字一個字都不准留。"""
+        general = self.trees.get("ma_hongkui")
+        self.assertIsNotNone(general, "將領樹裡找不到 ma_hongkui")
+        self.assertEqual(general["name"], "馬鴻逵")
+        self.assertIn("ma_hongkui", AURA_TRAITS["xining_garrison"]["partners"])
+        self.assertTrue((self.repo / "frontend" / "assets" / "portraits" / "馬鴻逵.jpg").exists())
+        scanned = 0
+        for path in self.repo.rglob("*"):
+            if not path.is_file() or path.suffix.lower() in (".jpg", ".png", ".geojson"):
+                continue
+            rel = path.relative_to(self.repo).as_posix()
+            # 工作紀錄是歷史檔案——它記的就是「某年某月把甲改成乙」這件事，
+            # 裡面出現舊名是應該的。程式與資料檔才是這條掃描要守的範圍。
+            if rel.startswith((".git/", "PJ Boardgame/", "事件卡工作日誌/")) \
+                    or "__pycache__" in rel:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            scanned += 1
+            for retired in self.RETIRED_NAMES:
+                self.assertNotIn(retired, text, f"{rel} 還留著舊名字")
+            for retired in self.RETIRED_IDS:
+                self.assertNotIn(retired, text, f"{rel} 還留著舊代號")
+        self.assertGreater(scanned, 50, "掃到的檔案太少，這條測試等於沒跑")
+
+
+class ExileGeneralTests(unittest.TestCase):
+    """在野將領（段祺瑞等六位）：開局不在任何陣營樹上是設計，不是缺陷。
+
+    他們住在 generals_in_exile.json，由〈在野名將投效〉請出山。
+    這一組守的是「價目只有一份」與「名冊資料齊全」。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = pathlib.Path(__file__).resolve().parent.parent
+        cls.pool = json.loads(
+            (cls.repo / "general_tree" / "data" / "generals_in_exile.json")
+            .read_text(encoding="utf-8"))["generals"]
+        cls.app = (cls.repo / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    def test_the_roster_is_the_six_we_expect(self):
+        self.assertEqual(sorted(self.pool), sorted([
+            "duan_qirui", "chen_jiongming", "tian_zhongyu",
+            "wang_chengbin", "li_houji", "lu_yongxiang"]))
+
+    def test_each_one_carries_everything_the_roster_card_needs(self):
+        """名冊上要印名字、身價、自帶部隊、背景與能力——缺一格畫面就開天窗。"""
+        for general_id, general in self.pool.items():
+            for field in ("name", "recruit_value", "units", "background", "ability"):
+                self.assertTrue(general.get(field),
+                                f"{general_id} 少了 {field}")
+            self.assertRegex(general["name"], r"[一-鿿]",
+                             f"{general_id} 的名字不是中文")
+            self.assertEqual(general.get("status"), "in_exile", general_id)
+
+    def test_the_surcharge_lives_in_exactly_one_place(self):
+        """出山附加費是規則，住在後端。前端不准自己抄一份。
+
+        抄一份的下場是：改了後端的數字，名冊上印的價目照舊，
+        玩家看到的價錢與實際扣款不一樣。
+        """
+        self.assertNotIn("EXILE_RECRUIT_SURCHARGE", self.app,
+                         "前端不該有自己的出山附加費常數")
+        self.assertIn("bootstrap?.exile_recruit", self.app,
+                      "前端要從後端公布的價目讀，不是自己算")
+
+    def test_the_backend_publishes_the_price_it_actually_charges(self):
+        engine = GameEngine(seed=3)
+        published = engine.bootstrap()["exile_recruit"]
+        self.assertEqual(int(published["surcharge"]), EXILE_RECRUIT_SURCHARGE)
+        for general_id, general in self.pool.items():
+            self.assertEqual(
+                int(published["prices"][general_id]),
+                int(general["recruit_value"]) + EXILE_RECRUIT_SURCHARGE,
+                f"{general_id} 公布的價目與實收不符")
+
+    def test_recruiting_one_charges_that_exact_price(self):
+        """公布的價目與實際扣款要是同一個數字——實跑一次對帳。"""
+        for general_id, general in self.pool.items():
+            engine = GameEngine(seed=3)
+            player = next(code for code in engine.state["players"]
+                          if code not in general.get("forbidden_factions", []))
+            profile = engine._player(player)
+            profile["treasury"] = 500
+            profile["hand"].append("function_在野名將投效")
+            before = int(profile["treasury"])
+            result = engine.use_function(player, "function_在野名將投效",
+                                         target_general_id=general_id)
+            price = int(engine.bootstrap()["exile_recruit"]["prices"][general_id])
+            self.assertEqual(before - int(profile["treasury"]), price,
+                             f"{general_id}：公布 {price}，實扣 {before - int(profile['treasury'])}")
+            self.assertEqual(result["exile_recruit"]["price"], price)
+
+    def test_an_old_grudge_really_blocks_the_recruitment(self):
+        """盧永祥不投五省聯軍、陳炯明不投國民革命軍——擋在後端，不是靠前端不給點。"""
+        blocked = [(gid, faction)
+                   for gid, general in self.pool.items()
+                   for faction in general.get("forbidden_factions", [])]
+        self.assertTrue(blocked, "沒有任何舊怨設定，這條測試等於沒跑")
+        for general_id, faction in blocked:
+            engine = GameEngine(seed=3)
+            profile = engine._player(faction)
+            profile["treasury"] = 500
+            profile["hand"].append("function_在野名將投效")
+            with self.assertRaisesRegex(ValueError, "不願投靠"):
+                engine.use_function(faction, "function_在野名將投效",
+                                    target_general_id=general_id)
+
+    def test_nobody_can_be_recruited_twice(self):
+        engine = GameEngine(seed=3)
+        for player in ("F", "W"):
+            profile = engine._player(player)
+            profile["treasury"] = 500
+            profile["hand"].append("function_在野名將投效")
+        engine.use_function("F", "function_在野名將投效", target_general_id="duan_qirui")
+        with self.assertRaisesRegex(ValueError, "已經出山"):
+            engine.use_function("W", "function_在野名將投效", target_general_id="duan_qirui")
+
+    def test_the_frontend_never_leaves_a_general_without_troops(self):
+        """找不到落腳格時不能默默 return——那會留下有將無兵又扣了錢的半套狀態。"""
+        block = self.app.split("function applyExileRecruit")[1][:2500]
+        self.assertIn("uiNotice", block,
+                      "落腳失敗要讓玩家看得見，不能無聲無息")
+        self.assertNotIn("if (!cell) return;", block,
+                         "舊的無聲 return 還在")
+
+
+class SkeletonTreeIsolationTests(unittest.TestCase):
+    """`general_tree_template.json` 是建樹規則的測試夾具，不是對局資料。
+
+    它的人物編制與四家真正的樹不同（骨架把唐生智掛在蔣介石底下、李宗仁掛在
+    白崇禧底下，還多一位薛岳；實際對局的國民革命軍樹是蔣介石帶何應欽、白崇禧、
+    李宗仁三人，沒有薛岳，唐生智在湘軍）。
+
+    這一組釘住的就是那條界線：**骨架裡的人不准漏進對局**。
+    先前我自己寫的一條檢查把骨架也合併進去，於是骨架的設定蓋掉了真正的樹，
+    害我誤報「五位將領還是拼音」。這條測試存在，就是為了不再有人（包括我）踩同一個坑。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        repo = pathlib.Path(__file__).resolve().parent.parent
+        cls.skeleton = json.loads(
+            (repo / "general_tree" / "data" / "general_tree_template.json")
+            .read_text(encoding="utf-8"))
+        cls.engine = GameEngine(seed=3)
+
+    def test_the_skeleton_is_nobody_playable_tree(self):
+        """四家對局樹都不是骨架——比對的是內容，不是檔名。"""
+        for code, tree in (self.engine.data.get("playable_general_trees") or {}).items():
+            self.assertNotEqual(tree.get("version"), self.skeleton.get("version"),
+                                f"{code} 用到了骨架")
+
+    def test_nobody_only_in_the_skeleton_ever_reaches_a_playable_tree(self):
+        """只存在於骨架的人（薛岳）不得出現在任何對局樹裡。"""
+        playable = set()
+        for tree in (self.engine.data.get("playable_general_trees") or {}).values():
+            playable |= set(tree.get("generals") or {})
+        for path in sorted((pathlib.Path(__file__).resolve().parent.parent
+                            / "general_tree" / "data").glob("general_tree_npc_*.json")):
+            playable |= set(json.loads(path.read_text(encoding="utf-8")).get("generals") or {})
+        skeleton_only = set(self.skeleton.get("generals") or {}) - playable
+        self.assertIn("xue_yue", skeleton_only,
+                      "薛岳應該只存在於骨架；他若進了對局樹，這條要提醒")
+        for general_id in skeleton_only:
+            self.assertNotIn(general_id, playable, f"{general_id} 從骨架漏進對局樹了")
+
+    def test_the_skeleton_never_goes_out_to_the_frontend(self):
+        """bootstrap 不得夾帶骨架——前端拿不到，畫面上就不可能出現這些人。"""
+        payload = json.dumps(self.engine.bootstrap(), ensure_ascii=False)
+        for general_id, general in (self.skeleton.get("generals") or {}).items():
+            if general_id in {"chiang_kai_shek", "he_yingqin", "bai_chongxi",
+                              "li_zongren", "tang_shengzhi"}:
+                continue          # 這幾位在真正的樹裡也有，同名不算漏
+            self.assertNotIn(general_id, payload, f"{general_id} 隨 bootstrap 送出去了")
+            self.assertNotIn(general["name"], payload, f"{general['name']} 隨 bootstrap 送出去了")
+
+    def test_the_tree_api_cannot_serve_the_skeleton(self):
+        """`/api/general-tree` 的對照表裡沒有骨架，未知陣營也退回國民革命軍而不是骨架。"""
+        server = (pathlib.Path(__file__).resolve().parent / "server.py").read_text(encoding="utf-8")
+        table = server.split("tree_files = {")[1].split("}")[0]
+        self.assertNotIn("general_tree_template", table,
+                         "/api/general-tree 不該送得出骨架")
+        self.assertIn("tree_files.get(faction, tree_files['N'])", server,
+                      "未知陣營要退回國民革命軍")
+
+
+class NpcConditionGateTests(unittest.TestCase):
+    """NPC 事件卡的觸發條件：「某某仍屬某陣營」「某陣營還有幾營」「某城仍歸誰」。
+
+    判定全在後端。前端只送戰術快照（編制、將領樹、將領歸屬），
+    要不要發這張報紙由引擎決定——否則改一行 JS 就能讓陣亡的馮玉祥重新誓師。
+    """
+
+    def _tactical(self, armies, owners=None, jailed=None):
+        return {"armies": armies, "generalOwners": owners or {},
+                "generalTrees": {}, "jailedGenerals": list(jailed or [])}
+
+    def _engine(self, tactical=None):
+        engine = GameEngine(seed=3)
+        engine._tactical = tactical
+        return engine
+
+    ALIVE = {
+        "Y-1": {"generalId": "yan_xishan", "units": {"infantry": 11}, "status": "active"},
+        "Y-2": {"generalId": "fu_zuoyi", "units": {"infantry": 7}, "status": "active"},
+        "G-1": {"generalId": "feng_yuxiang", "units": {"infantry": 10}, "status": "active"},
+        "G-2": {"generalId": "song_zheyuan", "units": {"infantry": 7}, "status": "active"},
+        "C-1": {"generalId": "liu_xiang", "units": {"infantry": 9}, "status": "active"},
+        "Q-1": {"generalId": "qian_local_militia", "units": {"infantry": 5}, "status": "active"},
+    }
+
+    # ---- 一、沒有快照就一律不發 ----
+
+    def test_without_a_snapshot_no_npc_card_is_eligible(self):
+        """fail closed：寧可卡不出現，也不要發一張人早就不在的報紙。"""
+        engine = self._engine(None)
+        for card in engine.data["event_cards"]["cards"]:
+            rules = (card.get("entry_condition") or {}).get("npc_requires") or []
+            if not any(r.get("general") or r.get("faction") for r in rules):
+                continue
+            self.assertEqual(engine._event_eligible_players(card), [],
+                             f"{card['ref']} 在沒有戰術快照時不該可抽")
+
+    def test_a_city_only_condition_does_not_need_a_snapshot(self):
+        """城市歸屬是引擎自己的帳，不必等前端送快照。"""
+        engine = self._engine(None)
+        card = engine._event_template("qian_army_moutai")
+        self.assertTrue(engine._event_eligible_players(card))
+
+    # ---- 二、將領還在不在 ----
+
+    def test_a_general_still_with_his_faction_lets_the_card_through(self):
+        engine = self._engine(self._tactical(self.ALIVE))
+        card = engine._event_template("yan_xishan_promotes_education")
+        self.assertTrue(engine._event_eligible_players(card))
+
+    def test_a_dead_general_blocks_his_card(self):
+        armies = deepcopy(self.ALIVE)
+        armies["Y-1"]["status"] = "killed"
+        engine = self._engine(self._tactical(armies))
+        card = engine._event_template("yan_xishan_promotes_education")
+        self.assertEqual(engine._event_eligible_players(card), [])
+
+    def test_a_defected_general_blocks_his_card(self):
+        """被策反到別家就不算「仍屬晉系」。"""
+        engine = self._engine(self._tactical(self.ALIVE, owners={"yan_xishan": "F"}))
+        card = engine._event_template("yan_xishan_promotes_education")
+        self.assertEqual(engine._event_eligible_players(card), [])
+
+    def test_a_captured_general_blocks_his_card(self):
+        engine = self._engine(self._tactical(self.ALIVE, jailed=["yan_xishan"]))
+        card = engine._event_template("yan_xishan_promotes_education")
+        self.assertEqual(engine._event_eligible_players(card), [])
+
+    def test_every_named_general_must_still_be_there(self):
+        """15.19 晉綏軍擴編要閻錫山**與**傅作義都在，少一個就不發。"""
+        card = GameEngine(seed=3)._event_template("jinsui_army_expands")
+        self.assertTrue(self._engine(self._tactical(self.ALIVE))._event_eligible_players(card))
+        armies = deepcopy(self.ALIVE)
+        armies["Y-2"]["status"] = "killed"
+        self.assertEqual(
+            self._engine(self._tactical(armies))._event_eligible_players(card), [],
+            "傅作義不在了，晉綏軍擴編不該發")
+
+    # ---- 三、陣營還有沒有將領 ----
+
+    def test_a_faction_wiped_out_blocks_its_card(self):
+        card = GameEngine(seed=3)._event_template("ma_clique_expands")
+        alive = dict(self.ALIVE)
+        alive["M-1"] = {"generalId": "ma_qi", "units": {"infantry": 7}, "status": "active"}
+        self.assertTrue(self._engine(self._tactical(alive))._event_eligible_players(card))
+        alive = deepcopy(alive)
+        alive["M-1"]["status"] = "destroyed"
+        self.assertEqual(
+            self._engine(self._tactical(alive))._event_eligible_players(card), [])
+
+    def test_at_least_one_other_general_means_besides_the_named_one(self):
+        """15.17 要馮玉祥在，**且**西北軍還有另一位將領。只剩馮玉祥就不發。"""
+        card = GameEngine(seed=3)._event_template("powers_punish_soviet_proxy")
+        self.assertTrue(self._engine(self._tactical(self.ALIVE))._event_eligible_players(card))
+        only_feng = deepcopy(self.ALIVE)
+        only_feng["G-2"]["status"] = "killed"
+        self.assertEqual(
+            self._engine(self._tactical(only_feng))._event_eligible_players(card), [],
+            "西北軍只剩馮玉祥一人，這張卡不該發")
+
+    # ---- 四、兵力門檻 ----
+
+    def test_the_battalion_floor_is_counted_not_guessed(self):
+        card = GameEngine(seed=3)._event_template("liu_xiang_annexes_qian")
+        empty = deepcopy(self.ALIVE)
+        empty["Q-1"]["units"] = {}
+        self.assertEqual(
+            self._engine(self._tactical(empty))._event_eligible_players(card), [],
+            "黔軍 0 營，吞併黔軍不該發")
+        one = deepcopy(self.ALIVE)
+        one["Q-1"]["units"] = {"infantry": 1}
+        self.assertTrue(self._engine(self._tactical(one))._event_eligible_players(card))
+
+    def test_battalions_of_a_dead_army_do_not_count(self):
+        card = GameEngine(seed=3)._event_template("liu_xiang_annexes_qian")
+        dead = deepcopy(self.ALIVE)
+        dead["Q-1"]["status"] = "destroyed"
+        self.assertEqual(
+            self._engine(self._tactical(dead))._event_eligible_players(card), [],
+            "已被殲滅的部隊不該還算進兵力")
+
+    # ---- 五、城市歸屬 ----
+
+    def test_a_city_changing_hands_blocks_its_card(self):
+        engine = self._engine(self._tactical(self.ALIVE))
+        card = engine._event_template("qian_army_moutai")
+        self.assertTrue(engine._event_eligible_players(card))
+        engine.state["city_owners"]["zunyi"] = "C"
+        self.assertEqual(engine._event_eligible_players(card), [],
+                         "遵義已經不歸黔軍，茅台酒造不該發")
+
+    # ---- 六、資料寫錯要當場炸，不能安靜地判成「不合格」 ----
+
+    def test_an_unknown_general_name_is_a_loud_error(self):
+        engine = self._engine(self._tactical(self.ALIVE))
+        card = {"id": "fake", "entry_condition":
+                {"npc_requires": [{"general": "查無此人", "still_with": "Y"}]}}
+        with self.assertRaisesRegex(ValueError, "查無此人"):
+            engine._npc_requires_met(card, engine._tactical)
+
+    def test_a_general_named_with_the_wrong_faction_is_a_loud_error(self):
+        engine = self._engine(self._tactical(self.ALIVE))
+        card = {"id": "fake", "entry_condition":
+                {"npc_requires": [{"general": "閻錫山", "still_with": "C"}]}}
+        with self.assertRaisesRegex(ValueError, "不屬於"):
+            engine._npc_requires_met(card, engine._tactical)
+
+    def test_an_unreadable_rule_is_a_loud_error(self):
+        engine = self._engine(self._tactical(self.ALIVE))
+        card = {"id": "fake", "entry_condition": {"npc_requires": [{"nonsense": 1}]}}
+        with self.assertRaisesRegex(ValueError, "看不懂"):
+            engine._npc_requires_met(card, engine._tactical)
+
+    # ---- 七、名冊本身 ----
+
+    def test_every_general_named_on_a_card_exists_in_the_npc_trees(self):
+        """33 張卡點名的每一位，都要在 NPC 將領樹裡查得到，而且陣營要對。"""
+        engine = GameEngine(seed=3)
+        index = engine._npc_general_index()
+        for card in engine.data["event_cards"]["cards"]:
+            for rule in ((card.get("entry_condition") or {}).get("npc_requires") or []):
+                name = rule.get("general")
+                if not name:
+                    continue
+                self.assertIn(name, index, f"{card['ref']} 點名的 {name} 查無此人")
+                self.assertIn(rule["still_with"], {code for code, _ in index[name]},
+                              f"{card['ref']}：{name} 不在 {rule['still_with']}")
+
+    def test_the_server_hands_the_snapshot_to_the_draw(self):
+        """伺服器要把共享戰術狀態交給 next_turn，否則後端永遠判不出 NPC 條件。"""
+        server = (pathlib.Path(__file__).resolve().parent / "server.py").read_text(encoding="utf-8")
+        self.assertIn("tactical=SHARED_TACTICAL_STATE", server)
+
+
+class NpcUnitDeltaTests(unittest.TestCase):
+    """NPC 部隊增減兵（15.3 五原誓師、15.6 蘇援、15.8/15.25/15.26 擴軍、
+    15.12 馬家軍、15.19 晉綏軍）。
+
+    NPC 沒有預備隊，兵直接加在場上的部隊編制裡。編制住在 SHARED_TACTICAL_STATE，
+    伺服器手上就有——所以**加減、上限箝制、資格判定全在後端**，前端拿到的是
+    絕對編制，照抄即可。這一組測試守的就是那條線：前端不許自己加減。
+    """
+
+    ALIVE = {
+        "Y-1": {"generalId": "yan_xishan", "units": {"infantry": 10}, "status": "active"},
+        "Y-2": {"generalId": "fu_zuoyi", "units": {"infantry": 7}, "status": "active"},
+        "Y-3": {"generalId": "xu_yongchang", "units": {"infantry": 6}, "status": "active"},
+        "G-1": {"generalId": "feng_yuxiang", "units": {"infantry": 10}, "status": "active"},
+        "G-2": {"generalId": "song_zheyuan", "units": {"infantry": 7}, "status": "active"},
+        "G-3": {"generalId": "han_fuqu", "units": {"infantry": 6}, "status": "active"},
+        "G-4": {"generalId": "lu_zhonglin", "units": {"infantry": 5}, "status": "active"},
+        "M-1": {"generalId": "ma_qi", "units": {"cavalry": 4}, "status": "active"},
+        "M-2": {"generalId": "ma_fuxiang", "units": {"cavalry": 3}, "status": "active"},
+        "M-3": {"generalId": "ma_hongkui", "units": {"cavalry": 3}, "status": "active"},
+        "C-1": {"generalId": "liu_xiang", "units": {"infantry": 9}, "status": "active"},
+        "C-2": {"generalId": "liu_wenhui", "units": {"infantry": 7}, "status": "active"},
+        "C-3": {"generalId": "yang_sen", "units": {"infantry": 6}, "status": "active"},
+        "F-1": {"generalId": "chiang_kaishek", "units": {"infantry": 9}, "status": "active"},
+    }
+
+    def _tactical(self, overrides=None, owners=None, jailed=None):
+        armies = {army_id: {**army, "units": dict(army["units"])}
+                  for army_id, army in self.ALIVE.items()}
+        for army_id, patch in (overrides or {}).items():
+            if patch is None:
+                armies.pop(army_id, None)
+            else:
+                armies[army_id] = {**armies.get(army_id, {}), **patch}
+        return {"armies": armies, "generalOwners": owners or {},
+                "generalTrees": {}, "jailedGenerals": list(jailed or [])}
+
+    def _engine(self, tactical=None):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine._tactical = self._tactical() if tactical is None else tactical
+        return engine
+
+    def _fire(self, engine, card_id):
+        card = engine._event_template(card_id)
+        applied = engine._apply_event_payload(card["apply"], players=None, card=card)
+        entry = next(item for item in applied if item["kind"] == "npc_unit_delta")
+        return {army["armyId"]: army for army in entry["armies"]}
+
+    # ---- 一、點名一位將領 ----
+
+    def test_a_named_general_gets_exactly_what_the_card_says(self):
+        """15.8 劉湘步兵 +2、騎兵 +1——只有他這一支動。"""
+        engine = self._engine()
+        patch = self._fire(engine, "liu_xiang_expands")
+        self.assertEqual(sorted(patch), ["C-1"])
+        self.assertEqual(patch["C-1"]["units"]["infantry"], 11)
+        self.assertEqual(patch["C-1"]["units"]["cavalry"], 1)
+        self.assertEqual(patch["C-1"]["changed"], {"infantry": 2, "cavalry": 1})
+
+    def test_yang_sen_and_liu_wenhui_get_different_heavy_units(self):
+        """15.25 楊森是機槍、15.26 劉文輝是砲兵——別把兩張卡的兵種寫混。"""
+        engine = self._engine()
+        self.assertEqual(self._fire(engine, "yang_sen_expands")["C-3"]["changed"],
+                         {"infantry": 2, "machine_gun": 1})
+        engine = self._engine()
+        self.assertEqual(self._fire(engine, "liu_wenhui_expands")["C-2"]["changed"],
+                         {"infantry": 2, "artillery": 1})
+
+    # ---- 二、整個陣營 ----
+
+    def test_a_faction_wide_card_reaches_every_army_of_that_faction(self):
+        """15.12 馬家軍所有部隊都騎兵 +1——三支都要動，別人一支都不動。"""
+        engine = self._engine()
+        patch = self._fire(engine, "ma_clique_expands")
+        self.assertEqual(sorted(patch), ["M-1", "M-2", "M-3"])
+        self.assertEqual([patch[a]["units"]["cavalry"] for a in sorted(patch)], [5, 4, 4])
+
+    def test_a_faction_wide_card_leaves_the_players_own_armies_alone(self):
+        """玩家的部隊不是 NPC 的兵，一根寒毛都不該碰。"""
+        engine = self._engine()
+        for card_id in ("ma_clique_expands", "jinsui_army_expands", "northwest_soviet_aid"):
+            engine._tactical = self._tactical()
+            self.assertNotIn("F-1", self._fire(engine, card_id))
+            self.assertEqual(engine._tactical["armies"]["F-1"]["units"], {"infantry": 9})
+
+    # ---- 三、兩條規則打在同一支部隊上 ----
+
+    def test_two_specs_on_the_same_army_add_up_into_one_patch(self):
+        """15.6：西北軍全體步兵 +1，鹿鍾麟與馮玉祥再各 +1 機槍。
+
+        同一支部隊被兩條規則點到，只能出一筆補丁——出兩筆的話後寫的那筆
+        會把前一筆蓋掉，馮玉祥就只會拿到其中一半。
+        """
+        engine = self._engine()
+        patch = self._fire(engine, "northwest_soviet_aid")
+        self.assertEqual(sorted(patch), ["G-1", "G-2", "G-3", "G-4"])
+        self.assertEqual(patch["G-1"]["changed"], {"infantry": 1, "machine_gun": 1})
+        self.assertEqual(patch["G-4"]["changed"], {"infantry": 1, "machine_gun": 1})
+        self.assertEqual(patch["G-2"]["changed"], {"infantry": 1})
+        self.assertEqual(patch["G-3"]["changed"], {"infantry": 1})
+
+    def test_jinsui_gives_the_two_named_generals_an_extra_gun(self):
+        """15.19：晉系全體步兵 +2，傅作義與閻錫山再各 +1 砲兵。"""
+        engine = self._engine()
+        patch = self._fire(engine, "jinsui_army_expands")
+        self.assertEqual(patch["Y-1"]["changed"], {"infantry": 2, "artillery": 1})
+        self.assertEqual(patch["Y-2"]["changed"], {"infantry": 2, "artillery": 1})
+        self.assertEqual(patch["Y-3"]["changed"], {"infantry": 2})
+
+    # ---- 四、排除指定將領 ----
+
+    def test_except_generals_really_excludes_him(self):
+        """15.3：馮玉祥拿步機砲各一，**其他**西北軍將領只拿步兵一營。
+
+        馮玉祥不該同時吃到那條「其他人 +1 步兵」——否則他會變成 +2 步兵。
+        """
+        engine = self._engine()
+        patch = self._fire(engine, "feng_yuxiang_wuyuan_oath")
+        self.assertEqual(patch["G-1"]["changed"],
+                         {"infantry": 1, "machine_gun": 1, "artillery": 1})
+        for army_id in ("G-2", "G-3", "G-4"):
+            self.assertEqual(patch[army_id]["changed"], {"infantry": 1})
+
+    def test_two_specs_adding_the_same_unit_type_stack(self):
+        """兩條規則都加步兵時要相加，不是後面那條蓋掉前面那條。
+
+        現有 7 張卡沒有這種寫法（重疊的兩條剛好加不同兵種），所以資料檔驗不出來——
+        但 payload 允許這樣寫，機制就得撐得住。
+        """
+        engine = self._engine()
+        patch = engine.npc_unit_delta_patch(
+            [{"general": "劉湘", "units": {"infantry": 2}},
+             {"faction": "C", "units": {"infantry": 1}}],
+            {"id": "probe"}, engine._tactical)
+        liu = next(entry for entry in patch if entry["armyId"] == "C-1")
+        self.assertEqual(liu["changed"], {"infantry": 3})
+        other = next(entry for entry in patch if entry["armyId"] == "C-2")
+        self.assertEqual(other["changed"], {"infantry": 1})
+
+    # ---- 五、誰沒資格拿 ----
+
+    def test_dead_captured_and_destroyed_armies_get_nothing(self):
+        """已陣亡／被俘／被殲的部隊不會憑空補兵。"""
+        for status in GameEngine.DEAD_ARMY_STATUSES:
+            engine = self._engine(self._tactical({"C-1": {"status": status}}))
+            self.assertEqual(self._fire(engine, "liu_xiang_expands"), {},
+                             f"{status} 的部隊不該補到兵")
+
+    def test_a_jailed_general_gets_nothing(self):
+        engine = self._engine(self._tactical(jailed=["liu_xiang"]))
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+
+    def test_a_defected_army_gets_nothing(self):
+        """跳槽過的部隊已經不是自家人了——招降（換主人）與策反（換旗）都算。"""
+        engine = self._engine(self._tactical(owners={"liu_xiang": "F"}))
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+        engine = self._engine(self._tactical({"C-1": {"faction": "F"}}))
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+
+    def test_a_faction_card_skips_the_defector_but_still_feeds_the_rest(self):
+        engine = self._engine(self._tactical(owners={"ma_qi": "N"}))
+        self.assertEqual(sorted(self._fire(engine, "ma_clique_expands")), ["M-2", "M-3"])
+
+    def test_an_npc_general_who_defected_to_a_player_takes_nothing_with_him(self):
+        """劉湘被招降到玩家旗下之後，這張卡不該替玩家的部隊補兵。
+
+        招降之後他的部隊編號會是玩家的（F-3），舊的 C-1 也還可能留在快照裡。
+        兩條路都要堵：靠部隊編號認 NPC 陣營，加上跳槽判定。
+        """
+        tactical = self._tactical({"C-1": None})
+        tactical["armies"]["F-3"] = {"generalId": "liu_xiang",
+                                     "units": {"infantry": 8}, "status": "active"}
+        tactical["generalOwners"]["liu_xiang"] = "F"
+        engine = self._engine(tactical)
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+        self.assertEqual(engine._tactical["armies"]["F-3"]["units"], {"infantry": 8})
+
+    # ---- 六、戰力上限 ----
+
+    def test_the_force_cap_still_holds(self):
+        """補兵不能把部隊補過單一部隊戰力上限。"""
+        engine = self._engine(self._tactical(
+            {"C-1": {"units": {"infantry": ARMY_FORCE_CAP - 1}}}))
+        patch = self._fire(engine, "liu_xiang_expands")
+        self.assertLessEqual(GameEngine._force_of(patch["C-1"]["units"]), ARMY_FORCE_CAP)
+
+    def test_an_army_already_at_the_cap_produces_no_patch_at_all(self):
+        """補不進去就不要報一筆「補了 0 營」的假帳。"""
+        engine = self._engine(self._tactical(
+            {"C-1": {"units": {"infantry": ARMY_FORCE_CAP}}}))
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+
+    def test_a_negative_delta_really_takes_troops_away(self):
+        """減損是這套機制的另一半：負數要真的扣，扣到 0 為止，不會扣成負的。"""
+        engine = self._engine()
+        patch = engine.npc_unit_delta_patch(
+            [{"general": "劉湘", "units": {"infantry": -3}}],
+            {"id": "probe"}, engine._tactical)
+        self.assertEqual(patch[0]["changed"], {"infantry": -3})
+        self.assertEqual(patch[0]["units"]["infantry"], 6)
+
+    def test_a_negative_delta_stops_at_zero(self):
+        engine = self._engine()
+        patch = engine.npc_unit_delta_patch(
+            [{"general": "劉湘", "units": {"infantry": -99}}],
+            {"id": "probe"}, engine._tactical)
+        self.assertEqual(patch[0]["units"]["infantry"], 0)
+
+    def test_a_loss_frees_room_for_the_gain_in_the_same_card(self):
+        """先扣後補：同一張卡裡的減損要先生效，補的兵才有位置站。"""
+        engine = self._engine(self._tactical(
+            {"C-1": {"units": {"infantry": ARMY_FORCE_CAP}}}))
+        patch = engine.npc_unit_delta_patch(
+            [{"general": "劉湘", "units": {"infantry": -4, "artillery": 1}}],
+            {"id": "probe"}, engine._tactical)
+        self.assertEqual(patch[0]["changed"], {"infantry": -4, "artillery": 1})
+        self.assertEqual(GameEngine._force_of(patch[0]["units"]), ARMY_FORCE_CAP)
+
+    # ---- 七、算完之後寫到哪去 ----
+
+    def test_the_backend_updates_its_own_copy_of_the_tactical_state(self):
+        """伺服器手上那份要當場改掉：同一個事件週期後面幾張卡看的是改完的現況。"""
+        engine = self._engine()
+        self._fire(engine, "liu_xiang_expands")
+        self.assertEqual(engine._tactical["armies"]["C-1"]["units"]["infantry"], 11)
+        self.assertEqual(engine._tactical["armies"]["C-1"]["units"]["cavalry"], 1)
+
+    def test_the_patch_is_queued_for_the_frontend_exactly_once(self):
+        """全場共通的事只掛一份佇列——掛給每個玩家會讓提示重複四次。"""
+        engine = self._engine()
+        self._fire(engine, "liu_xiang_expands")
+        queues = {code: [e for e in engine.state["players"][code]["pending_frontend_effects"]
+                         if e["kind"] == "npc_army_units"]
+                  for code in engine.state["players"]}
+        self.assertEqual(sum(len(q) for q in queues.values()), 1)
+        effect = next(e for q in queues.values() for e in q)
+        self.assertEqual(effect["label"], "劉湘防區擴軍")
+        self.assertEqual(effect["armies"][0]["units"]["infantry"], 11)
+
+    def test_the_queued_units_are_absolute_not_a_delta(self):
+        """前端拿到的是絕對編制，所以照抄兩次結果一樣——這是防重複套用的保險。"""
+        engine = self._engine()
+        patch = self._fire(engine, "liu_xiang_expands")
+        army = engine._tactical["armies"]["C-1"]
+        for _ in range(2):
+            army["units"] = dict(patch["C-1"]["units"])
+        self.assertEqual(army["units"]["infantry"], 11)
+
+    def test_no_patch_means_no_queue_entry(self):
+        engine = self._engine(self._tactical({"C-1": None}))
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+        self.assertEqual(
+            [e for code in engine.state["players"]
+             for e in engine.state["players"][code]["pending_frontend_effects"]
+             if e["kind"] == "npc_army_units"], [])
+
+    # ---- 八、寫壞了要當場壞給人看 ----
+
+    def test_an_unknown_general_name_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_unit_delta_patch(
+                [{"general": "查無此人", "units": {"infantry": 1}}],
+                {"id": "probe"}, engine._tactical)
+
+    def test_an_unknown_unit_type_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_unit_delta_patch(
+                [{"general": "劉湘", "units": {"tank": 1}}],
+                {"id": "probe"}, engine._tactical)
+
+    def test_a_non_npc_faction_code_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_unit_delta_patch(
+                [{"faction": "F", "units": {"infantry": 1}}],
+                {"id": "probe"}, engine._tactical)
+
+    def test_a_spec_with_no_target_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_unit_delta_patch(
+                [{"units": {"infantry": 1}}], {"id": "probe"}, engine._tactical)
+
+    def test_a_spec_with_no_units_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_unit_delta_patch(
+                [{"general": "劉湘"}], {"id": "probe"}, engine._tactical)
+
+    def test_an_unknown_name_in_except_generals_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_unit_delta_patch(
+                [{"faction": "G", "except_generals": ["查無此人"],
+                  "units": {"infantry": 1}}], {"id": "probe"}, engine._tactical)
+
+    # ---- 九、卡片本身 ----
+
+    def test_all_seven_cards_are_live_and_carry_no_pending(self):
+        """機制做完了就要真的進牌堆，不能還掛著 not_in_pool。"""
+        engine = GameEngine(seed=3)
+        for card_id in ("feng_yuxiang_wuyuan_oath", "northwest_soviet_aid",
+                        "liu_xiang_expands", "ma_clique_expands", "jinsui_army_expands",
+                        "yang_sen_expands", "liu_wenhui_expands"):
+            card = engine._event_template(card_id)
+            self.assertNotIn("not_in_pool", card, f"{card['ref']} 還沒上線")
+            self.assertNotIn("pending", card["apply"], f"{card['ref']} 還掛著待建機制")
+            self.assertTrue(card["apply"]["npc_unit_delta"])
+
+    def test_every_npc_unit_delta_card_only_names_generals_who_exist(self):
+        """整份資料掃一遍：點名的將領、排除的將領、陣營代號都要查得到。"""
+        engine = GameEngine(seed=3)
+        index = engine._npc_general_index()
+        seen = 0
+        for card in engine.data["event_cards"]["cards"]:
+            for spec in ((card.get("apply") or {}).get("npc_unit_delta") or []):
+                seen += 1
+                names = spec.get("generals") or ([spec["general"]] if spec.get("general") else [])
+                for name in list(names) + list(spec.get("except_generals") or []):
+                    self.assertIn(name, index, f"{card['ref']} 點名的 {name} 查無此人")
+                if spec.get("faction"):
+                    self.assertIn(spec["faction"], GameEngine.NPC_FACTIONS)
+                self.assertTrue(set(spec["units"]) <= set(UNIT_FORCE_POINTS),
+                                f"{card['ref']} 用了不認得的兵種")
+        self.assertGreaterEqual(seen, 10)
+
+    # ---- 十、前端只准照抄 ----
+
+    def test_the_frontend_registers_a_handler_and_copies_the_units_verbatim(self):
+        """沒登記處理器的 kind 會靜靜失效；自己加減的話規則就又有兩份了。"""
+        app = (pathlib.Path(__file__).resolve().parents[1]
+               / "frontend" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("npc_army_units:", app)
+        handler = app.split("npc_army_units:", 1)[1].split("loyalty_all:", 1)[0]
+        self.assertIn("army.units = { ...entry.units };", handler)
+        for forbidden in ("ARMY_FORCE_CAP", "Number(army.units", "+ Number("):
+            self.assertNotIn(forbidden, handler,
+                             "前端不准自己算 NPC 補兵，後端已經算完了")
+
+    def test_a_full_army_is_not_stripped_to_make_room_for_the_new_troops(self):
+        """滿編的部隊補不進去就是補不進去，不能裁老兵換新兵。
+
+        `_clamp_to_force_cap` 是從最貴的兵種開始裁——直接套在增兵結果上的話，
+        「劉湘 +2 步兵 +1 騎兵」打在滿編部隊上會變成步兵 −1、騎兵 +1，
+        擴軍反而讓總兵力不變、兵種還被換掉。
+        """
+        engine = self._engine(self._tactical(
+            {"C-1": {"units": {"infantry": ARMY_FORCE_CAP}}}))
+        self.assertEqual(self._fire(engine, "liu_xiang_expands"), {})
+        self.assertEqual(engine._tactical["armies"]["C-1"]["units"],
+                         {"infantry": ARMY_FORCE_CAP})
+
+    def test_a_partial_fit_is_reported_for_what_actually_landed(self):
+        """只補得下一營就報一營，不要報卡片上寫的三營。"""
+        engine = self._engine(self._tactical(
+            {"C-1": {"units": {"infantry": ARMY_FORCE_CAP - 1}}}))
+        patch = self._fire(engine, "liu_xiang_expands")
+        self.assertEqual(patch["C-1"]["changed"], {"infantry": 1})
+        self.assertEqual(GameEngine._force_of(patch["C-1"]["units"]), ARMY_FORCE_CAP)
+
+    def test_the_card_order_decides_which_unit_gets_the_last_slot(self):
+        """卡片先寫步兵就先補步兵——順序由卡片決定，不是由兵種字母排序決定。"""
+        engine = self._engine(self._tactical(
+            {"C-2": {"units": {"infantry": ARMY_FORCE_CAP - 1}}}))
+        # 15.26 寫的是「步兵 ×2、砲兵 ×1」：剩一格先給步兵，砲兵 4 點塞不下。
+        self.assertEqual(self._fire(engine, "liu_wenhui_expands")["C-2"]["changed"],
+                         {"infantry": 1})
+
+
+class TestFileStructureTests(unittest.TestCase):
+    """這份測試檔本身的結構。
+
+    曾經有一個 `if __name__ == "__main__": unittest.main()` 卡在檔案中段，
+    它後面還有一千五百行測試。直接 `python3 backend/test_backend.py` 執行時，
+    那些類別根本還沒被定義就開始跑了——一整批測試會靜靜地不存在。
+    現在只用 `python3 -m unittest` 跑所以沒出事，但這種陷阱不該留著。
+    """
+
+    def test_there_is_no_unittest_main_block_in_the_middle_of_the_file(self):
+        source = pathlib.Path(__file__).read_text(encoding="utf-8")
+        lines = source.splitlines()
+        entry = [i for i, line in enumerate(lines) if line.startswith('if __name__ ==')]
+        for index in entry:
+            rest = "\n".join(lines[index:])
+            self.assertNotIn("\nclass ", rest,
+                             "檔案中段有 unittest.main()，它後面的測試類別會被跳過")
+
+
+
+class NpcForceScaleTests(unittest.TestCase):
+    """NPC 部隊按比例增減**戰力**（15.4、15.7、15.9、15.11、15.15、15.17、15.24）。
+
+    規則書裡「戰力」就是那個 100 點上限的兵力值——步兵／騎兵每營 1 點、
+    機槍 2 點、砲兵 4 點。所以「唐生智戰力 −50%」是**真的裁兵**，
+    不是戰鬥時打個折；和 12.x 列強行動那批「部隊戰力一次性 −40%」同一件事。
+    一次性、永久，不會自己回復。
+    """
+
+    ALIVE = {
+        # 戰力 20：步 10 + 騎 2 + 機 2×2 + 砲 1×4
+        "G-1": {"generalId": "feng_yuxiang", "units": {"infantry": 10, "cavalry": 2,
+                                                       "machine_gun": 2, "artillery": 1},
+                "status": "active"},
+        "G-2": {"generalId": "song_zheyuan", "units": {"infantry": 8}, "status": "active"},
+        "G-3": {"generalId": "han_fuqu", "units": {"infantry": 6}, "status": "active"},
+        "Y-1": {"generalId": "yan_xishan", "units": {"infantry": 10}, "status": "active"},
+        "Y-2": {"generalId": "fu_zuoyi", "units": {"infantry": 5}, "status": "active"},
+        "H-1": {"generalId": "tang_shengzhi", "units": {"infantry": 12, "artillery": 2},
+                "status": "active"},
+        "H-2": {"generalId": "zhao_hengti", "units": {"infantry": 10}, "status": "active"},
+        "H-3": {"generalId": "he_jian", "units": {"infantry": 8}, "status": "active"},
+        "C-2": {"generalId": "liu_wenhui", "units": {"infantry": 10}, "status": "active"},
+        "C-3": {"generalId": "yang_sen", "units": {"infantry": 9, "artillery": 1},
+                "status": "active"},
+        "D-1": {"generalId": "tang_jiyao", "units": {"infantry": 10}, "status": "active"},
+        "F-1": {"generalId": "chiang_kaishek", "units": {"infantry": 20}, "status": "active"},
+    }
+
+    def _tactical(self, overrides=None, owners=None, jailed=None):
+        armies = {army_id: {**army, "units": dict(army["units"])}
+                  for army_id, army in self.ALIVE.items()}
+        for army_id, patch in (overrides or {}).items():
+            if patch is None:
+                armies.pop(army_id, None)
+            else:
+                armies[army_id] = {**armies.get(army_id, {}), **patch}
+        return {"armies": armies, "generalOwners": owners or {},
+                "generalTrees": {}, "jailedGenerals": list(jailed or [])}
+
+    def _engine(self, tactical=None):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine._tactical = self._tactical() if tactical is None else tactical
+        return engine
+
+    def _fire(self, engine, card_id):
+        card = engine._event_template(card_id)
+        applied = engine._apply_event_payload(card["apply"], players=None, card=card)
+        entry = next(item for item in applied if item["kind"] == "npc_force_scale")
+        return {army["armyId"]: army for army in entry["armies"]}
+
+    # ---- 一、戰力就是那個 100 點的兵力值 ----
+
+    def test_the_target_is_a_share_of_the_force_points_not_of_the_battalions(self):
+        """馮玉祥部戰力 20 點（步 10、騎 2、機 2、砲 1）×0.93 → 18 點。
+
+        若誤算成「營數的 93%」會得到完全不同的編制，所以這裡盯的是戰力點。
+        """
+        engine = self._engine()
+        patch = self._fire(engine, "powers_punish_soviet_proxy")
+        self.assertNotIn("G-1", patch, "15.17 把馮玉祥排除在外")
+        engine = self._engine()
+        result = engine.npc_force_scale_patch(
+            [{"general": "馮玉祥", "multiplier": 0.93}], {"id": "probe"}, engine._tactical)
+        self.assertEqual(result[0]["force_before"], 20)
+        self.assertEqual(result[0]["force_after"], 19)
+
+    def test_a_halving_really_halves_the_force(self):
+        """15.7：唐生智戰力 20 點 → 10 點，趙恒惕 10 → 5。"""
+        engine = self._engine()
+        patch = self._fire(engine, "tang_shengzhi_seeks_help")
+        self.assertEqual(sorted(patch), ["H-1", "H-2"])
+        self.assertEqual((patch["H-1"]["force_before"], patch["H-1"]["force_after"]), (20, 10))
+        self.assertEqual((patch["H-2"]["force_before"], patch["H-2"]["force_after"]), (10, 5))
+        self.assertNotIn("H-3", patch, "何鍵沒被點名")
+
+    def test_the_cut_takes_the_most_expensive_units_first(self):
+        """既有規則：從砲兵開始裁。唐生智 步 12 + 砲 2（20 點）砍到 10 點，
+        砲兵先被打光，剩下的才動步兵。"""
+        engine = self._engine()
+        after = self._fire(engine, "tang_shengzhi_seeks_help")["H-1"]["units"]
+        self.assertEqual(after["artillery"], 0)
+        self.assertEqual(after["infantry"], 10)
+
+    def test_the_target_is_rounded_to_the_nearest_point(self):
+        """楊森戰力 13 點（步 9＋砲 1）×0.9 = 11.7 → 12 點。
+
+        四捨五入而不是捨去：NPC 部隊小，捨去的話這張寫 −10% 的卡
+        會變成實際 −31%。而且用的是 floor(x+0.5)，不是 Python 的 round()——
+        後者是銀行家捨入，2.5 進 2、3.5 進 4，同樣的 .5 給出不同答案。
+        """
+        engine = self._engine()
+        patch = self._fire(engine, "wanxian_incident")
+        self.assertEqual((patch["C-3"]["force_before"], patch["C-3"]["force_after"]), (13, 12))
+
+    def test_it_is_not_bankers_rounding(self):
+        """5 點 ×0.5 = 2.5 → 3，7 點 ×0.5 = 3.5 → 4。銀行家捨入會給 2 與 4。"""
+        engine = self._engine(self._tactical({"D-1": {"units": {"infantry": 5}}}))
+        self.assertEqual(engine.npc_force_scale_patch(
+            [{"general": "唐繼堯", "multiplier": 0.5}],
+            {"id": "probe"}, engine._tactical)[0]["force_after"], 3)
+        engine = self._engine(self._tactical({"D-1": {"units": {"infantry": 7}}}))
+        self.assertEqual(engine.npc_force_scale_patch(
+            [{"general": "唐繼堯", "multiplier": 0.5}],
+            {"id": "probe"}, engine._tactical)[0]["force_after"], 4)
+
+    # ---- 二、增益 ----
+
+    def test_a_gain_adds_infantry(self):
+        """15.24 趙恒惕 +10%：戰力 10 → 11，補的是步兵。"""
+        engine = self._engine()
+        patch = self._fire(engine, "zhao_hengti_provincial_constitution")
+        self.assertEqual(sorted(patch), ["H-2"])
+        self.assertEqual(patch["H-2"]["changed"], {"infantry": 1})
+        self.assertEqual((patch["H-2"]["force_before"], patch["H-2"]["force_after"]), (10, 11))
+
+    def test_a_gain_never_crosses_the_force_cap(self):
+        engine = self._engine(self._tactical(
+            {"H-2": {"units": {"infantry": ARMY_FORCE_CAP}}}))
+        patch = self._fire(engine, "zhao_hengti_provincial_constitution")
+        self.assertEqual(patch, {}, "已經滿編就補不進去，也不該報一筆")
+
+    def test_a_gain_too_small_to_buy_a_battalion_changes_nothing(self):
+        """戰力 4 ×1.1 = 4.4 → 4，補不出一整營就什麼都不動，也不報一筆假帳。"""
+        engine = self._engine(self._tactical({"H-2": {"units": {"infantry": 4}}}))
+        self.assertEqual(self._fire(engine, "zhao_hengti_provincial_constitution"), {})
+
+    # ---- 三、整個陣營、排除指定將領 ----
+
+    def test_a_faction_wide_cut_reaches_every_army_of_that_faction(self):
+        """15.4：西北軍 ×0.85、晉系 ×0.80，兩邊都動，玩家不動。"""
+        engine = self._engine()
+        patch = self._fire(engine, "northwest_jin_war")
+        self.assertEqual(sorted(patch), ["G-1", "G-2", "G-3", "Y-1", "Y-2"])
+        self.assertEqual(patch["G-1"]["force_after"], 17)   # 20 × 0.85
+        self.assertEqual(patch["G-2"]["force_after"], 7)    # 8 × 0.85 = 6.8 → 7
+        self.assertEqual(patch["Y-1"]["force_after"], 8)    # 10 × 0.80
+        self.assertEqual(patch["Y-2"]["force_after"], 4)    # 5 × 0.80
+        self.assertNotIn("F-1", patch)
+
+    def test_except_generals_spares_the_named_man(self):
+        """15.17：除馮玉祥外，西北軍其他部隊 −7%。"""
+        engine = self._engine()
+        patch = self._fire(engine, "powers_punish_soviet_proxy")
+        # G-3 只有 6 點：6 × 0.93 = 5.58 → 6，四捨五入之後動不了，所以不出現在補丁裡。
+        self.assertEqual(sorted(patch), ["G-2"])
+        self.assertEqual(engine._tactical["armies"]["G-1"]["units"],
+                         dict(self.ALIVE["G-1"]["units"]), "馮玉祥一根寒毛都不該少")
+
+    def test_two_named_generals_are_cut_the_same_way(self):
+        """15.9：劉文輝、楊森各 −15%。"""
+        engine = self._engine()
+        patch = self._fire(engine, "sichuan_internal_war")
+        self.assertEqual(sorted(patch), ["C-2", "C-3"])
+        self.assertEqual(patch["C-2"]["force_after"], 9)    # 10 × 0.85 = 8.5 → 9
+        self.assertEqual(patch["C-3"]["force_after"], 11)   # 13 × 0.85 = 11.05 → 11
+
+    def test_overlapping_specs_multiply_rather_than_add(self):
+        """同一支部隊被兩條規則點到：先 −15% 再 −10% 是在剩下的兵上再砍，
+        不是把 25% 一次砍掉。
+
+        數字要挑得能分辨兩者：60 點 ×0.85×0.90 = 45.9 → 46，
+        而相加的 ×0.75 是 45 → 45。10、40、50 三種數字兩種算法會撞在一起，
+        驗不出差別——這條測試第一次寫就是這樣被突變體逃掉的。
+        """
+        engine = self._engine(self._tactical({"D-1": {"units": {"infantry": 60}}}))
+        patch = engine.npc_force_scale_patch(
+            [{"general": "唐繼堯", "multiplier": 0.85},
+             {"faction": "D", "multiplier": 0.90}],
+            {"id": "probe"}, engine._tactical)
+        self.assertEqual(patch[0]["force_after"], 46)
+
+    # ---- 三之二、裁兵不裁過頭 ----
+
+    def test_the_cut_never_overshoots_below_the_target(self):
+        """楊森 13 點打九折是 12 點。先砍那一營砲兵會直接掉到 9 點——
+        「戰力 −10%」實際變成 −31%。所以砲兵這一步要跳過，改砍步兵。"""
+        engine = self._engine()
+        after = self._fire(engine, "wanxian_incident")["C-3"]["units"]
+        self.assertEqual(after["artillery"], 1, "砲兵砍下去就過頭了，這一步要跳過")
+        self.assertEqual(after["infantry"], 8)
+
+    def test_it_still_prefers_the_expensive_units_when_they_fit(self):
+        """不裁過頭不等於改成先裁便宜的：砍得下去的時候還是砲兵先走。"""
+        engine = self._engine()
+        after = self._fire(engine, "tang_shengzhi_seeks_help")["H-1"]["units"]
+        self.assertEqual(after["artillery"], 0)
+        self.assertEqual(after["infantry"], 10)
+
+    def test_when_nothing_can_be_removed_without_overshooting_it_stops(self):
+        """只剩三營砲兵（12 點）要砍到 6 點：砍一營到 8 點還行，
+        再砍就掉到 4 點。停在 8 點，並且誠實報實際的數，不假裝砍到 6。"""
+        engine = self._engine(self._tactical({"D-1": {"units": {"artillery": 3}}}))
+        patch = engine.npc_force_scale_patch(
+            [{"general": "唐繼堯", "multiplier": 0.5}], {"id": "probe"}, engine._tactical)
+        self.assertEqual(patch[0]["force_after"], 8)
+        self.assertEqual(patch[0]["units"]["artillery"], 2)
+
+    def test_a_single_expensive_battalion_survives_a_small_cut(self):
+        """一營砲兵（4 點）打九折是 3 點——砍不出半營砲兵，所以什麼都不動，
+        也不報一筆假帳。"""
+        engine = self._engine(self._tactical({"D-1": {"units": {"artillery": 1}}}))
+        self.assertEqual(self._fire(engine, "tang_jiyao_shaken"), {})
+
+    # ---- 四、誰沒資格被算進去 ----
+
+    def test_dead_jailed_and_defected_armies_are_left_alone(self):
+        for tactical, note in (
+            (self._tactical({"D-1": {"status": "destroyed"}}), "被殲"),
+            (self._tactical(jailed=["tang_jiyao"]), "被俘"),
+            (self._tactical(owners={"tang_jiyao": "S"}), "跳槽"),
+        ):
+            engine = self._engine(tactical)
+            self.assertEqual(self._fire(engine, "tang_jiyao_shaken"), {}, note)
+
+    def test_a_players_army_is_never_scaled(self):
+        engine = self._engine()
+        for card_id in ("northwest_jin_war", "powers_punish_soviet_proxy"):
+            engine._tactical = self._tactical()
+            self._fire(engine, card_id)
+            self.assertEqual(engine._tactical["armies"]["F-1"]["units"], {"infantry": 20})
+
+    # ---- 五、算完之後寫到哪去 ----
+
+    def test_the_backend_and_the_frontend_queue_agree(self):
+        engine = self._engine()
+        patch = self._fire(engine, "tang_jiyao_shaken")
+        self.assertEqual(engine._tactical["armies"]["D-1"]["units"],
+                         dict(patch["D-1"]["units"]))
+        queued = [e for code in engine.state["players"]
+                  for e in engine.state["players"][code]["pending_frontend_effects"]
+                  if e["kind"] == "npc_army_units"]
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["armies"][0]["units"], patch["D-1"]["units"])
+
+    def test_wanxian_still_does_its_other_two_jobs(self):
+        """15.15 除了砍楊森，本來就有的『對英 −1』與『[學潮] +1 回合』不能掉。"""
+        engine = self._engine()
+        card = engine._event_template("wanxian_incident")
+        before = dict(engine.state["players"]["F"]["foreign_relations"])
+        applied = engine._apply_event_payload(card["apply"], players=None, card=card)
+        kinds = {item["kind"] for item in applied}
+        self.assertIn("npc_force_scale", kinds)
+        self.assertLess(engine.state["players"]["F"]["foreign_relations"]["uk"],
+                        before["uk"])
+        self.assertTrue([k for k in kinds if "duration" in k],
+                        f"[學潮] 延長不見了：{sorted(kinds)}")
+
+    # ---- 六、寫壞了要當場壞給人看 ----
+
+    def test_a_missing_multiplier_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_force_scale_patch(
+                [{"general": "唐繼堯"}], {"id": "probe"}, engine._tactical)
+
+    def test_a_negative_multiplier_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_force_scale_patch(
+                [{"general": "唐繼堯", "multiplier": -1}], {"id": "probe"}, engine._tactical)
+
+    def test_an_unknown_general_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine.npc_force_scale_patch(
+                [{"general": "查無此人", "multiplier": 0.9}], {"id": "probe"}, engine._tactical)
+
+    # ---- 七、卡片本身 ----
+
+    def test_all_seven_force_scale_cards_are_live(self):
+        """七張都上線了。15.7 曾經因為付費招募沒做而卡著，批次三補完之後也放行了。"""
+        engine = GameEngine(seed=3)
+        live = ("northwest_jin_war", "sichuan_internal_war", "tang_jiyao_shaken",
+                "wanxian_incident", "powers_punish_soviet_proxy",
+                "zhao_hengti_provincial_constitution", "tang_shengzhi_seeks_help")
+        for card_id in live:
+            card = engine._event_template(card_id)
+            self.assertNotIn("not_in_pool", card, f"{card['ref']} 還沒上線")
+            self.assertNotIn("pending", card["apply"], f"{card['ref']} 還掛著待建機制")
+            self.assertTrue(card["apply"]["npc_force_scale"])
+        # 15.7 裁兵與付費招募兩套機制同時掛在同一張卡上，兩邊都要在。
+        card = engine._event_template("tang_shengzhi_seeks_help")
+        self.assertTrue(card["apply"]["contested_npc_recruit"])
+
+    def test_every_force_scale_card_only_names_generals_who_exist(self):
+        engine = GameEngine(seed=3)
+        index = engine._npc_general_index()
+        seen = 0
+        for card in engine.data["event_cards"]["cards"]:
+            for spec in ((card.get("apply") or {}).get("npc_force_scale") or []):
+                seen += 1
+                names = spec.get("generals") or ([spec["general"]] if spec.get("general") else [])
+                for name in list(names) + list(spec.get("except_generals") or []):
+                    self.assertIn(name, index, f"{card['ref']} 點名的 {name} 查無此人")
+                if spec.get("faction"):
+                    self.assertIn(spec["faction"], GameEngine.NPC_FACTIONS)
+                self.assertGreater(float(spec["multiplier"]), 0)
+        self.assertGreaterEqual(seen, 8)
+
+
+
+class NpcCombatModifierTests(unittest.TestCase):
+    """NPC 戰鬥修正（15.2 傅作義城防、15.20 徐永昌整軍、15.22 宋哲元大刀隊、
+    15.23 何鍵固守湘南）。
+
+    「生命」是 hp、「攻擊」是 attack——這兩個詞直接對得上引擎的 stat。
+    （第三個詞「戰力」指的是兵力，走 npc_force_scale，不在這裡。）
+
+    效果放在 `state["npc_combat_effects"]`：玩家的限時修正掛在
+    `player["timed_effects"]`，但 NPC 陣營不在 `state["players"]` 裡。
+    """
+
+    ALIVE = {
+        "Y-1": {"generalId": "yan_xishan", "units": {"infantry": 10}, "status": "active"},
+        "Y-2": {"generalId": "fu_zuoyi", "units": {"infantry": 8}, "status": "active"},
+        "Y-3": {"generalId": "xu_yongchang", "units": {"infantry": 6}, "status": "active"},
+        "G-2": {"generalId": "song_zheyuan", "units": {"infantry": 7}, "status": "active"},
+        "H-3": {"generalId": "he_jian", "units": {"infantry": 8}, "status": "active"},
+        "F-1": {"generalId": "chiang_kaishek", "units": {"infantry": 9}, "status": "active"},
+    }
+
+    def _tactical(self, overrides=None, owners=None, jailed=None):
+        armies = {k: {**v, "units": dict(v["units"])} for k, v in self.ALIVE.items()}
+        for army_id, patch in (overrides or {}).items():
+            if patch is None:
+                armies.pop(army_id, None)
+            else:
+                armies[army_id] = {**armies.get(army_id, {}), **patch}
+        return {"armies": armies, "generalOwners": owners or {},
+                "generalTrees": {}, "jailedGenerals": list(jailed or [])}
+
+    def _engine(self, tactical=None):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine._tactical = self._tactical() if tactical is None else tactical
+        return engine
+
+    def _fire(self, engine, card_id):
+        card = engine._event_template(card_id)
+        applied = engine._apply_event_payload(card["apply"], players=None, card=card)
+        return next(i for i in applied if i["kind"] == "npc_combat_modifier")
+
+    def _mods(self, engine, faction, general_id):
+        from backend.combat_modifiers import CombatModifierBuilder
+        return CombatModifierBuilder(engine).npc_combat_modifiers(faction, general_id)
+
+    # ---- 一、點名一位將領 vs 整個陣營 ----
+
+    def test_a_named_general_effect_only_reaches_his_own_army(self):
+        """15.2 傅作義部生命 +8%——同陣營的閻錫山不該跟著沾光。"""
+        engine = self._engine()
+        entry = self._fire(engine, "fu_zuoyi_fortifies")
+        self.assertEqual((entry["faction"], entry["general_id"]), ("Y", "fu_zuoyi"))
+        self.assertEqual(self._mods(engine, "Y", "fu_zuoyi"),
+                         [{"stat": "hp", "multiplier": 1.08, "source_effect": "傅作義加固城防"}])
+        self.assertEqual(self._mods(engine, "Y", "yan_xishan"), [])
+
+    def test_a_faction_wide_effect_reaches_every_general_of_that_faction(self):
+        """15.20 所有晉系攻擊 +5%。"""
+        engine = self._engine()
+        entry = self._fire(engine, "xu_yongchang_reorganises")
+        self.assertEqual((entry["faction"], entry["general_id"]), ("Y", None))
+        for general in ("yan_xishan", "fu_zuoyi", "xu_yongchang"):
+            self.assertEqual(len(self._mods(engine, "Y", general)), 1, general)
+
+    def test_the_other_two_cards_land_on_their_own_men(self):
+        engine = self._engine()
+        self._fire(engine, "song_zheyuan_broadsword_corps")
+        self.assertEqual(self._mods(engine, "G", "song_zheyuan")[0]["stat"], "attack")
+        self.assertEqual(self._mods(engine, "G", "feng_yuxiang"), [])
+        engine = self._engine()
+        self._fire(engine, "he_jian_holds_south_hunan")
+        self.assertEqual(self._mods(engine, "H", "he_jian")[0]["multiplier"], 1.10)
+
+    def test_a_players_army_never_picks_up_an_npc_effect(self):
+        """玩家不在這條路上——他們的限時修正走 timed_effects。"""
+        engine = self._engine()
+        for card_id in ("fu_zuoyi_fortifies", "xu_yongchang_reorganises"):
+            self._fire(engine, card_id)
+        for code in engine.state["players"]:
+            self.assertEqual(self._mods(engine, code, "chiang_kaishek"), [], code)
+
+    def test_an_effect_can_never_name_a_player_faction(self):
+        """玩家吃不到 NPC 修正，靠的是**建檔時就擋掉玩家陣營**，
+        不是讀取時再擋一次。這條把那個保證釘死——它一旦鬆掉，
+        讀取端沒有第二道防線。"""
+        engine = self._engine()
+        for code in engine.state["players"]:
+            with self.assertRaises(ValueError, msg=code):
+                engine._apply_event_payload(
+                    {"npc_combat_modifier": [
+                        {"faction": code, "modifiers": [{"stat": "hp", "multiplier": 1.1}],
+                         "turns": 5}]},
+                    players=None, card={"id": "probe", "name": "probe"})
+        for card in engine.data["event_cards"]["cards"]:
+            for spec in ((card.get("apply") or {}).get("npc_combat_modifier") or []):
+                if spec.get("faction"):
+                    self.assertIn(spec["faction"], GameEngine.NPC_FACTIONS, card["ref"])
+
+    def test_an_effect_with_neither_faction_nor_general_is_ignored(self):
+        """資料寫壞成「誰都沒指定」時不該無差別套在所有 NPC 身上。"""
+        engine = self._engine()
+        engine.state["npc_combat_effects"] = [
+            {"name": "壞掉的效果", "modifiers": [{"stat": "hp", "multiplier": 9.0}],
+             "remaining_turns": 5}]
+        self.assertEqual(self._mods(engine, "Y", "fu_zuoyi"), [])
+
+    # ---- 二、效期 ----
+
+    def test_a_five_turn_effect_lasts_five_turns(self):
+        """抽到的那一回合不倒數，否則 5 回合的效果只會活 4 回合。"""
+        engine = self._engine()
+        self._fire(engine, "he_jian_holds_south_hunan")
+        seen = []
+        for _ in range(7):
+            engine._tick_npc_combat_effects()
+            seen.append(len(self._mods(engine, "H", "he_jian")))
+        self.assertEqual(seen, [1, 1, 1, 1, 1, 0, 0], f"實際：{seen}")
+
+    def test_an_until_leaves_effect_survives_many_turns(self):
+        """15.2 沒寫期限：傅作義還在，就一直掛著。"""
+        engine = self._engine()
+        self._fire(engine, "fu_zuoyi_fortifies")
+        for _ in range(20):
+            engine._tick_npc_combat_effects()
+        self.assertEqual(len(self._mods(engine, "Y", "fu_zuoyi")), 1)
+
+    def test_an_until_leaves_effect_dies_with_its_general(self):
+        for tactical, note in (
+            (self._tactical({"Y-2": {"status": "destroyed"}}), "被殲"),
+            (self._tactical(jailed=["fu_zuoyi"]), "被俘"),
+            (self._tactical(owners={"fu_zuoyi": "N"}), "跳槽"),
+            (self._tactical({"Y-2": None}), "部隊不在了"),
+        ):
+            engine = self._engine()
+            self._fire(engine, "fu_zuoyi_fortifies")
+            engine._tactical = tactical
+            engine._tick_npc_combat_effects()
+            self.assertEqual(self._mods(engine, "Y", "fu_zuoyi"), [], note)
+
+    def test_without_a_snapshot_the_effect_is_kept_not_dropped(self):
+        """沒有戰術快照時無從判斷離場，這一輪先留著。
+
+        誤刪比多留一回合嚴重：前端還沒送狀態就把傅作義的城防清掉，
+        玩家會看到效果無故消失，而且再也回不來。
+        """
+        engine = self._engine()
+        self._fire(engine, "fu_zuoyi_fortifies")
+        engine._tactical = None
+        engine._tick_npc_combat_effects()
+        self.assertEqual(len(self._mods(engine, "Y", "fu_zuoyi")), 1)
+
+    # ---- 三、寫壞了要當場壞給人看 ----
+
+    def _raises(self, spec):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine._apply_event_payload({"npc_combat_modifier": [spec]},
+                                        players=None, card={"id": "probe", "name": "probe"})
+
+    def test_an_unknown_general_raises(self):
+        self._raises({"general": "查無此人", "modifiers": [{"stat": "hp", "multiplier": 1.1}],
+                      "turns": 5})
+
+    def test_a_general_in_the_wrong_faction_raises(self):
+        self._raises({"general": "傅作義", "faction": "G",
+                      "modifiers": [{"stat": "hp", "multiplier": 1.1}], "turns": 5})
+
+    def test_a_non_npc_faction_raises(self):
+        self._raises({"faction": "F", "modifiers": [{"stat": "hp", "multiplier": 1.1}],
+                      "turns": 5})
+
+    def test_an_unknown_stat_raises(self):
+        self._raises({"faction": "Y", "modifiers": [{"stat": "morale", "multiplier": 1.1}],
+                      "turns": 5})
+
+    def test_an_effect_with_no_expiry_at_all_raises(self):
+        """既沒有 turns 也沒有 until_general_leaves 的效果會永遠掛著。"""
+        self._raises({"faction": "Y", "modifiers": [{"stat": "hp", "multiplier": 1.1}]})
+
+    def test_until_general_leaves_without_a_general_raises(self):
+        self._raises({"faction": "Y", "modifiers": [{"stat": "hp", "multiplier": 1.1}],
+                      "until_general_leaves": True})
+
+    # ---- 四、卡片與接線 ----
+
+    def test_all_four_cards_are_live(self):
+        engine = GameEngine(seed=3)
+        for card_id in ("fu_zuoyi_fortifies", "xu_yongchang_reorganises",
+                        "song_zheyuan_broadsword_corps", "he_jian_holds_south_hunan"):
+            card = engine._event_template(card_id)
+            self.assertNotIn("not_in_pool", card, f"{card['ref']} 還沒上線")
+            self.assertNotIn("pending", card["apply"], f"{card['ref']} 還掛著待建機制")
+            self.assertTrue(card["apply"]["npc_combat_modifier"])
+
+    def test_the_builder_actually_consults_the_npc_layer(self):
+        """build() 要真的把 NPC 修正掛上去——只寫了函式沒接進去等於沒做。
+
+        前端送上來的 sides.{A,B}.faction 就是陣營代號，每支部隊帶 general_id，
+        所以 build() 手上的資料是齊的。
+        """
+        from backend.combat_modifiers import CombatModifierBuilder
+        engine = self._engine()
+        self._fire(engine, "fu_zuoyi_fortifies")
+        built = CombatModifierBuilder(engine).build({
+            "province": "山西", "fortress": False,
+            "sides": {"A": {"faction": "Y",
+                            "armies": [{"id": "Y-2", "general_id": "fu_zuoyi", "traits": []},
+                                       {"id": "Y-1", "general_id": "yan_xishan", "traits": []}]},
+                      "B": {"faction": "N",
+                            "armies": [{"id": "N-1", "general_id": "chiang_kaishek",
+                                        "traits": [], "defending": True}]}},
+        })
+        self.assertIn({"stat": "hp", "multiplier": 1.08, "source_effect": "傅作義加固城防"},
+                      built["Y-2"])
+        self.assertNotIn({"stat": "hp", "multiplier": 1.08, "source_effect": "傅作義加固城防"},
+                         built["Y-1"])
+        self.assertEqual(built["N-1"], [])
+
+
+class ContestedNpcRecruitTests(unittest.TestCase):
+    """付費招募 NPC（15.7 唐生智、15.10 龍雲、15.18 劉湘、15.21 韓復榘）。
+
+    卡片寫的是：「所有要招募者都要付 $25，且招募成功率由所有參與招募的玩家平分」。
+    三件事因此成立——付了錢就扣，沒抽中也不退；成功率是 1/n；只有一個人出手時
+    n=1，也就是必定成功。
+
+    競標只能在**所有人都回應完之後**結算：卡片層級的 apply 才看得到全部的表態，
+    寫在選項的 apply 裡會在每個人各自按下去的當下就結算，那時只看得到他自己。
+    """
+
+    ALIVE = {
+        "H-1": {"generalId": "tang_shengzhi", "units": {"infantry": 12}, "status": "active"},
+        "H-2": {"generalId": "zhao_hengti", "units": {"infantry": 10}, "status": "active"},
+        "D-2": {"generalId": "long_yun", "units": {"infantry": 6}, "status": "active"},
+        "C-1": {"generalId": "liu_xiang", "units": {"infantry": 9}, "status": "active"},
+        "G-3": {"generalId": "han_fuqu", "units": {"infantry": 6}, "status": "active"},
+    }
+
+    def _tactical(self):
+        return {"armies": {k: {**v, "units": dict(v["units"])} for k, v in self.ALIVE.items()},
+                "generalOwners": {}, "generalTrees": {}, "jailedGenerals": []}
+
+    def _engine(self, responses, card_id="long_yun_coup_brewing"):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine._tactical = self._tactical()
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 100
+        # 造出「這張卡正在結算，而且大家都表態完了」的現場。
+        engine.state["pending_events"] = {
+            "turn": int(engine.state["turn"]), "index": 0,
+            "cards": [{"card_id": card_id, "drawer": "F",
+                       "responders": list(engine.state["players"]),
+                       "responses": dict(responses)}]}
+        return engine
+
+    def _settle(self, engine, card_id="long_yun_coup_brewing"):
+        card = engine._event_template(card_id)
+        applied = engine._apply_event_payload(card["apply"], players=None, card=card)
+        return next(i for i in applied if i["kind"] == "contested_npc_recruit")
+
+    # ---- 一、沒人出手 ----
+
+    def test_nobody_bids_nobody_pays(self):
+        engine = self._engine({"F": "decline", "W": "decline", "S": "decline", "N": "decline"})
+        entry = self._settle(engine)
+        self.assertEqual(entry["bidders"], [])
+        self.assertIsNone(entry["winner"])
+        for code in engine.state["players"]:
+            self.assertEqual(engine.state["players"][code]["treasury"], 100, code)
+        self.assertEqual(engine._tactical["armies"]["D-2"].get("faction"), None,
+                         "沒人招募，龍雲還在滇系")
+
+    # ---- 二、只有一個人出手 ----
+
+    def test_a_lone_bidder_pays_once_and_always_wins(self):
+        """n=1 → 成功率 1/1。15.21 韓復榘那張根本不存在競標，走的就是這條。"""
+        engine = self._engine({"F": "recruit", "W": "decline", "S": "decline", "N": "decline"})
+        entry = self._settle(engine)
+        self.assertEqual(entry["bidders"], ["F"])
+        self.assertEqual(entry["winner"], "F")
+        self.assertEqual(entry["odds"], "1/1")
+        self.assertEqual(engine.state["players"]["F"]["treasury"], 75)
+        self.assertEqual(engine.state["players"]["W"]["treasury"], 100)
+
+    def test_the_winner_takes_the_general_and_his_troops(self):
+        """「率部整體歸附」——人跟兵一起走，不是只換一個名字。"""
+        engine = self._engine({"F": "recruit"})
+        entry = self._settle(engine)
+        self.assertEqual(entry["winner"], "F")
+        self.assertEqual(engine._tactical["armies"]["D-2"]["faction"], "F")
+        self.assertEqual(engine._tactical["generalOwners"]["long_yun"], "F")
+        self.assertEqual([a["armyId"] for a in entry["armies"]], ["D-2"])
+        self.assertEqual(entry["armies"][0]["units"], {"infantry": 6})
+
+    def test_the_frontend_is_told_exactly_once(self):
+        """將領樹與地圖住在前端，所以照既有的交辦通道送過去，而且只送一份。"""
+        engine = self._engine({"F": "recruit"})
+        self._settle(engine)
+        queued = [e for code in engine.state["players"]
+                  for e in engine.state["players"][code]["pending_frontend_effects"]
+                  if e["kind"] == "npc_general_recruited"]
+        self.assertEqual(len(queued), 1)
+        self.assertEqual((queued[0]["general_id"], queued[0]["owner"],
+                          queued[0]["from_faction"]), ("long_yun", "F", "D"))
+
+    # ---- 三、多方競標 ----
+
+    def test_every_bidder_pays_even_the_losers(self):
+        """卡片寫「所有要招募者都要付 $25」——沒抽中的錢也不退。"""
+        engine = self._engine({"F": "recruit", "W": "recruit", "S": "recruit", "N": "decline"})
+        entry = self._settle(engine)
+        self.assertEqual(entry["bidders"], ["F", "S", "W"])
+        self.assertEqual(entry["odds"], "1/3")
+        for code in ("F", "W", "S"):
+            self.assertEqual(engine.state["players"][code]["treasury"], 75, code)
+        self.assertEqual(engine.state["players"]["N"]["treasury"], 100)
+        self.assertIn(entry["winner"], ("F", "W", "S"))
+
+    def test_the_odds_really_are_split_evenly(self):
+        """三家競標跑 600 次，每家都該落在 1/3 附近。
+
+        這是機率，不是硬相等——但差距要小到能排除「其實固定選第一個」
+        或「照玩家代號排序偏心」這類實作錯誤。
+        """
+        import collections
+        wins = collections.Counter()
+        for seed in range(600):
+            engine = GameEngine(seed=seed)
+            engine.new_game()
+            engine._tactical = self._tactical()
+            for payload in engine.state["players"].values():
+                payload["treasury"] = 100
+            engine.state["pending_events"] = {
+                "turn": 1, "index": 0,
+                "cards": [{"card_id": "long_yun_coup_brewing", "drawer": "F",
+                           "responders": list(engine.state["players"]),
+                           "responses": {"F": "recruit", "W": "recruit", "S": "recruit"}}]}
+            wins[self._settle(engine)["winner"]] += 1
+        self.assertEqual(set(wins), {"F", "W", "S"}, f"有人從來沒抽中過：{dict(wins)}")
+        for code, count in wins.items():
+            self.assertGreater(count, 130, f"{code} 只抽中 {count}/600：{dict(wins)}")
+            self.assertLess(count, 270, f"{code} 抽中 {count}/600：{dict(wins)}")
+
+    def test_the_draw_is_reproducible_from_the_seed(self):
+        """同一個種子要抽出同一個贏家，否則重播會對不起來。"""
+        picks = set()
+        for _ in range(5):
+            engine = self._engine({"F": "recruit", "W": "recruit", "S": "recruit"})
+            picks.add(self._settle(engine)["winner"])
+        self.assertEqual(len(picks), 1, f"同種子抽出了不同結果：{picks}")
+
+    # ---- 四、錢不夠 ----
+
+    def test_a_bidder_who_cannot_pay_is_left_out_rather_than_going_into_debt(self):
+        """表態了但錢不夠：不扣成負數，也不算進分母去稀釋別人的機率。"""
+        engine = self._engine({"F": "recruit", "W": "recruit"})
+        engine.state["players"]["W"]["treasury"] = 10
+        entry = self._settle(engine)
+        self.assertEqual(entry["bidders"], ["F"])
+        self.assertEqual(entry["skipped_no_funds"], ["W"])
+        self.assertEqual(entry["winner"], "F")
+        self.assertEqual(engine.state["players"]["W"]["treasury"], 10, "沒錢就不該扣")
+
+    def test_everyone_broke_means_nobody_recruits(self):
+        engine = self._engine({"F": "recruit", "W": "recruit"})
+        for code in engine.state["players"]:
+            engine.state["players"][code]["treasury"] = 3
+        entry = self._settle(engine)
+        self.assertEqual(entry["bidders"], [])
+        self.assertIsNone(entry["winner"])
+        self.assertEqual(engine._tactical["armies"]["D-2"].get("faction"), None)
+
+    # ---- 五、四張卡都接好了 ----
+
+    def test_all_four_recruit_cards_are_live_and_wired(self):
+        engine = GameEngine(seed=3)
+        expected = {"tang_shengzhi_seeks_help": "唐生智",
+                    "long_yun_coup_brewing": "龍雲",
+                    "liu_xiang_denounces_zhili": "劉湘",
+                    "han_fuju_defects_to_nanjing": "韓復榘"}
+        index = engine._npc_general_index()
+        for card_id, who in expected.items():
+            card = engine._event_template(card_id)
+            self.assertNotIn("not_in_pool", card, f"{card['ref']} 還沒上線")
+            self.assertNotIn("pending", card["apply"], f"{card['ref']} 還掛著待建機制")
+            spec = card["apply"]["contested_npc_recruit"]
+            self.assertEqual(spec["general"], who)
+            self.assertEqual(int(spec["cost"]), 25, "門檻一律 $25")
+            self.assertIn(who, index, f"{card['ref']} 點名的 {who} 查無此人")
+            self.assertEqual(card["resolution"]["type"], "choice",
+                             f"{card['ref']} 要玩家表態才可能出價")
+
+    def test_each_recruit_card_moves_its_own_man(self):
+        for card_id, army_id, general_id in (
+            ("tang_shengzhi_seeks_help", "H-1", "tang_shengzhi"),
+            ("long_yun_coup_brewing", "D-2", "long_yun"),
+            ("liu_xiang_denounces_zhili", "C-1", "liu_xiang"),
+            ("han_fuju_defects_to_nanjing", "G-3", "han_fuqu"),
+        ):
+            engine = self._engine({"F": "recruit"}, card_id=card_id)
+            entry = self._settle(engine, card_id=card_id)
+            self.assertEqual(entry["general_id"], general_id)
+            self.assertEqual(engine._tactical["armies"][army_id]["faction"], "F", card_id)
+
+    def test_an_unknown_general_raises(self):
+        engine = self._engine({"F": "recruit"})
+        with self.assertRaises(ValueError):
+            engine._apply_event_payload(
+                {"contested_npc_recruit": {"general": "查無此人", "cost": 25}},
+                players=None, card={"id": "long_yun_coup_brewing", "name": "probe"})
+
+
+class NpcEntryConditionTests(unittest.TestCase):
+    """批次三補上的兩個進入條件：宣戰中（15.18）與城內有駐軍（15.16）。"""
+
+    def _engine(self):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine._tactical = {
+            "armies": {"C-1": {"generalId": "liu_xiang", "units": {"infantry": 9},
+                               "status": "active"}},
+            "generalOwners": {}, "generalTrees": {}, "jailedGenerals": []}
+        return engine
+
+    @staticmethod
+    def _declare_war(engine, attacker, defender):
+        """宣戰狀態住在雙方的 warlord_relations 上（_at_war 讀的就是這裡）。"""
+        for a, b in ((attacker, defender), (defender, attacker)):
+            engine.state["players"][a].setdefault("warlord_relations", {})[b] = {"status": "war"}
+
+    # ---- 一、at_war_with（15.18 劉湘通電討直）----
+
+    def test_only_a_player_at_war_with_zhili_can_draw_it(self):
+        engine = self._engine()
+        card = engine._event_template("liu_xiang_denounces_zhili")
+        self.assertEqual(engine._event_eligible_players(card), [],
+                         "沒人對直系宣戰的時候誰都不該抽到")
+        self._declare_war(engine, "N", "W")
+        self.assertEqual(engine._event_eligible_players(card), ["N"])
+
+    def test_it_is_per_player_not_a_whole_card_gate(self):
+        """兩家都在打直系就兩家都抽得到；宣戰是逐玩家的事實。"""
+        engine = self._engine()
+        self._declare_war(engine, "N", "W")
+        self._declare_war(engine, "S", "W")
+        card = engine._event_template("liu_xiang_denounces_zhili")
+        self.assertEqual(sorted(engine._event_eligible_players(card)), ["N", "S"])
+
+    # ---- 二、requires_garrison_in_city（15.16 南京事件）----
+
+    def _nanjing(self, engine, owner="S"):
+        engine.state["city_owners"]["nanjing"] = owner
+        return engine._event_template("nanjing_incident")
+
+    def test_no_garrison_report_means_the_card_stays_out(self):
+        """fail closed：前端還沒報駐軍就不發這張卡。"""
+        engine = self._engine()
+        card = self._nanjing(engine)
+        self.assertEqual(engine._event_eligible_players(card), [])
+
+    def test_an_empty_nanjing_keeps_the_card_out(self):
+        engine = self._engine()
+        card = self._nanjing(engine)
+        engine._city_garrisons = {"hankou": {"S": 6}}
+        self.assertEqual(engine._event_eligible_players(card), [])
+
+    def test_a_garrisoned_nanjing_lets_its_owner_draw_it(self):
+        engine = self._engine()
+        card = self._nanjing(engine)
+        engine._city_garrisons = {"nanjing": {"S": 4}}
+        self.assertEqual(engine._event_eligible_players(card), ["S"],
+                         "南京有駐軍，控制南京的那一家才表態")
+
+    def test_a_garrison_of_zero_battalions_does_not_count(self):
+        """回報了城市但兵力是 0，等於沒有駐軍。"""
+        engine = self._engine()
+        card = self._nanjing(engine)
+        engine._city_garrisons = {"nanjing": {"S": 0}}
+        self.assertEqual(engine._event_eligible_players(card), [])
+
+    def test_anyones_garrison_counts_because_the_bombardment_does_not_check_flags(self):
+        """英美軍艦砲擊的是南京，不管城裡站的是誰的兵。"""
+        engine = self._engine()
+        card = self._nanjing(engine)
+        engine._city_garrisons = {"nanjing": {"N": 3}}
+        self.assertEqual(engine._event_eligible_players(card), ["S"])
+
+    def test_an_unknown_city_in_the_condition_raises(self):
+        engine = self._engine()
+        engine._city_garrisons = {"nanjing": {"S": 4}}
+        with self.assertRaises(ValueError):
+            engine._event_eligible_players(
+                {"id": "probe", "entry_condition": {"requires_garrison_in_city": "atlantis"}})
+
+    # ---- 三、前後端的接線 ----
+
+    def test_the_server_hands_the_garrison_report_to_the_draw(self):
+        server = (pathlib.Path(__file__).resolve().parent / "server.py").read_text(encoding="utf-8")
+        self.assertIn("city_garrison_report=payload.get(\"city_garrison_report\")", server)
+
+    def test_the_frontend_reports_garrisons_and_sends_them(self):
+        """前端只報事實（哪座城有誰的幾營），規則留在後端。"""
+        app = (pathlib.Path(__file__).resolve().parents[1]
+               / "frontend" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function cityGarrisonReport()", app)
+        self.assertIn("city_garrison_report: cityGarrisonReport(),", app)
+        body = app.split("function cityGarrisonReport()", 1)[1].split("\nfunction ", 1)[0]
+        self.assertNotIn("nanjing", body, "前端不該知道是哪張卡在用這份報告")
+
+
+class NpcStructuralChangeTests(unittest.TestCase):
+    """批次四：陣營級結構變動（15.1 封路、15.5 換陣營＋移防、
+    15.13 馬家軍歸附、15.14／15.27 黔軍遭吞併）。
+
+    這一批動的不只是編制，還有**地盤歸屬**與**陣營是否還在地圖上**。
+    被併吞或整批歸附的陣營要真的退場——否則點名它的卡片會一再出現。
+    """
+
+    ALIVE = {
+        "Y-1": {"generalId": "yan_xishan", "units": {"infantry": 10}, "status": "active"},
+        "M-1": {"generalId": "ma_qi", "units": {"cavalry": 4}, "status": "active"},
+        "M-2": {"generalId": "ma_fuxiang", "units": {"cavalry": 3}, "status": "active"},
+        "M-3": {"generalId": "ma_hongkui", "units": {"cavalry": 3}, "status": "active"},
+        "Q-1": {"generalId": "qian_local_militia", "units": {"infantry": 5, "artillery": 1},
+                "status": "active"},
+        "C-1": {"generalId": "liu_xiang", "units": {"infantry": 9}, "status": "active"},
+        "C-2": {"generalId": "liu_wenhui", "units": {"infantry": 7}, "status": "active"},
+        "F-1": {"generalId": "zhang_zuolin", "units": {"infantry": 30}, "status": "active"},
+        "W-1": {"generalId": "wu_peifu", "units": {"infantry": 20}, "status": "active"},
+        "N-1": {"generalId": "chiang_kaishek", "units": {"infantry": 12}, "status": "active"},
+    }
+
+    def _tactical(self, overrides=None, owners=None, jailed=None):
+        armies = {k: {**v, "units": dict(v["units"])} for k, v in self.ALIVE.items()}
+        for army_id, patch in (overrides or {}).items():
+            if patch is None:
+                armies.pop(army_id, None)
+            else:
+                armies[army_id] = {**armies.get(army_id, {}), **patch}
+        return {"armies": armies, "generalOwners": owners or {},
+                "generalTrees": {}, "jailedGenerals": list(jailed or [])}
+
+    def _engine(self, tactical=None):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine._tactical = self._tactical() if tactical is None else tactical
+        return engine
+
+    def _fire(self, engine, card_id, kind):
+        card = engine._event_template(card_id)
+        applied = engine._apply_event_payload(card["apply"], players=None, card=card)
+        return next(i for i in applied if i["kind"] == kind)
+
+    # ---- 一、15.1 無限期封路 ----
+
+    def test_the_block_takes_both_lines_out_of_service(self):
+        engine = self._engine()
+        entry = self._fire(engine, "yan_xishan_blocks_narrow_gauge",
+                           "railway_permanent_block")
+        self.assertEqual(sorted(entry["railways"]), sorted(["京漢鐵路", "正太鐵路"]))
+        self.assertEqual(sorted(engine.disabled_railways()),
+                         sorted(["京漢鐵路", "正太鐵路"]))
+
+    def test_the_block_never_expires_on_its_own(self):
+        """「無法維修」在機制上就是沒有回合上限——跑二十回合也不該解除。"""
+        engine = self._engine()
+        self._fire(engine, "yan_xishan_blocks_narrow_gauge", "railway_permanent_block")
+        for _ in range(20):
+            engine._tick_railway_effects()
+        self.assertEqual(len(engine.disabled_railways()), 2)
+
+    def test_it_charges_nobody_for_repairs(self):
+        """修不好就沒有搶修費用可以攤派，不該留一筆 0 元的空帳。"""
+        engine = self._engine()
+        before = {c: engine.state["players"][c]["factory_points"]
+                  for c in engine.state["players"]}
+        self._fire(engine, "yan_xishan_blocks_narrow_gauge", "railway_permanent_block")
+        for code, value in before.items():
+            self.assertEqual(engine.state["players"][code]["factory_points"], value, code)
+        effect = engine.state["railway_effects"][0]
+        self.assertTrue(effect["no_repair"])
+        self.assertEqual(effect["repair_charges"], {})
+
+    def test_the_block_lifts_when_yan_xishan_is_captured(self):
+        for tactical, note in (
+            (self._tactical(jailed=["yan_xishan"]), "被俘"),
+            (self._tactical({"Y-1": {"status": "destroyed"}}), "被殲"),
+            (self._tactical(owners={"yan_xishan": "N"}), "跳槽"),
+        ):
+            engine = self._engine()
+            self._fire(engine, "yan_xishan_blocks_narrow_gauge", "railway_permanent_block")
+            engine._tactical = tactical
+            engine._tick_railway_effects()
+            self.assertEqual(engine.disabled_railways(), [], note)
+
+    def test_without_a_snapshot_the_block_stays(self):
+        """沒有快照就無從判斷他還在不在，這一輪先留著——誤解除比多留一回合嚴重。"""
+        engine = self._engine()
+        self._fire(engine, "yan_xishan_blocks_narrow_gauge", "railway_permanent_block")
+        engine._tactical = None
+        engine._tick_railway_effects()
+        self.assertEqual(len(engine.disabled_railways()), 2)
+
+    def test_a_temporary_sabotage_still_expires_normally(self):
+        """別把既有的三回合封路一起改成永久。"""
+        engine = self._engine()
+        engine.state["railway_effects"] = [
+            {"railway": "膠濟鐵路", "remaining_turns": 2, "name": "崩鐵玩家"}]
+        engine._tick_railway_effects()
+        self.assertEqual(engine.disabled_railways(), ["膠濟鐵路"])
+        engine._tick_railway_effects()
+        self.assertEqual(engine.disabled_railways(), [])
+
+    # ---- 二、15.5 換陣營＋移防 ----
+
+    def test_ma_fuxiang_changes_side_with_his_troops(self):
+        engine = self._engine()
+        entry = self._fire(engine, "northwest_allies_ma_clique", "npc_general_transfer")
+        self.assertEqual((entry["from_faction"], entry["to_faction"]), ("M", "G"))
+        self.assertEqual([a["armyId"] for a in entry["armies"]], ["M-2"])
+        self.assertEqual(engine._tactical["armies"]["M-2"]["faction"], "G")
+        self.assertEqual(engine._tactical["generalOwners"]["ma_fuxiang"], "G")
+        self.assertNotIn("faction", engine._tactical["armies"]["M-1"],
+                         "只有馬福祥改投，其他馬家軍不動")
+
+    def test_the_relocation_is_handed_to_the_frontend_with_a_target(self):
+        """後端沒有座標，所以它只說「搬到張家口周邊一格」，格子由前端挑。"""
+        engine = self._engine()
+        entry = self._fire(engine, "northwest_allies_ma_clique", "npc_general_transfer")
+        self.assertEqual(entry["relocate"], {"near_city": "zhangjiakou", "within": 1})
+        queued = [e for code in engine.state["players"]
+                  for e in engine.state["players"][code]["pending_frontend_effects"]
+                  if e["kind"] == "npc_general_transferred"]
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["relocate"]["near_city"], "zhangjiakou")
+
+    def test_transferring_to_his_own_faction_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine._apply_event_payload(
+                {"npc_general_transfer": {"general": "馬福祥", "to_faction": "M"}},
+                players=None, card={"id": "probe", "name": "probe"})
+
+    def test_relocating_to_a_city_that_does_not_exist_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine._apply_event_payload(
+                {"npc_general_transfer": {"general": "馬福祥", "to_faction": "G"},
+                 "npc_army_relocate": {"general": "馬福祥", "near_city": "atlantis"}},
+                players=None, card={"id": "probe", "name": "probe"})
+
+    # ---- 三、15.13 馬家軍歸附戰力最高的玩家 ----
+
+    def test_the_strongest_player_takes_the_whole_faction(self):
+        """奉系 30 點最高，所以馬家軍三支部隊連同西寧一起歸他。"""
+        engine = self._engine()
+        entry = self._fire(engine, "ma_clique_submits", "npc_faction_absorb")
+        self.assertEqual(entry["owner"], "F")
+        self.assertEqual(sorted(a["armyId"] for a in entry["armies"]),
+                         ["M-1", "M-2", "M-3"])
+        for army_id in ("M-1", "M-2", "M-3"):
+            self.assertEqual(engine._tactical["armies"][army_id]["faction"], "F")
+        self.assertEqual(entry["cities"], ["xining"])
+        self.assertEqual(engine.state["city_owners"]["xining"], "F")
+
+    def test_the_ranking_really_reads_the_battlefield(self):
+        """換一個人最強，歸附的對象就要跟著換——不是寫死奉系。"""
+        engine = self._engine(self._tactical({"N-1": {"units": {"infantry": 99}}}))
+        self.assertEqual(self._fire(engine, "ma_clique_submits",
+                                    "npc_faction_absorb")["owner"], "N")
+
+    def test_a_tie_is_broken_randomly_but_reproducibly(self):
+        """並列最高由系統隨機擇一，而且同種子要抽出同一個人。"""
+        import collections
+        wins = collections.Counter()
+        for seed in range(200):
+            engine = GameEngine(seed=seed)
+            engine.new_game()
+            engine._tactical = self._tactical({
+                "F-1": {"units": {"infantry": 20}}, "W-1": {"units": {"infantry": 20}},
+                "N-1": {"units": {"infantry": 5}}})
+            wins[self._fire(engine, "ma_clique_submits", "npc_faction_absorb")["owner"]] += 1
+        self.assertEqual(set(wins), {"F", "W"}, f"並列的兩家都要抽得中：{dict(wins)}")
+        picks = {self._fire(self._engine(self._tactical({
+            "F-1": {"units": {"infantry": 20}}, "W-1": {"units": {"infantry": 20}}})),
+            "ma_clique_submits", "npc_faction_absorb")["owner"] for _ in range(5)}
+        self.assertEqual(len(picks), 1, f"同種子抽出了不同結果：{picks}")
+
+    def test_the_absorbed_faction_leaves_the_map_for_good(self):
+        """退出地圖之後，點名馬家軍的卡片再也不該出現。"""
+        engine = self._engine()
+        card = engine._event_template("ma_clique_expands")
+        self.assertTrue(engine._event_eligible_players(card), "併吞前抽得到")
+        self._fire(engine, "ma_clique_submits", "npc_faction_absorb")
+        self.assertIn("M", engine.retired_npc_factions())
+        self.assertEqual(engine._event_eligible_players(card), [], "退場後不該再出現")
+        self.assertEqual(engine._event_eligible_players(
+            engine._event_template("ma_clique_submits")), [], "自己也不該再出現")
+
+    def test_without_a_snapshot_the_card_never_fires(self):
+        """排名要靠戰術快照。沒有快照就不發這張卡，也不會半途歸附給誰。"""
+        engine = self._engine()
+        engine._tactical = None
+        card = engine._event_template("ma_clique_submits")
+        self.assertEqual(engine._event_eligible_players(card), [])
+        entry = self._fire(engine, "ma_clique_submits", "npc_faction_absorb_skipped")
+        self.assertEqual(entry["reason"], "no_tactical_or_no_force")
+        self.assertEqual(engine.retired_npc_factions(), set())
+
+    # ---- 四、15.14／15.27 黔軍遭吞併 ----
+
+    def test_the_qian_army_merges_into_liu_xiang(self):
+        """黔軍 5 步 + 1 砲（9 點）併進劉湘的 9 步（9 點）→ 18 點。"""
+        engine = self._engine()
+        entry = self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
+        self.assertEqual(entry["into_army_id"], "C-1")
+        self.assertEqual(entry["units"], {"infantry": 14, "cavalry": 0,
+                                          "machine_gun": 0, "artillery": 1})
+        self.assertEqual(GameEngine._force_of(entry["units"]), 18)
+        self.assertEqual(engine._tactical["armies"]["C-1"]["units"], entry["units"])
+
+    def test_the_absorbed_army_is_emptied_and_retired(self):
+        engine = self._engine()
+        self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
+        qian = engine._tactical["armies"]["Q-1"]
+        self.assertEqual(GameEngine._force_of(qian["units"]), 0)
+        self.assertEqual(qian["status"], "merged")
+        self.assertIn("Q", engine.retired_npc_factions())
+
+    def test_the_qian_territory_changes_hands(self):
+        engine = self._engine()
+        entry = self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
+        self.assertEqual(sorted(entry["cities"]), ["anshun", "guiyang", "zunyi"])
+        for city_id in entry["cities"]:
+            self.assertEqual(engine.state["city_owners"][city_id], "C")
+
+    def test_the_other_annexation_card_uses_its_own_general(self):
+        engine = self._engine()
+        entry = self._fire(engine, "liu_wenhui_annexes_qian", "npc_faction_merge")
+        self.assertEqual((entry["into_general"], entry["into_army_id"]),
+                         ("劉文輝", "C-2"))
+        self.assertEqual(engine._tactical["armies"]["C-2"]["units"]["infantry"], 12)
+
+    def test_the_merge_respects_the_force_cap_and_says_what_did_not_fit(self):
+        """吞併不放寬單一部隊的戰力上限，塞不下的要如實報出來。"""
+        engine = self._engine(self._tactical(
+            {"C-1": {"units": {"infantry": ARMY_FORCE_CAP - 2}}}))
+        entry = self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
+        self.assertEqual(GameEngine._force_of(entry["units"]), ARMY_FORCE_CAP)
+        self.assertTrue(entry["overflow"], "塞不下的兵要記在 overflow")
+        self.assertEqual(sum(entry["overflow"].values()), 4)
+
+    def test_both_annexation_cards_disappear_once_the_qian_are_gone(self):
+        engine = self._engine()
+        self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
+        for card_id in ("liu_xiang_annexes_qian", "liu_wenhui_annexes_qian"):
+            self.assertEqual(
+                engine._event_eligible_players(engine._event_template(card_id)), [],
+                f"{card_id} 在黔軍退場後不該再出現")
+
+    def test_merging_a_faction_into_one_of_its_own_generals_raises(self):
+        engine = self._engine()
+        with self.assertRaises(ValueError):
+            engine._apply_event_payload(
+                {"npc_faction_merge": {"from_faction": "C", "into_general": "劉湘"}},
+                players=None, card={"id": "probe", "name": "probe"})
+
+    def test_a_missing_target_army_is_reported_rather_than_silently_skipped(self):
+        engine = self._engine(self._tactical({"C-1": None}))
+        entry = self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge_skipped")
+        self.assertEqual(entry["reason"], "no_target_army")
+        self.assertEqual(engine.retired_npc_factions(), set(),
+                         "併不成就不該讓黔軍退場")
+
+    # ---- 四之二、退場要真的退乾淨 ----
+
+    def test_a_retired_faction_reads_as_gone_even_if_its_armies_still_show_troops(self):
+        """退場的判準是「這個陣營退出地圖了」，不是「它的兵剛好是 0」。
+
+        兵力歸零與退場是兩件事：被打到只剩 0 營的陣營還在場上（可以補兵回來），
+        退場的陣營則是永久除名。這條用一支「退場了但編制還在」的部隊把兩者分開。
+        """
+        engine = self._engine()
+        engine.state["retired_npc_factions"] = ["Q"]
+        situation = engine.npc_situation(engine._tactical)
+        self.assertEqual(situation["factions"]["Q"], {"generals": [], "battalions": 0})
+        self.assertNotIn("黔軍地方部隊", situation["general_faction"])
+        self.assertEqual(engine._event_eligible_players(
+            engine._event_template("liu_xiang_annexes_qian")), [])
+
+    def test_a_retired_faction_never_grows_back(self):
+        """被併吞的黔軍不該在三回合後自己長出一營步兵，然後一路長回來。"""
+        engine = self._engine()
+        self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
+        for turn in range(1, 16):
+            report = engine.npc_reinforcements(engine._tactical, turn=turn)
+            grown = [entry["armyId"] for entry in report["grown"]]
+            self.assertNotIn("Q-1", grown, f"第 {turn} 回合黔軍又長回來了")
+        self.assertEqual(GameEngine._force_of(engine._tactical["armies"]["Q-1"]["units"]), 0)
+
+    def test_the_rank_gate_blocks_the_card_when_nobody_has_any_force(self):
+        """全場玩家戰力都是 0 時排不出「最高」，這張卡就不該發。
+
+        沒有快照的情況由 npc_requires 擋住，所以這裡特地給了快照——
+        要驗的是 player_rank 自己擋不擋得住。
+        """
+        engine = self._engine(self._tactical(
+            {"F-1": None, "W-1": None, "N-1": None}))
+        card = engine._event_template("ma_clique_submits")
+        self.assertEqual(engine.player_force_ranking()[0][1], 0)
+        self.assertEqual(engine._event_eligible_players(card), [])
+        # 有人有兵就恢復正常
+        engine._tactical = self._tactical()
+        self.assertTrue(engine._event_eligible_players(card))
+
+    # ---- 五、全部上線 ----
+
+    def test_every_npc_card_is_now_live(self):
+        """33 張 NPC 卡全部有機制、全部進得了牌堆。"""
+        engine = GameEngine(seed=3)
+        npc = [c for c in engine.data["event_cards"]["cards"]
+               if str(c.get("ref", "")).startswith("15.")]
+        self.assertEqual(len(npc), 33)
+        for card in npc:
+            self.assertNotIn("not_in_pool", card, f"{card['ref']} 還沒上線")
+            self.assertNotIn("pending", card.get("apply") or {},
+                             f"{card['ref']} 還掛著待建機制")
+            # 15.16 南京事件的效果全在兩個選項裡，卡片層級的 apply 是空的——
+            # 那是正常的形狀，所以兩邊都算數。
+            has_effect = bool(card.get("apply")) or any(
+                option.get("apply")
+                for option in ((card.get("resolution") or {}).get("options") or []))
+            self.assertTrue(has_effect, f"{card['ref']} 沒有任何效果")
+
+    def test_the_frontend_registers_all_three_new_kinds(self):
+        app = (pathlib.Path(__file__).resolve().parents[1]
+               / "frontend" / "app.js").read_text(encoding="utf-8")
+        for kind in ("npc_general_transferred", "npc_faction_absorbed",
+                     "npc_faction_merged"):
+            self.assertIn(f"{kind}:", app, f"{kind} 沒有登記處理器，會靜靜失效")
+        self.assertIn("function relocationCellNear(", app)
+
+
+if __name__ == "__main__":
+    unittest.main()
