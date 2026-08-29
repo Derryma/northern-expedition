@@ -220,7 +220,7 @@ The 22 named generals each carry one signature skill (張宗昌 carries two):
 | `chief_of_staff` 參謀長 | 徐永昌 | harm taken -8% |
 | `xining_garrison` 西寧鎮守 | 馬麒 | whole command HP +10% (aura) |
 | `desert_guard` 大漠衛隊 | 馬福祥 | infantry and cavalry harm taken -8% |
-| `valiant_horse` 驍騎 | 馬鴻賓 | cavalry attack +10% |
+| `valiant_horse` 驍騎 | 馬鴻逵 | cavalry attack +10% |
 | `marshal_zhang` 張大帥 | 張作霖 | whole command HP +10% (aura) |
 | `young_marshal` 少帥 | 張學良 | cavalry and artillery attack +8% |
 | `white_russian_mercenaries` 白俄傭兵 | 張宗昌 | infantry and cavalry attack +10%, cavalry HP +7%; disabled while the owning faction's Soviet relation is 6 or higher, and 張宗昌 loses 5 loyalty |
@@ -259,7 +259,7 @@ they live in `frontend/app.js` (`AURA_TRAITS`, `PROVINCE_CONDITIONAL_TRAITS`,
   bonus stacks across everyone present, so 吳佩孚 plus 靳雲鶚 plus 寇英傑 in one
   battle means all three commands get HP +10%. It lasts for that battle only.
 - Aura partners: 馮玉祥 → 宋哲元、鹿鍾麟; 閻錫山 → 傅作義、徐永昌;
-  馬麒 → 馬福祥、馬鴻賓; 張作霖 → 張學良; 孫傳芳 → 孟昭月、盧香亭;
+  馬麒 → 馬福祥、馬鴻逵; 張作霖 → 張學良; 孫傳芳 → 孟昭月、盧香亭;
   吳佩孚 → 靳雲鶚、寇英傑、陳嘉謨.
 - Every unit in this game is a land unit, so "將領效果只對陸軍生效" needs no
   special handling.

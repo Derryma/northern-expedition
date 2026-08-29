@@ -34,6 +34,18 @@ PLAYABLE_TREE_PATHS = {
     "S": "general_tree/data/general_tree_sunfang.json",
 }
 
+# NPC 勢力的將領樹。事件卡「閻錫山仍屬晉系」這類觸發條件要靠它把
+# 卡片上寫的中文姓名對回將領代號，所以引擎得認得這幾份。
+NPC_TREE_PATHS = {
+    "Y": "general_tree/data/general_tree_npc_Y.json",
+    "G": "general_tree/data/general_tree_npc_G.json",
+    "M": "general_tree/data/general_tree_npc_M.json",
+    "H": "general_tree/data/general_tree_npc_H.json",
+    "C": "general_tree/data/general_tree_npc_C.json",
+    "D": "general_tree/data/general_tree_npc_D.json",
+    "Q": "general_tree/data/general_tree_npc_Q.json",
+}
+
 
 def load_json(relative_path: str) -> Any:
     with (REPO_ROOT / relative_path).open(encoding="utf-8") as handle:
@@ -44,6 +56,9 @@ def load_game_data() -> Dict[str, Any]:
     data = {name: load_json(path) for name, path in DATA_PATHS.items()}
     data["playable_general_trees"] = {
         faction: load_json(path) for faction, path in PLAYABLE_TREE_PATHS.items()
+    }
+    data["npc_general_trees"] = {
+        faction: load_json(path) for faction, path in NPC_TREE_PATHS.items()
     }
     data["indexes"] = {
         "function_cards": _index_cards(data["function_cards"]["cards"]),

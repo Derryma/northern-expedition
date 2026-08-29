@@ -26,7 +26,7 @@
       "subordinate_slots": 2,
       "subordinates": [
         "ma_fuxiang",
-        "ma_hongbin"
+        "ma_hongkui"
       ],
       "status": "active"
     },
@@ -55,9 +55,9 @@
       "subordinates": [],
       "status": "active"
     },
-    "ma_hongbin": {
-      "id": "ma_hongbin",
-      "name": "馬鴻賓",
+    "ma_hongkui": {
+      "id": "ma_hongkui",
+      "name": "馬鴻逵",
       "role": "lieutenant_general",
       "faction": "西北馬家軍",
       "core_faction": false,

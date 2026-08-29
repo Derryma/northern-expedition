@@ -7675,15 +7675,17 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "railway_permanent_block"
-        ],
-        "notes": [
-          "封路本身可沿用 railway_sabotage，但『無法維修』與『生效至閻錫山被俘』兩件事引擎都還沒有。"
-        ]
-      },
-      "not_in_pool": true
+        "railway_permanent_block": {
+          "railways": [
+            "正太鐵路",
+            "京漢鐵路"
+          ],
+          "initiator": "Y",
+          "until_general_leaves": {
+            "general": "閻錫山"
+          }
+        }
+      }
     },
     {
       "id": "fu_zuoyi_fortifies",
@@ -7713,15 +7715,19 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
-        ],
-        "notes": [
-          "傅作義部生命 +8%：需要能對單一 NPC 將領的部隊掛戰鬥修正。"
+        "npc_combat_modifier": [
+          {
+            "general": "傅作義",
+            "modifiers": [
+              {
+                "stat": "hp",
+                "multiplier": 1.08
+              }
+            ],
+            "until_general_leaves": true
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "feng_yuxiang_wuyuan_oath",
@@ -7751,15 +7757,26 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
-        ],
-        "notes": [
-          "對 NPC 陣營與指定 NPC 將領加兵：引擎目前只有玩家的 unit_reserves，沒有 NPC 的。"
+        "npc_unit_delta": [
+          {
+            "general": "馮玉祥",
+            "units": {
+              "infantry": 1,
+              "machine_gun": 1,
+              "artillery": 1
+            }
+          },
+          {
+            "faction": "G",
+            "except_generals": [
+              "馮玉祥"
+            ],
+            "units": {
+              "infantry": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "northwest_jin_war",
@@ -7793,15 +7810,17 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
-        ],
-        "notes": [
-          "對整個 NPC 陣營掛戰力百分比修正。"
+        "npc_force_scale": [
+          {
+            "faction": "G",
+            "multiplier": 0.85
+          },
+          {
+            "faction": "Y",
+            "multiplier": 0.8
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "northwest_allies_ma_clique",
@@ -7835,16 +7854,16 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_general_transfer",
-          "npc_army_relocate"
-        ],
-        "notes": [
-          "NPC 將領換陣營並移防到指定城市周邊一格：牽涉地圖位置，需與前端的移動層對齊。"
-        ]
-      },
-      "not_in_pool": true
+        "npc_general_transfer": {
+          "general": "馬福祥",
+          "to_faction": "G"
+        },
+        "npc_army_relocate": {
+          "general": "馬福祥",
+          "near_city": "zhangjiakou",
+          "within": 1
+        }
+      }
     },
     {
       "id": "northwest_soviet_aid",
@@ -7878,12 +7897,24 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
+        "npc_unit_delta": [
+          {
+            "faction": "G",
+            "units": {
+              "infantry": 1
+            }
+          },
+          {
+            "generals": [
+              "鹿鍾麟",
+              "馮玉祥"
+            ],
+            "units": {
+              "machine_gun": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "tang_shengzhi_seeks_help",
@@ -7901,8 +7932,21 @@
         ]
       },
       "resolution": {
-        "type": "acknowledge",
-        "scope": "all_players"
+        "type": "choice",
+        "scope": "eligible_players",
+        "prompt": "控制漢口或廣州者可付 $25，使唐生智率部整體歸附。多方競標時各付各的，成功率由參與人數平分。",
+        "options": [
+          {
+            "id": "recruit",
+            "label": "出 $25 招募唐生智",
+            "effect_text": "付 $25。若同時有多人出手，所有出手者都要付，由參與者均分成功率抽出一位；沒抽中的錢不退。"
+          },
+          {
+            "id": "decline",
+            "label": "不招募",
+            "effect_text": "不付錢，也不參加抽籤。"
+          }
+        ]
       },
       "entry_condition": {
         "controls_cities_any": [
@@ -7921,16 +7965,21 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier",
-          "contested_npc_recruit"
+        "npc_force_scale": [
+          {
+            "generals": [
+              "唐生智",
+              "趙恒惕"
+            ],
+            "multiplier": 0.5
+          }
         ],
-        "notes": [
-          "競標招募：多方各付 $25，成功率由參與人數平分。引擎沒有這個結構。"
-        ]
-      },
-      "not_in_pool": true
+        "contested_npc_recruit": {
+          "general": "唐生智",
+          "cost": 25,
+          "option_id": "recruit"
+        }
+      }
     },
     {
       "id": "liu_xiang_expands",
@@ -7960,12 +8009,16 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
+        "npc_unit_delta": [
+          {
+            "general": "劉湘",
+            "units": {
+              "infantry": 2,
+              "cavalry": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "sichuan_internal_war",
@@ -7999,12 +8052,16 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
+        "npc_force_scale": [
+          {
+            "generals": [
+              "劉文輝",
+              "楊森"
+            ],
+            "multiplier": 0.85
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "long_yun_coup_brewing",
@@ -8022,8 +8079,21 @@
         ]
       },
       "resolution": {
-        "type": "acknowledge",
-        "scope": "all_players"
+        "type": "choice",
+        "scope": "eligible_players",
+        "prompt": "控制廣西或貴州者可付 $25，使龍雲率部整體歸附。多方競標時各付各的，成功率由參與人數平分。",
+        "options": [
+          {
+            "id": "recruit",
+            "label": "出 $25 招募龍雲",
+            "effect_text": "付 $25。若同時有多人出手，所有出手者都要付，由參與者均分成功率抽出一位；沒抽中的錢不退。"
+          },
+          {
+            "id": "decline",
+            "label": "不招募",
+            "effect_text": "不付錢，也不參加抽籤。"
+          }
+        ]
       },
       "entry_condition": {
         "controls_provinces_any": [
@@ -8038,12 +8108,12 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "contested_npc_recruit"
-        ]
-      },
-      "not_in_pool": true
+        "contested_npc_recruit": {
+          "general": "龍雲",
+          "cost": 25,
+          "option_id": "recruit"
+        }
+      }
     },
     {
       "id": "tang_jiyao_shaken",
@@ -8073,12 +8143,13 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
+        "npc_force_scale": [
+          {
+            "general": "唐繼堯",
+            "multiplier": 0.9
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "ma_clique_expands",
@@ -8108,12 +8179,15 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
+        "npc_unit_delta": [
+          {
+            "faction": "M",
+            "units": {
+              "cavalry": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "ma_clique_submits",
@@ -8147,16 +8221,11 @@
         }
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "player_force_ranking",
-          "npc_faction_absorb"
-        ],
-        "notes": [
-          "整個 NPC 陣營連人帶地歸給戰力最高的玩家並退出地圖——地盤、部隊、將領三樣都要搬。"
-        ]
-      },
-      "not_in_pool": true
+        "npc_faction_absorb": {
+          "faction": "M",
+          "to": "highest_total_force"
+        }
+      }
     },
     {
       "id": "liu_xiang_annexes_qian",
@@ -8190,15 +8259,11 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_faction_merge"
-        ],
-        "notes": [
-          "NPC 併 NPC：部隊併入、地盤轉屬、被併陣營退出地圖。"
-        ]
-      },
-      "not_in_pool": true
+        "npc_faction_merge": {
+          "from_faction": "Q",
+          "into_general": "劉湘"
+        }
+      }
     },
     {
       "id": "wanxian_incident",
@@ -8238,15 +8303,13 @@
           "amount": 1,
           "turns": 5
         },
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
-        ],
-        "notes": [
-          "對英 −1 與 [學潮] 事件 +1 回合都已接上引擎；只有『楊森戰力 −10%』還缺 NPC 戰鬥修正。"
+        "npc_force_scale": [
+          {
+            "general": "楊森",
+            "multiplier": 0.9
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "nanjing_incident",
@@ -8317,15 +8380,7 @@
         ],
         "requires_garrison_in_city": "nanjing"
       },
-      "apply": {
-        "pending": [
-          "garrison_entry_condition"
-        ],
-        "notes": [
-          "兩支的效果本身都接得上；還缺的是進入條件裡『南京有軍隊駐守』——駐軍在 SHARED_TACTICAL_STATE，事件進入條件目前讀不到它。"
-        ]
-      },
-      "not_in_pool": true
+      "apply": {}
     },
     {
       "id": "powers_punish_soviet_proxy",
@@ -8359,15 +8414,16 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
-        ],
-        "notes": [
-          "『除某位將領以外的同陣營部隊』需要能排除指定將領的 NPC 戰鬥修正。"
+        "npc_force_scale": [
+          {
+            "faction": "G",
+            "except_generals": [
+              "馮玉祥"
+            ],
+            "multiplier": 0.93
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "liu_xiang_denounces_zhili",
@@ -8385,8 +8441,21 @@
         ]
       },
       "resolution": {
-        "type": "acknowledge",
-        "scope": "all_players"
+        "type": "choice",
+        "scope": "eligible_players",
+        "prompt": "當下正對直系宣戰者可付 $25，原地招募劉湘。多方競標時各付各的，成功率由參與人數平分。",
+        "options": [
+          {
+            "id": "recruit",
+            "label": "出 $25 招募劉湘",
+            "effect_text": "付 $25。若同時有多人出手，所有出手者都要付，由參與者均分成功率抽出一位；沒抽中的錢不退。"
+          },
+          {
+            "id": "decline",
+            "label": "不招募",
+            "effect_text": "不付錢，也不參加抽籤。"
+          }
+        ]
       },
       "entry_condition": {
         "at_war_with": "W",
@@ -8398,13 +8467,12 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "at_war_entry_condition",
-          "contested_npc_recruit"
-        ]
-      },
-      "not_in_pool": true
+        "contested_npc_recruit": {
+          "general": "劉湘",
+          "cost": 25,
+          "option_id": "recruit"
+        }
+      }
     },
     {
       "id": "jinsui_army_expands",
@@ -8438,12 +8506,24 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
+        "npc_unit_delta": [
+          {
+            "faction": "Y",
+            "units": {
+              "infantry": 2
+            }
+          },
+          {
+            "generals": [
+              "傅作義",
+              "閻錫山"
+            ],
+            "units": {
+              "artillery": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "xu_yongchang_reorganises",
@@ -8473,12 +8553,19 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
+        "npc_combat_modifier": [
+          {
+            "faction": "Y",
+            "modifiers": [
+              {
+                "stat": "attack",
+                "multiplier": 1.05
+              }
+            ],
+            "turns": 5
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "han_fuju_defects_to_nanjing",
@@ -8496,8 +8583,21 @@
         ]
       },
       "resolution": {
-        "type": "acknowledge",
-        "scope": "all_players"
+        "type": "choice",
+        "scope": "eligible_players",
+        "prompt": "控制南京者可付 $25，原地招募韓復榘。多方競標時各付各的，成功率由參與人數平分。",
+        "options": [
+          {
+            "id": "recruit",
+            "label": "出 $25 招募韓復榘",
+            "effect_text": "付 $25。若同時有多人出手，所有出手者都要付，由參與者均分成功率抽出一位；沒抽中的錢不退。"
+          },
+          {
+            "id": "decline",
+            "label": "不招募",
+            "effect_text": "不付錢，也不參加抽籤。"
+          }
+        ]
       },
       "entry_condition": {
         "controls_cities_any": [
@@ -8511,15 +8611,12 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "contested_npc_recruit"
-        ],
-        "notes": [
-          "這一張只有控制南京者能招募，不存在多方競標，但仍走同一套付費招募機制。"
-        ]
-      },
-      "not_in_pool": true
+        "contested_npc_recruit": {
+          "general": "韓復榘",
+          "cost": 25,
+          "option_id": "recruit"
+        }
+      }
     },
     {
       "id": "song_zheyuan_broadsword_corps",
@@ -8549,12 +8646,19 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
+        "npc_combat_modifier": [
+          {
+            "general": "宋哲元",
+            "modifiers": [
+              {
+                "stat": "attack",
+                "multiplier": 1.05
+              }
+            ],
+            "turns": 5
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "he_jian_holds_south_hunan",
@@ -8584,12 +8688,19 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
+        "npc_combat_modifier": [
+          {
+            "general": "何鍵",
+            "modifiers": [
+              {
+                "stat": "hp",
+                "multiplier": 1.1
+              }
+            ],
+            "turns": 5
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "zhao_hengti_provincial_constitution",
@@ -8619,12 +8730,13 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_combat_modifier"
+        "npc_force_scale": [
+          {
+            "general": "趙恒惕",
+            "multiplier": 1.1
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "yang_sen_expands",
@@ -8654,12 +8766,16 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
+        "npc_unit_delta": [
+          {
+            "general": "楊森",
+            "units": {
+              "infantry": 2,
+              "machine_gun": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "liu_wenhui_expands",
@@ -8689,12 +8805,16 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_reserve_delta"
+        "npc_unit_delta": [
+          {
+            "general": "劉文輝",
+            "units": {
+              "infantry": 2,
+              "artillery": 1
+            }
+          }
         ]
-      },
-      "not_in_pool": true
+      }
     },
     {
       "id": "liu_wenhui_annexes_qian",
@@ -8728,12 +8848,11 @@
         ]
       },
       "apply": {
-        "pending": [
-          "npc_condition_gate",
-          "npc_faction_merge"
-        ]
-      },
-      "not_in_pool": true
+        "npc_faction_merge": {
+          "from_faction": "Q",
+          "into_general": "劉文輝"
+        }
+      }
     },
     {
       "id": "tang_shengzhi_builds_temples",
@@ -8769,15 +8888,11 @@
           ],
           "delta": 1
         },
-        "pending": [
-          "npc_condition_gate"
-        ],
         "notes": [
           "效果已接上引擎；還缺的只有『唐生智仍屬湘軍』這道 NPC 進入條件。"
         ]
       },
-      "story": "湖南四百八十寺，多少樓台煙雨中？",
-      "not_in_pool": true
+      "story": "湖南四百八十寺，多少樓台煙雨中？"
     },
     {
       "id": "zhao_hengti_liling_porcelain",
@@ -8812,12 +8927,8 @@
             "yueyang"
           ],
           "delta": 1
-        },
-        "pending": [
-          "npc_condition_gate"
-        ]
-      },
-      "not_in_pool": true
+        }
+      }
     },
     {
       "id": "qian_army_moutai",
@@ -8852,12 +8963,8 @@
             "zunyi"
           ],
           "delta": 1
-        },
-        "pending": [
-          "npc_condition_gate"
-        ]
-      },
-      "not_in_pool": true
+        }
+      }
     },
     {
       "id": "liu_xiang_luzhou_distillery",
@@ -8892,12 +8999,8 @@
             "luzhou"
           ],
           "delta": 1
-        },
-        "pending": [
-          "npc_condition_gate"
-        ]
-      },
-      "not_in_pool": true
+        }
+      }
     },
     {
       "id": "xu_yongchang_fenjiu",
@@ -8932,12 +9035,8 @@
             "linfen"
           ],
           "delta": 1
-        },
-        "pending": [
-          "npc_condition_gate"
-        ]
-      },
-      "not_in_pool": true
+        }
+      }
     },
     {
       "id": "yan_xishan_promotes_education",
@@ -8972,12 +9071,8 @@
             "山西"
           ],
           "delta": 1
-        },
-        "pending": [
-          "npc_condition_gate"
-        ]
-      },
-      "not_in_pool": true
+        }
+      }
     }
   ],
   "count": 207
