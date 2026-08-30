@@ -1,0 +1,18 @@
+{
+  "armies": {
+    "Z-001": {
+      "generalId": "z_cao_kun",
+      "cellKey": "hex_100_50",
+      "units": {
+        "inf": 10,
+        "cav": 5,
+        "art": 3
+      }
+    }
+  },
+  "cellFactions": {
+    "hex_100_50": "Z",
+    "hex_100_51": "Z"
+  },
+  "navyDivisions": []
+}

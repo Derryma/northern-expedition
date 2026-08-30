@@ -22,10 +22,38 @@ PORTRAIT_ROOT = REPO_ROOT / "PJ Boardgame" / "portraits"
 # 本作自有的肖像目錄。PJ Boardgame 資料夾只供參考、不得改動，所以新畫或新增的
 # 肖像一律放這裡，並且優先於 PJ 目錄被採用。
 LOCAL_PORTRAIT_ROOT = FRONTEND_ROOT / "assets" / "portraits"
+# 戰術狀態持久化：伺服器重啟後不會丟失部隊編制與地圖狀態
+GAME_DATA_DIR = REPO_ROOT / "game_data"
+TACTICAL_STATE_FILE = GAME_DATA_DIR / "tactical_state.json"
 ENGINE = GameEngine()
 SHARED_LOCK = RLock()
 SHARED_TACTICAL_STATE: Optional[Dict[str, Any]] = None
 SHARED_REVISION = 0
+
+
+def save_tactical_state() -> None:
+    """將戰術狀態寫入磁碟，防止伺服器重啟時資料丟失。"""
+    if SHARED_TACTICAL_STATE is None:
+        return
+    try:
+        GAME_DATA_DIR.mkdir(exist_ok=True)
+        with open(TACTICAL_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(SHARED_TACTICAL_STATE, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Warning: Failed to save tactical state: {e}")
+
+
+def load_tactical_state() -> None:
+    """伺服器啟動時從磁碟載入戰術狀態。"""
+    global SHARED_TACTICAL_STATE
+    if TACTICAL_STATE_FILE.exists():
+        try:
+            with open(TACTICAL_STATE_FILE, 'r', encoding='utf-8') as f:
+                SHARED_TACTICAL_STATE = json.load(f)
+            print(f"Loaded tactical state from {TACTICAL_STATE_FILE}")
+        except Exception as e:
+            print(f"Warning: Failed to load tactical state: {e}")
+            SHARED_TACTICAL_STATE = None
 
 
 class SharedStateConflict(Exception):
@@ -188,6 +216,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         with SHARED_LOCK:
             SHARED_TACTICAL_STATE = None
             SHARED_REVISION += 1
+            # 清除舊遊戲的戰術狀態檔案
+            save_tactical_state()
         return result
 
     def _shared_state(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -201,6 +231,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
                 raise SharedStateConflict("shared game changed on another device")
             SHARED_TACTICAL_STATE = tactical
             SHARED_REVISION += 1
+            # 寫入磁碟，防止伺服器重啟時丟失戰術狀態
+            save_tactical_state()
             return {
                 "revision": SHARED_REVISION,
                 "tactical": SHARED_TACTICAL_STATE,
@@ -482,6 +514,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
 
 
 def run(host: str = "0.0.0.0", port: int = 8766) -> None:
+    # 伺服器啟動時載入先前保存的戰術狀態，避免重啟後資料丟失
+    load_tactical_state()
     server = ThreadingHTTPServer((host, port), PlaytestHandler)
     print(f"Playtest server running at http://{host}:{port}")
     server.serve_forever()

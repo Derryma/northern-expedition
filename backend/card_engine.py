@@ -3892,6 +3892,8 @@ class GameEngine:
         total_factory = 0
         entries = []
         remaining = []
+        city_effects = self.state.setdefault("city_output_effects", [])
+
         for clause in active:
             turns_left = clause.get("remaining_turns")
             if turns_left is not None and int(turns_left) <= 0:
@@ -3912,9 +3914,31 @@ class GameEngine:
                 "factory": factory,
                 "remaining_turns": turns_left,
             })
+
+            # 為每個受影響的城市添加 city_output_effects 記錄，讓前端顯示標籤
+            # 並讓 _adjusted_city_output() 能夠實際扣除產出
+            for city in targets:
+                effect_id = f"loan_penalty_{clause.get('loan_id')}_{city['id']}"
+                # 檢查是否已存在此效果，避免重複添加
+                if not any(e.get("id") == effect_id for e in city_effects):
+                    city_effects.append({
+                        "id": effect_id,
+                        "kind": "loan_penalty",
+                        "label": clause.get("label", "貸款違約條款"),
+                        "city_ids": [city["id"]],
+                        "cash_multiplier": 1.0 - share if "cash" in take else 1.0,
+                        "factory_multiplier": 1.0 - share if "factory" in take else 1.0,
+                        "remaining_turns": turns_left,
+                        "loan_id": clause.get("loan_id"),
+                        "power": clause.get("power"),
+                    })
+
             if turns_left is not None:
                 clause["remaining_turns"] = int(turns_left) - 1
                 if clause["remaining_turns"] <= 0:
+                    # 期限到了，從 city_output_effects 移除對應的條目
+                    city_effects[:] = [e for e in city_effects
+                                      if e.get("loan_id") != clause.get("loan_id")]
                     continue
             remaining.append(clause)
         payload["loan_penalties"] = remaining
@@ -5566,6 +5590,19 @@ class GameEngine:
         if str(faction) not in retired:
             retired.append(str(faction))
 
+    def _transfer_all_faction_cells(self, from_faction: str, to_faction: str) -> None:
+        """將舊陣營控制的所有地格轉給新陣營。
+
+        NPC 被併吞或歸附時，不只是城市和部隊要轉手，地圖上所有標記為該陣營的
+        地格也要一併改色，否則地圖會出現「已經退出地圖的勢力」仍然佔據大片領土。
+        """
+        if not isinstance(self._tactical, dict):
+            return
+        cell_factions = self._tactical.setdefault("cellFactions", {})
+        for cell_key, fac in list(cell_factions.items()):
+            if fac == str(from_faction):
+                cell_factions[cell_key] = str(to_faction)
+
     def _hand_over_npc_armies(self, faction: str, new_owner: str) -> list:
         """把一個 NPC 陣營的部隊整批換旗，回傳搬了哪些。
 
@@ -5579,6 +5616,10 @@ class GameEngine:
             general_id = army.get("generalId")
             if general_id and isinstance(self._tactical, dict):
                 self._tactical.setdefault("generalOwners", {})[general_id] = str(new_owner)
+            # 更新部隊所在地格的陣營歸屬，這樣地圖上的顏色才會跟著改變
+            cell_key = army.get("cellKey")
+            if cell_key and isinstance(self._tactical, dict):
+                self._tactical.setdefault("cellFactions", {})[cell_key] = str(new_owner)
             moved.append({"armyId": army_id, "generalId": general_id,
                           "units": dict(army.get("units") or {})})
         return moved
@@ -6532,6 +6573,8 @@ class GameEngine:
                 cities = self._npc_faction_cities(faction)
                 for city_id in cities:
                     self.state["city_owners"][city_id] = winner
+                # 將舊陣營控制的所有地格轉給接管方，這樣地圖才會完全更新
+                self._transfer_all_faction_cells(faction, winner)
                 self._retire_npc_faction(faction)
                 self._refresh_city_income()
                 holder = sorted(self.state["players"])[0]
@@ -6593,6 +6636,8 @@ class GameEngine:
                 cities = self._npc_faction_cities(source)
                 for city_id in cities:
                     self.state["city_owners"][city_id] = winner_faction
+                # 將被併吞陣營控制的所有地格轉給接管方，這樣地圖才會完全更新
+                self._transfer_all_faction_cells(source, winner_faction)
                 self._retire_npc_faction(source)
                 self._refresh_city_income()
                 holder = sorted(self.state["players"])[0]
