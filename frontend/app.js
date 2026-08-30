@@ -598,6 +598,8 @@ const PENDING_EFFECT_HANDLERS = {
     const resolved = await api("/api/loyalty-effect",
       { kind: "loyalty_random", faction, effect });
     const picked = applyLoyaltyOverrides(resolved.overrides);
+    // CRITICAL: Mark that loyalty changed - must sync before next loyalty operation
+    window.__loyaltyChangedThisTurn = true;
     if (!picked.length) return [];
     const sign = resolved.amount > 0 ? `+${resolved.amount}` : `${resolved.amount}`;
     const names = resolved.picked.map((id) => generalById(id)?.name || id).join("、");
@@ -705,6 +707,8 @@ const PENDING_EFFECT_HANDLERS = {
     const resolved = await api("/api/loyalty-effect",
       { kind: "loyalty_all", faction, effect });
     const picked = applyLoyaltyOverrides(resolved.overrides);
+    // CRITICAL: Mark that loyalty changed - must sync before next loyalty operation
+    window.__loyaltyChangedThisTurn = true;
     if (!picked.length) return [];
     const sign = resolved.amount > 0 ? `+${resolved.amount}` : `${resolved.amount}`;
     const amplified = effect.amplified_by === 'radio_station' ? '（廣播電台放大）' : '';
@@ -2134,6 +2138,8 @@ async function buyFunctionCard(button) {
     const result = await api("/api/draw-function", { player });
     state = result.state;
     syncStrategicCitiesFromState();
+    // CRITICAL: Sync after drawing function card - resources and hand changed
+    await publishSharedState(true);
     const drawCount = Number(state.players[player]?.function_purchase_count || 0);
     uiNotice = result.requires_discard
       ? `已支付 $${result.draw_cost} 購買「${result.card.name}」，請棄置一張手牌接收。`
@@ -2747,6 +2753,9 @@ function attachGeneralHandlers(root) {
         prisoners.splice(index, 1);
         recruitCapturedGeneral(record, currentPlayer, superiorId, deploymentCell);
         recruitedGenerals[currentPlayer].push(record);
+        // CRITICAL: Sync after recruiting captive - general ownership changed
+        await publishSharedState(true);
+        await refreshBackendDerivedState();
         updateTopBar();
         renderArmyMarkers(currentPlayer);
         renderPanel("generals");
@@ -3094,6 +3103,9 @@ async function attemptArmyDefection(army, superiorId) {
   selectedArmyId = army.id;
   uiNotice = `策反成功：${army.general}轉投我方，原部隊完整保留。`;
   generalTreeData = generalTrees[currentPlayer];
+  // CRITICAL: Sync after defection - general ownership and loyalty changed
+  await publishSharedState(true);
+  await refreshBackendDerivedState();
   initMap();
   renderPendingActions();
   if ($("panelGenerals")?.classList.contains("active")) renderPanel("generals");
@@ -3300,6 +3312,8 @@ function attachRecruitmentHandlers() {
         });
         state = result.state;
         syncStrategicCitiesFromState();
+        // CRITICAL: Sync after training units - resource and unit counts changed
+        await publishSharedState(true);
         updateTopBar();
         renderPanel("recruitment");
         renderPendingActions();
@@ -3318,6 +3332,8 @@ function attachRecruitmentHandlers() {
         });
         state = result.state;
         syncStrategicCitiesFromState();
+        // CRITICAL: Sync after training navy units - resource and unit counts changed
+        await publishSharedState(true);
         updateTopBar();
         renderPanel("recruitment");
         renderPendingActions();
@@ -3473,6 +3489,8 @@ function attachLoanHandlers(root) {
         const result = await api("/api/take-loan", { player: currentPlayer, bank, amount });
         state = result.state;
         syncStrategicCitiesFromState();
+        // CRITICAL: Sync after taking loan - financial state changed
+        await publishSharedState(true);
         updateTopBar();
         loanPanelCache = null;
         await renderLoansPanel(root);
@@ -3494,6 +3512,8 @@ function attachDebtRepayHandler(root = document) {
       });
       state = result.state;
       syncStrategicCitiesFromState();
+      // CRITICAL: Sync after repaying debt - financial state changed
+      await publishSharedState(true);
       updateTopBar();
       loanPanelCache = null;
       await renderLoansPanel(document.getElementById("loansContent"));
@@ -3608,6 +3628,8 @@ function attachForeignHandlers() {
         });
         state = result.state;
         syncStrategicCitiesFromState();
+        // CRITICAL: Sync after diplomacy action - diplomatic relations changed
+        await publishSharedState(true);
         renderPanel("foreign");
         renderPendingActions();
       } catch (error) {
@@ -3632,6 +3654,8 @@ function attachForeignHandlers() {
       });
       state = result.state;
       syncStrategicCitiesFromState();
+      // CRITICAL: Sync after submitting deal - resources may have changed
+      await publishSharedState(true);
       dealTarget = null;
       updateTopBar();
       renderPanel("foreign");
@@ -3747,6 +3771,10 @@ function attachCardHandlers(root = document) {
         syncStrategicCitiesFromState();
         uiNotice = functionActionMessage(state.last_action, currentPlayer);
         await publishSharedState(true);
+        // Force immediate loyalty refresh after loyalty-affecting cards
+        if (result.loyalty_overrides && Object.keys(result.loyalty_overrides).length > 0) {
+          await refreshBackendDerivedState();
+        }
         updateTopBar();
         initMap();
         renderPendingActions();
@@ -3769,6 +3797,8 @@ function attachCardHandlers(root = document) {
         });
         state = result.state;
         syncStrategicCitiesFromState();
+        // CRITICAL: Sync after discarding for draw - hand composition changed
+        await publishSharedState(true);
         renderPendingActions();
         if ($("panelCards").classList.contains("active")) renderPanel("cards");
       } catch (error) {
@@ -7086,6 +7116,8 @@ async function applyNavyDuel(attacker, defender) {
   });
   applyCarriedArmySettlement(attacker, response.attackerCarried);
   applyCarriedArmySettlement(defender, response.defenderCarried);
+  // CRITICAL: Sync after navy duel - unit counts and carried army status changed
+  await publishSharedState(true);
   return result;
 }
 
@@ -7918,8 +7950,13 @@ async function respondToEvent(choice, followUp = null) {
     state = result.state;
     newspaperFollowUp = null;
     newspaperCardKey = null;
+    let hasLoyaltyEffects = false;
     if (result.card_finished) {
+      // Reset loyalty change flag before processing effects
+      window.__loyaltyChangedThisTurn = false;
       const notes = applyFrontendEventEffects(cardId);
+      // Check if loyalty was modified during event effects
+      hasLoyaltyEffects = window.__loyaltyChangedThisTurn;
       // 列強懲戒的部隊／艦隊傷害由後端排進待辦，這裡直接執行，不由玩家自行扣。
       notes.push(...await consumePendingFrontendEffects());
       if (notes.length) showNotice(`${view.card.name}：${notes.join("；")}`);
@@ -7953,6 +7990,10 @@ async function respondToEvent(choice, followUp = null) {
     updateTopBar();
     renderPendingActions();
     await publishSharedState(true);
+    // Force immediate loyalty refresh after loyalty-affecting event cards
+    if (hasLoyaltyEffects) {
+      await refreshBackendDerivedState();
+    }
   } catch (error) {
     showNotice(error.message);
     newspaperFollowUp = null;
@@ -8536,6 +8577,9 @@ async function resolveBattleRound(battle) {
   }
   initMap();
   renderPendingActions();
+  // CRITICAL: Sync after combat - casualties and potential ownership changes
+  await publishSharedState(true);
+  await refreshBackendDerivedState();
 }
 
 async function confirmBattleTactic(battle, side) {
@@ -8732,6 +8776,8 @@ function setupPendingActions() {
       });
       state = result.state;
       syncStrategicCitiesFromState();
+      // CRITICAL: Sync after responding to deal - resources transferred
+      await publishSharedState(true);
       uiNotice = result.deal.status === "accepted" ? "交易已接受，資源已轉移。" : "交易已拒絕。";
       updateTopBar();
       renderPendingActions();
