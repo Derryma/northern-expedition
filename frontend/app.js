@@ -1523,6 +1523,11 @@ function syncStrategicCitiesFromState() {
     if (economy) {
       city.cash = economy.cash;
       city.factory = economy.factory;
+      // 城市升級事件卡會改變城市等級，後端透過 city_economy 傳遞更新後的等級
+      // （從 _strategic_map_snapshot 計算而來），前端必須同步，否則升級卡沒有效果
+      if (economy.level !== undefined) {
+        city.level = economy.level;
+      }
     }
     const cell = cells[city.cellKey];
     if (cell) cell.city = city;
@@ -5645,7 +5650,7 @@ function skipProvinceClaim(province, faction) {
   publishSharedState(true).catch((error) => showNotice(`省份歸屬同步失敗：${error.message}`));
 }
 
-function occupyTile(cell, faction, record = null) {
+async function occupyTile(cell, faction, record = null) {
   if (!cell || cell.fac === faction) return;
   const previousFaction = cell.fac;
   const previousCityFaction = cell.city?.faction || null;
@@ -5653,7 +5658,7 @@ function occupyTile(cell, faction, record = null) {
   cell.fac = faction;
   if (cell.city && previousCityFaction !== faction) {
     transferCityEconomy(cell.city, previousCityFaction, faction);
-    queueCityOwnershipSync(cell.city.id, faction);
+    await queueCityOwnershipSync(cell.city.id, faction);
   }
 }
 
@@ -9059,7 +9064,9 @@ async function handleNavyDestination(destination) {
   if (destination.city && destinationOwner && destinationOwner !== currentPlayer
     && factionsAtWar(currentPlayer, destinationOwner)
     && navy.cellKey === destination.key) {
-    occupyTile(destination, currentPlayer, action);
+    // 艦隊佔領城市時必須等待 queueCityOwnershipSync 完成，否則接下來的
+    // publishSharedState 會從後端拿到舊的 state.city_owners，導致地圖顯示錯誤的歸屬。
+    await occupyTile(destination, currentPlayer, action);
   }
   markNavyResolved(navy);
   navyMoveMode = false;
@@ -9196,9 +9203,9 @@ async function handleMapDestination(destination) {
     if (!navyContacted && army.cellKey === destination.key && enemy) {
       startBattle(army, enemy, destination, source.key, action);
     } else if (!navyContacted && army.cellKey === destination.key && destination.fac !== currentPlayer) {
-      occupyTile(destination, currentPlayer, action);
+      await occupyTile(destination, currentPlayer, action);
     } else if (navyContacted && navyContactResult?.navyRetreat && !enemy && army.cellKey === destination.key && destination.fac !== currentPlayer) {
-      occupyTile(destination, currentPlayer, action);
+      await occupyTile(destination, currentPlayer, action);
     }
     moveMode = false;
     $("mapStage").classList.remove("move-mode");
