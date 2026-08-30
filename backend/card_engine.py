@@ -71,6 +71,7 @@ FUNCTION_CARD_COPIES = {
     "police_system": 4,
     "du_yuesheng_gamble": 2,
     "hongmen_uprising": 2,
+    "red_spear_uprising": 2,
     "behind_enemy_lines_sabotage": 4,
     "antiwar_speech_infantry": 5,
     "antiwar_speech_cavalry": 2,
@@ -472,7 +473,6 @@ class GameEngine:
             "turn_log": [],
             "last_action": None,
             "recurring_effects": [],
-            "last_economy_log": {},
             "next_deal_id": 1,
             # 陣營層級技能目前掛在誰身上（開局時只有張宗昌的〈日本買辦〉在奉系）。
             "faction_general_traits": self._initial_faction_general_traits(),
@@ -919,7 +919,6 @@ class GameEngine:
             if effect["remaining_turns"] > 0:
                 active_recurring.append(effect)
         self.state["recurring_effects"] = active_recurring
-        self.state["last_economy_log"] = log
         return log
 
     def _tick_timed_effects(self) -> None:
@@ -1465,6 +1464,27 @@ class GameEngine:
                           "gains": gains, "units": self._clamp_to_force_cap(units)})
         return {"grown": grown, "ended_growth": ended}
 
+    # 〈泳渡海峽的女子〉開的全軍野戰醫院沒有卡片欄位可讀，用這個當基準。
+    DEFAULT_FIELD_HOSPITAL_BATTALIONS = 1
+
+    def _field_hospital_battalions(self, faction: str, general_id: Optional[str]) -> int:
+        """這支部隊一次能歸隊幾個營。數字的唯一來源是功能卡上的 recover_battalions。
+
+        名單上的將領吃卡片上的數字；沒進名單、靠事件卡開的全軍醫院吃預設值。
+        資料檔目前只有一張 field_hospital 卡；真要出現第二張、而且數字不一樣時
+        這裡會直接擋下來，不會偷偷挑第一張（FieldHospitalSourceTests 也守著）。
+        """
+        roster = self._player(faction).get("field_hospital_generals") or []
+        if general_id not in roster:
+            return self.DEFAULT_FIELD_HOSPITAL_BATTALIONS
+        values = {max(1, int(card.get("recover_battalions",
+                                      self.DEFAULT_FIELD_HOSPITAL_BATTALIONS)))
+                  for card in self.data["function_cards"]["cards"]
+                  if card.get("mechanic") == "field_hospital"}
+        if len(values) > 1:
+            raise ValueError(f"field_hospital 卡的 recover_battalions 不只一種：{sorted(values)}")
+        return values.pop() if values else self.DEFAULT_FIELD_HOSPITAL_BATTALIONS
+
     def field_hospital_recovery(self, tactical: Optional[Dict[str, Any]],
                                 turn: Optional[int] = None) -> Dict[str, Any]:
         """野戰醫院：上一戰的損失裡隨機挑一個兵種免費歸隊一營。
@@ -1498,10 +1518,18 @@ class GameEngine:
             if not candidates:
                 cleared.append(army_id)
                 continue
-            pick = candidates[self.random.randrange(len(candidates))]
+            # 歸隊幾個營由卡片決定（〈進口盤尼西林〉的 recover_battalions）。
+            # 先前這裡寫死 +1，卡片上那個欄位沒有任何讀取者——同一條規則
+            # 存在兩份，改資料完全不會生效。
+            battalions = self._field_hospital_battalions(faction, general_id)
             units = {unit: max(0, int((army.get("units") or {}).get(unit) or 0))
                      for unit in UNIT_FORCE_POINTS}
-            units[pick] += 1
+            picked = []
+            for _ in range(battalions):
+                pick = candidates[self.random.randrange(len(candidates))]
+                units[pick] += 1
+                picked.append(pick)
+            pick = picked[0]
             healed.append({"armyId": army_id, "unit": pick,
                            "units": self._clamp_to_force_cap(units)})
         return {"healed": healed, "cleared": cleared}
@@ -1783,12 +1811,15 @@ class GameEngine:
                 "built_turn": int(self.state["turn"]),
             }
         elif mechanic == "oil_supply":
+            # 免疫哪張卡寫在卡片資料的 immune_cards 裡，不寫死在引擎——
+            # 引擎只負責「持有這個效果的人，那幾張卡的生產加價不算在他頭上」。
             timed_effect = {
                 "id": card_id,
                 "name": card.get("name", card_id),
                 "kind": "oil_price_immunity",
                 "remaining_turns": int(card.get("duration_turns", 10)),
                 "owners": [player],
+                "immune_cards": [str(x) for x in (card.get("immune_cards") or [])],
             }
             player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
         elif mechanic == "delayed_factory_bonus":
@@ -2141,6 +2172,15 @@ class GameEngine:
                 raise ValueError(f"{target_owner} 有上海宋家撐腰，{card.get('name', card_id)}對其無效")
             if self._gang_riot_shielded(target_owner, province, mechanic):
                 raise ValueError(f"{province}有警政單位駐防，不能在此發動黑幫事件")
+            # 同一個省已經在暴動就不能再發動一次。產出只會歸零一次，但分潤是
+            # **逐筆**結算的——疊第二筆會讓兩個發動者各拿一份「被截斷的一半」，
+            # 目標少 11、兩人合拿 24，憑空生錢。
+            # 這與鐵路「已經在搶修中」不准重複爆破是同一條道理。
+            if any(effect.get("kind") == mechanic
+                   and effect.get("target_owner") == target_owner
+                   and effect.get("province") == province
+                   for effect in self.state.get("city_output_effects", [])):
+                raise ValueError(f"{province}已經在暴動中，不能重複發動")
             target_cities = [
                 city
                 for city in self.data["strategic_map"]["cities"]
@@ -2163,7 +2203,9 @@ class GameEngine:
                 "factory_multiplier": 0,
                 "reward_rate": float(card.get("reward_rate", 0.5)),
                 "required_force": int(card.get("suppression_force", 15)),
-                "required_turns": int(card.get("suppression_turns", 2)),
+                # 治安惡化期（火燒紅蓮寺、鴉片與釐金稅收）發動的暴動要多鎮壓幾回合。
+                # 加碼只在**發動當下**結算一次，之後這條暴動的門檻就固定了。
+                "required_turns": int(card.get("suppression_turns", 2)) + self.suppression_turn_bonus(),
                 "label": str(card.get("disruption_label", "黑幫暴動")),
                 "garrison_progress": 0,
             }
@@ -2179,6 +2221,7 @@ class GameEngine:
             count = int(card.get("target_city_count", 2))
             selected = self.random.sample(target_cities, k=min(count, len(target_cities)))
             required = int(card.get("required_battalions", 5))
+            required_turns = int(card.get("required_turns", 2)) + self.suppression_turn_bonus()
             city_disruption = {
                 "id": f"{card_id}:{self.state['turn']}:{player}:{target_owner}",
                 "card_id": card_id,
@@ -2192,7 +2235,7 @@ class GameEngine:
                 "cash_multiplier": 0,
                 "factory_multiplier": 0,
                 "required_battalions": required,
-                "required_turns": int(card.get("required_turns", 2)),
+                "required_turns": required_turns,
                 "garrison_progress": {},
             }
             self.state.setdefault("city_output_effects", []).append(deepcopy(city_disruption))
@@ -2200,7 +2243,7 @@ class GameEngine:
             self._notify(
                 target_owner,
                 f"{card.get('name', card_id)}：{'、'.join(city['name'] for city in selected)} 產出歸零，"
-                f"每城需連續駐紮至少 {required} 營 {int(card.get('required_turns', 2))} 回合才能恢復。",
+                f"每城需連續駐紮至少 {required} 營 {required_turns} 回合才能恢復。",
             )
         elif mechanic == "railway_sabotage":
             # 崩鐵玩家：一條鐵路停運三回合，期間該線不能做鐵路運輸，
@@ -2690,6 +2733,13 @@ class GameEngine:
         relation = player_state["warlord_relations"][target]
         if relation.get("permanent_war") or target not in DEFAULT_PLAYERS:
             raise ValueError("NPC factions are permanent enemies in this playtest")
+        # 〈非戰公約〉通電支持者：停戰期內不得宣戰。旗標上的 blocks_declaration
+        # 先前沒有任何讀取者，於是「不得宣戰」變成玩家自主遵守——這裡把它擋住。
+        if status == "war":
+            peace = self.active_timed_flag(player, "forced_peace") or {}
+            if peace.get("blocks_declaration"):
+                raise ValueError(f'{peace.get("name") or "強制和平"}：停戰期內不得宣戰'
+                                 f'（尚餘 {int(peace.get("remaining_turns") or 0)} 回合）')
         if status == "peace" and relation["status"] == "war":
             war_started = relation.get("war_started_turn")
             war_turns = self.state["turn"] - int(war_started or 0)
@@ -2799,6 +2849,25 @@ class GameEngine:
         }
         return {"deal": proposal, "state": self.snapshot()}
 
+    def _oil_price_immune_cards(self, player: str) -> set:
+        """這位玩家目前免疫哪幾張卡的生產加價。
+
+        來源是 `oil_price_immunity` 這種限時效果（美孚石油供應）。
+        效果本身只是個旗標——先前寫了旗標卻**沒有任何地方讀它**，
+        於是那張卡打出去等於什麼都沒發生。
+        """
+        if player not in self.state["players"]:
+            return set()
+        out: set = set()
+        for effect in self._player(player).get("timed_effects", []):
+            if effect.get("kind") != "oil_price_immunity":
+                continue
+            remaining = effect.get("remaining_turns")
+            if remaining is not None and int(remaining) <= 0:
+                continue
+            out |= {str(x) for x in (effect.get("immune_cards") or [])}
+        return out
+
     def _production_multiplier(self, player: str, arm: str) -> Dict[str, float]:
         """生產成本乘數（英國軍火出口管制 +30%、美國禁運案 +50%、香港軍火交易 −30%）。
 
@@ -2807,10 +2876,16 @@ class GameEngine:
         """
         turn = int(self.state["turn"])
         cash, factory = 1.0, 1.0
+        immune = self._oil_price_immune_cards(player)
         for entry in self.state.get("production_cost_multipliers", []):
             if turn >= int(entry.get("until_turn", 0)):
                 continue
             if arm not in (entry.get("arms") or ["ground", "navy"]):
+                continue
+            # 美孚石油供應：拿到穩定油源的人不吃〈國際油價上漲〉的加價。
+            # 只擋加價（>1），不擋降價——免疫不該把便宜也一起免掉。
+            if entry.get("card_id") in immune and (
+                    float(entry.get("cash", 1)) > 1 or float(entry.get("factory", 1)) > 1):
                 continue
             players = entry.get("players")
             if players and player not in players:
@@ -3975,6 +4050,21 @@ class GameEngine:
     ACTION_NAMES = {"train_unit": "訓練部隊", "train_navy_unit": "造船",
                     "reinforce_army": "補充兵力", "reinforce_navy": "補充艦隊"}
 
+    def active_timed_flag(self, player: str, kind: str) -> Optional[Dict[str, Any]]:
+        """回傳這位玩家身上還生效中的該類旗標本身（沒有就回 None）。
+
+        `has_timed_flag` 只答有沒有；但像〈非戰公約〉的強制和平，旗標上還帶著
+        `blocks_declaration` 這種**參數**，判斷的人得拿得到旗標本體才讀得到。
+        """
+        for effect in self._player(player).get("timed_effects", []):
+            if effect.get("kind") != kind:
+                continue
+            if effect.get("permanent") or effect.get("remaining_turns") is None:
+                return effect
+            if int(effect.get("remaining_turns", 0)) > 0:
+                return effect
+        return None
+
     def has_timed_flag(self, player: str, kind: str) -> bool:
         """這位玩家身上有沒有某個還生效中的旗標（permanent 的永遠算數）。"""
         turn = int(self.state["turn"])
@@ -4143,8 +4233,29 @@ class GameEngine:
             return True
         return False
 
-    # 這兩張卡買的是「這位將領的部隊」，人走了效果就沒了，也不隨他過去。
-    GENERAL_BOUND_PERK_KEYS = ("permanent_forced_march_generals", "field_hospital_generals")
+    # 「買的是這位將領的部隊」的卡：人走了效果就沒了，也不隨他過去。
+    # 哪些卡算數由卡片自己的 lost_on_defection 決定（先前是寫死一個 tuple，
+    # 於是卡片上那個欄位沒有任何讀取者——第三張同類卡只加欄位就會靜靜失效）。
+    # 這張表只負責「這個 mechanic 把將領記在哪個名單上」。
+    PERK_ROSTER_BY_MECHANIC = {
+        "mechanized_division": "permanent_forced_march_generals",
+        "field_hospital": "field_hospital_generals",
+    }
+
+    @property
+    def GENERAL_BOUND_PERK_KEYS(self) -> tuple:
+        keys = []
+        for card in self.data["function_cards"]["cards"]:
+            if not card.get("lost_on_defection"):
+                continue
+            roster = self.PERK_ROSTER_BY_MECHANIC.get(card.get("mechanic"))
+            if roster is None:
+                raise ValueError(
+                    f'{card.get("id")} 標了 lost_on_defection，'
+                    f'但 PERK_ROSTER_BY_MECHANIC 沒有 {card.get("mechanic")} 的名單')
+            if roster not in keys:
+                keys.append(roster)
+        return tuple(keys)
 
     def drop_general_bound_perks(self, general_id: str) -> list:
         """將領換東家：把他身上由功能卡買來的永久效果從所有陣營的名單裡拔掉。"""
@@ -4545,7 +4656,12 @@ class GameEngine:
             "city_ids": list(picks),
             "required_battalions": int(spec.get("required_battalions", 5)),
             "required_force": int(spec.get("required_force", 15)),
-            "suppression_turns": int(spec.get("suppression_turns", 1)),
+            # 平息門檻的欄位名只能有一個。先前這裡寫的是 suppression_turns，
+            # 而判平息的兩處（_update_qing_gang_riots、紅軍起義的駐紮結算）
+            # 讀的都是 required_turns——於是〈黑幫動亂〉卡上的 required_turns
+            # 從來沒被讀過，一律吃預設值。
+            "required_turns": int(self._extended_duration(
+                card, spec.get("required_turns", spec.get("suppression_turns")), 2)),
             "remaining_turns": None,
         }
         self.state.setdefault("city_output_effects", []).append(deepcopy(effect))
@@ -4625,10 +4741,15 @@ class GameEngine:
         比對的是卡片自己的 tags，所以日後任何一張卡掛上 [幫會] 就自動吃到，
         不必回頭改這裡。沒有相符的加碼條目就回 0。
         """
+        # 標籤優先讀卡片本體：payload 一路傳下來的就是卡片自己，不必再回資料檔
+        # 查一次（合成／測試用的卡片查不到會炸）。本體沒帶 tags 才回頭查資料檔。
+        tags = set(card.get("tags") or [])
         card_id = card.get("id")
-        if not card_id:
-            return 0
-        tags = set(self._event_tags(card_id))
+        if not tags and card_id:
+            try:
+                tags = set(self._event_tags(card_id))
+            except ValueError:
+                tags = set()
         if not tags:
             return 0
         turn = int(self.state["turn"])
@@ -4640,6 +4761,22 @@ class GameEngine:
             if tags & set(entry.get("tags") or []):
                 bonus += int(entry.get("bonus", 0))
         return bonus
+
+    def _extended_duration(self, card: Dict[str, Any], turns: Any, default: Any = None) -> Any:
+        """把 [幫會]／[學潮] 的持續時間加碼套到一個「回合數」欄位上。
+
+        先前這個加碼只接到 timed_flags，而 9 張帶標籤的卡沒有一張用 timed_flags，
+        於是〈火燒紅蓮寺〉〈鴉片與釐金稅收〉〈萬縣慘案〉〈南京事件〉
+        〈學潮與反帝遊行〉的「+1 回合」全部空轉。凡是這些卡開得出來的
+        限時效果（city_halt、action_ban、student_unrest、city_riot 的鎮壓回合）
+        都要走這裡，一份規則一個入口。
+
+        turns 為 None（無期限）時原樣回傳——無期限再加一回合沒有意義。
+        """
+        span = turns if turns is not None else default
+        if span is None:
+            return None
+        return int(span) + self._event_duration_bonus(card)
 
     def _event_tags(self, card_id: str) -> list:
         return list(self._event_template(card_id).get("tags") or [])
@@ -5267,8 +5404,7 @@ class GameEngine:
             "requires_concession_any", "treasury_below_last_turn",
             "controls_port_count_min",
             # 十五、NPC 行動。npc_requires 與 requires_garrison_in_city 是**整張卡**
-            # 的閘門（在上面判）；at_war_with 是逐玩家的。player_rank 還沒實作，
-            # 先列在這裡讓守門的例外訊息說得出是哪一項。
+            # 的閘門（在上面判）；at_war_with 與 player_rank 是逐玩家的。
             "npc_requires", "at_war_with", "requires_garrison_in_city", "player_rank",
         }
         unknown = set(condition) - known_conditions
@@ -5325,17 +5461,27 @@ class GameEngine:
             eligible.append(code)
         return eligible
 
+    # 「每一家都要各自表態」的兩種範圍：
+    #   all_players      —— 全場都問（〈非戰公約〉）。
+    #   eligible_players —— 只問符合 entry_condition 的那幾家（付費招募 NPC 的四張卡、
+    #                       〈南京事件〉）。責任分工在 _event_responder_queue：
+    #                       名單本來就是照 _event_eligible_players 篩的。
+    # eligible_players 先前不在這個集合裡，於是佇列塌成 [drawer]，第一個人回應完
+    # 整張卡就結案——多方競標（所有出價者各付 $25、成功率 1/n）實戰永遠跑不到，
+    # 而〈南京事件〉也只會問到抽卡的那一家。
+    EVERY_FACTION_SCOPES = ("all_players", "eligible_players")
+
     def event_needs_every_faction(self, card: Dict[str, Any]) -> bool:
         """這張卡是不是「每一家都要各自表態、各自結算」。
 
-        判準：resolution 是 choice 且 scope 為 all_players。
+        判準：resolution 是 choice，且 scope 在 EVERY_FACTION_SCOPES 裡。
         先前這個值在 pending_event_view 裡被寫死成 False，導致
         〈亞克斯搜查案〉〈非戰公約〉〈全國經濟會議與裁兵之議〉
         全部退化成只有抽到的那一家表態。
         """
         resolution = card.get("resolution") or {}
         return (resolution.get("type") == "choice"
-                and resolution.get("scope", "all_players") == "all_players")
+                and resolution.get("scope", "all_players") in self.EVERY_FACTION_SCOPES)
 
     def _event_responder_queue(self, card: Dict[str, Any], drawer: str) -> list:
         """這張卡由誰回應，以及順序。
@@ -5533,6 +5679,23 @@ class GameEngine:
         if str(entry.get("card_id") or "") != str(card.get("id") or ""):
             return {}
         return dict(entry.get("responses") or {})
+
+    def _purge_card_everywhere(self, player: str, card_id: str) -> int:
+        """把一張功能卡從這位玩家的牌庫／手牌／棄牌堆／待抽整個清掉，回傳清了幾張。
+
+        中央研究院的〈中國人之恥〉與通用的 clear_cards 走同一份實作——
+        先前是兩份，通用那份因此沒有任何卡片走得到。
+        """
+        payload = self._player(player)
+        removed = 0
+        for zone in ("function_deck", "hand", "discard"):
+            before = len(payload.get(zone) or [])
+            payload[zone] = [item for item in payload.get(zone, []) if item != card_id]
+            removed += before - len(payload[zone])
+        if payload.get("pending_draw") == card_id:
+            payload["pending_draw"] = None
+            removed += 1
+        return removed
 
     def _apply_event_payload(
         self, payload: Dict[str, Any], *, players: Optional[list], card: Dict[str, Any],
@@ -6330,7 +6493,7 @@ class GameEngine:
         unrest = payload.get("student_unrest")
         if unrest:
             multiplier = self.student_unrest_multiplier()
-            span = int(unrest.get("turns", 3))
+            span = int(self._extended_duration(card, unrest.get("turns", 3), 3))
             want = int(unrest.get("cities", 2))
             min_level = int(unrest.get("min_level", 4))
             for code in targets:
@@ -6748,7 +6911,7 @@ class GameEngine:
                 "id": f"{card.get('id')}:{turn}",
                 "card_id": card.get("id"),
                 "actions": list(spec.get("actions") or []),
-                "until_turn": turn + int(spec.get("turns", 1)),
+                "until_turn": turn + int(self._extended_duration(card, spec.get("turns", 1), 1)),
                 # 一律照 targets 走。targets 本來就是「這張卡這一次的作用對象」——
                 # 沒有任何門檻時它就是全場，有 eligible_only 之類的門檻時它已經
                 # 縮好了。先前寫成 `players is not None`，卡片層級的 apply 一律
@@ -6854,7 +7017,7 @@ class GameEngine:
                     city_ids = kept
                 if not city_ids:
                     continue
-                span = halt.get("turns", 1)
+                span = self._extended_duration(card, halt.get("turns", 1))
                 entry = {
                     "id": f"{card.get('id')}:{turn}:{code}",
                     "card_id": card.get("id"), "name": label,
@@ -6905,6 +7068,9 @@ class GameEngine:
         for spec in payload.get("production_cost_multiplier") or []:
             entry = {
                 "id": f"{card.get('id')}:{turn}",
+                # 來源卡號：免疫（美孚石油供應）要靠它認出「這筆加價是哪張卡造成的」。
+                # 從 id 反解字串也做得到，但那是把格式當資料用，改個分隔符就壞了。
+                "card_id": str(card.get("id") or ""),
                 "label": spec.get("label") or label,
                 "arms": list(spec.get("arms") or ["ground"]),
                 "cash": float(spec.get("cash", 1)),
@@ -6924,18 +7090,13 @@ class GameEngine:
                 applied.append({"kind": "city_riot", "player": code,
                                 **self._open_event_riot(code, spec, card)})
 
-        # 把某張功能卡從指定玩家的手牌／牌庫／棄牌堆整個清掉（中央研究院清〈中國人之恥〉）。
+        # 把某張功能卡從指定玩家的手牌／牌庫／棄牌堆整個清掉。
+        # 用得到它的只有中央研究院清〈中國人之恥〉，而那段自己寫了一份清除迴圈，
+        # 於是這條通用路徑沒有任何卡片走得到。現在改成共用同一份實作：
+        # academia_grant 那段呼叫 _purge_card_everywhere，這裡也是。
         for card_id in payload.get("clear_cards") or []:
             for code in targets:
-                state_payload = self._player(code)
-                removed = 0
-                for zone in ("function_deck", "hand", "discard"):
-                    before = len(state_payload.get(zone) or [])
-                    state_payload[zone] = [item for item in state_payload.get(zone, []) if item != card_id]
-                    removed += before - len(state_payload[zone])
-                if state_payload.get("pending_draw") == card_id:
-                    state_payload["pending_draw"] = None
-                    removed += 1
+                removed = self._purge_card_everywhere(code, card_id)
                 if removed:
                     applied.append({"kind": "clear_cards", "player": code,
                                     "card_id": card_id, "removed": removed})
@@ -6953,17 +7114,8 @@ class GameEngine:
                 # 〈盜賣文物〉不 purge——它改為「逐玩家封鎖」，見 academia_active()。
                 # 這裡只把〈中國人之恥〉一次清空（v4 7.2）。
                 for code in list(self.state["players"]):
-                    state_payload = self._player(code)
                     for card_id in ("national_shame",):
-                        removed = 0
-                        for zone in ("function_deck", "hand", "discard"):
-                            before = len(state_payload.get(zone) or [])
-                            state_payload[zone] = [item for item in state_payload.get(zone, [])
-                                                   if item != card_id]
-                            removed += before - len(state_payload[zone])
-                        if state_payload.get("pending_draw") == card_id:
-                            state_payload["pending_draw"] = None
-                            removed += 1
+                        removed = self._purge_card_everywhere(code, card_id)
                         if removed:
                             applied.append({"kind": "academia_purge", "player": code,
                                             "card_id": card_id, "removed": removed})

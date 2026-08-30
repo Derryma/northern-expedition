@@ -289,10 +289,8 @@ The generic traits used by NPC and in-exile generals are unchanged:
 - `steady_drillmaster`: infantry attack +10%.
 - `fire_support_savant`: artillery hits infantry and machine guns harder.
 - `cavalry_screen_commander`: cavalry HP +20%.
-- `entrenched_warlord`: infantry and machine guns take 10% less harm.
 - `shock_column_leader`: infantry and cavalry attack harder, but the army takes more harm.
 - `local_supply_boss`: line troops hold longer before fleeing.
-- `foreign_gunnery_advisor`: artillery is better at counter-battery fire.
 
 ## Focus Fire
 

@@ -242,7 +242,6 @@ Promotion-only skills currently planned:
 |---|---|
 | `pontoon_bridge` | Build a temporary bridge over a river so an army can cross. |
 | `fortress_builder` | Build a fortress that gives shelter and reduces incoming harm. |
-| `fortress_buster` | Ignore the defender's fortress harm-reduction multiplier. |
 
 ## Troop Allocation
 

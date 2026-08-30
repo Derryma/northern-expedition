@@ -637,6 +637,22 @@ const PENDING_EFFECT_HANDLERS = {
     return notes;
   },
 
+  // 付費招募成功（15.7／15.10／15.18／15.21）：將領連人帶部隊轉到贏家手上。
+  // 這個處理器在批次三漏掉了——後端照樣掛了交辦，但沒有人收，
+  // 於是錢扣了、贏家也抽出來了，畫面上的部隊卻還掛著原本的旗。
+  npc_general_recruited: (_faction, effect) => {
+    const notes = [];
+    for (const entry of effect.armies || []) {
+      const army = armyById(entry.armyId);
+      if (!army) continue;
+      army.faction = effect.owner;
+      notes.push(`${army.designator}改隸${FACTIONS[effect.owner]?.shortName || effect.owner}`);
+    }
+    if (effect.general_id) generalOwners[effect.general_id] = effect.owner;
+    const who = FACTIONS[effect.owner]?.shortName || effect.owner;
+    return [`${effect.general}率部歸附${who}` + (notes.length ? `（${notes.join("、")}）` : "")];
+  },
+
   // 整個 NPC 陣營歸附玩家（15.13 馬家軍歸附）：部隊原地換旗，地盤一併轉屬。
   npc_faction_absorbed: (_faction, effect) => {
     for (const entry of effect.armies || []) {
@@ -779,22 +795,12 @@ const TRAIT_LABELS = {
   central_plains_veteran: "中原宿將",
   wuchang_veteran: "武昌宿將",
   // 其他 NPC、在野將領沿用的通用特質
-  warlord_supremacy: "軍閥統御",
-  industrial_organizer: "工業組織者",
-  confucian_general: "儒將",
-  christian_general: "基督將軍",
-  soviet_trained: "蘇式訓練",
-  yangzi_defender: "長江守備",
-  fujian_garrison: "福建守備",
-  jiangxi_commander: "江西統帥",
   layered_defender: "縱深防禦",
   shock_column_leader: "突擊縱隊",
   steady_drillmaster: "練兵能手",
   fire_support_savant: "火力協同",
   local_supply_boss: "地方補給",
-  entrenched_warlord: "固守軍閥",
   cavalry_screen_commander: "騎兵屏護",
-  foreign_gunnery_advisor: "外籍砲術顧問",
 };
 
 // 何應欽的光環說明，兩個版本的技能說明共用同一句。
@@ -838,22 +844,12 @@ const TRAIT_DESCRIPTIONS = {
   defensive_specialist: "靳雲鶚擅長利用地形和縱深防禦，適合固守重要城市與交通線。",
   central_plains_veteran: "寇英傑久經中原戰陣，熟悉當地地形與軍閥打法。",
   wuchang_veteran: "陳嘉謨的武昌城防經驗。步兵與砲兵陣位安排老練，部隊耐打。",
-  warlord_supremacy: "以個人威望維繫全軍，適合統率大型軍團與地方派系。",
-  industrial_organizer: "擅長兵工、補給與軍需組織，提高重裝部隊的持續作戰能力。",
-  confucian_general: "重視軍紀與傳統威望，有利於穩定部隊忠誠。",
-  christian_general: "依靠教會與地方人脈組織軍隊和補給。",
-  soviet_trained: "接受蘇式參謀與協同作戰訓練。",
-  yangzi_defender: "熟悉長江沿線防禦、渡口與水陸交通。",
-  fujian_garrison: "熟悉福建山地、港口與地方守備體系。",
-  jiangxi_commander: "熟悉江西交通、補給與地方部隊動員。",
   layered_defender: "以層層陣地遲滯對手，換取時間與空間。",
   shock_column_leader: "把步兵與騎兵直接推進對方弱點。",
   steady_drillmaster: "能把生兵帶成可靠正規步兵的練兵者。",
   fire_support_savant: "懂得把砲火集中在對方支撐點上。",
   local_supply_boss: "把糧秣、彈藥與補充兵源撐到最後一刻。",
-  entrenched_warlord: "以既設塹壕與地方防務固守防區。",
   cavalry_screen_commander: "以騎兵幕掩護主力調動、追擊潰兵。",
-  foreign_gunnery_advisor: "外籍砲術教官帶來的反砲兵射法。",
 };
 
 // 光環技能：大帥與名單上的部屬「同戰場」（同一場戰鬥、同一邊）時，
@@ -986,13 +982,13 @@ const ENGINEERING_TRAIT_SKILLS = {
   pontoon_bridge: new Set([
     "young_marshal", "riverine_warfare", "dodging_drift", "central_plains_veteran",
     "whampoa_spirit", "anhui_veteran", "old_cantonese_army",
-    "christian_general", "yangzi_defender", "local_supply_boss",
+    "local_supply_boss",
   ]),
   fortress_builder: new Set([
     "broadsword_corps", "iron_bulwark", "marshal_zhang", "elite_artillery", "assault_breaker",
     "defensive_specialist", "advantage_is_ours", "elite_mountain_division", "hunan_governor",
     "former_overlord", "zhili_veteran", "qilu_veteran",
-    "industrial_organizer", "fujian_garrison", "warlord_supremacy", "shock_column_leader",
+    "shock_column_leader",
   ]),
 };
 
@@ -2221,7 +2217,9 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     }).join("")}
     ${cityEffects.map((effect) => {
       const role = effect.initiator === currentPlayer ? "發動" : "受害";
-      const progress = `${effect.garrison_progress || 0}/${effect.required_turns || 3}`;
+      // 門檻由後端算好放在效果上（暴動類一律有 required_turns），前端不另備一份
+      // 預設值——先前這裡寫死 3、後端預設 2，同一條暴動兩邊顯示會對不上。
+      const progress = `${effect.garrison_progress || 0}/${effect.required_turns}`;
       return `<span>${effect.label || "黑幫暴動"}(${role})：${effect.province}，鎮壓 ${progress}</span>`;
     }).join("")}
     ${uprisings.map((effect) => {
@@ -2433,7 +2431,7 @@ function functionActionMessage(action, viewer = currentPlayer) {
     const target = factionLabel(action.city_disruption.target_owner, action.city_disruption.target_owner === viewer);
     const cities = (action.city_disruption.cities || []).map((city) => city.name).join("、");
     if (action.city_disruption.kind === "qing_gang_riot") {
-      parts.push(`${target}${action.city_disruption.province}${action.city_disruption.label || "黑幫暴動"}，城市 ${cities} 產出停擺；需 ${action.city_disruption.required_force || 15} 戰力軍隊連續駐留 ${action.city_disruption.required_turns || 2} 回合鎮壓`);
+      parts.push(`${target}${action.city_disruption.province}${action.city_disruption.label || "黑幫暴動"}，城市 ${cities} 產出停擺；需 ${action.city_disruption.required_force} 戰力軍隊連續駐留 ${action.city_disruption.required_turns} 回合鎮壓`);
     } else {
       parts.push(`${target}${cities}產出停擺 ${action.city_disruption.remaining_turns} 回合`);
     }
@@ -3428,19 +3426,24 @@ function renderForeignPanel() {
   }
 
   const warlords = Object.keys(state.players || {}).filter((code) => code !== currentPlayer);
+  // 停戰期內不得宣戰：規則由後端 set_diplomacy 執行，這裡只是把後端旗標上的
+  // blocks_declaration 讀出來把按鈕關掉，不重算任何條件。
+  const declarationBlock = forcedPeaceEffect(currentPlayer);
+  const declarationBlocked = Boolean(declarationBlock?.blocks_declaration);
   return tabs + `<div class="relations-list">${warlords.map((code) => {
     const relation = payload.warlord_relations?.[code] || { status: "peace" };
     const atWar = relation.status === "war";
     const warTurns = atWar ? Math.max(0, state.turn - (relation.war_started_turn ?? state.turn)) : 0;
     const isPlayable = Boolean(state.players[code]);
     const lockedWar = !isPlayable || relation.permanent_war;
+    const declareBlocked = !atWar && !lockedWar && declarationBlocked;
     return `
       <div class="warlord-relation ${atWar ? "at-war" : ""}">
         <div class="warlord-row">
           ${factionFlagMarkup(code, "flag-chip warlord-flag")}
           <span class="faction-swatch" style="background:${FACTIONS[code].color}"></span>
           <div class="warlord-name"><b>${FACTIONS[code].name}</b><small>${lockedWar ? "NPC · 永久交戰" : atWar ? `交戰第 ${warTurns} / 10 回合` : "和平 · 不可越境"}</small></div>
-          <button data-diplomacy-status="${atWar ? "peace" : "war"}" data-target="${code}" ${lockedWar || (atWar && warTurns < 10) ? `disabled title="${lockedWar ? "NPC 勢力不可外交" : "交戰滿十回合後方可議和"}"` : ""}>${lockedWar ? "永久戰爭" : atWar ? "議和" : "宣戰"}</button>
+          <button data-diplomacy-status="${atWar ? "peace" : "war"}" data-target="${code}" ${lockedWar || (atWar && warTurns < 10) || declareBlocked ? `disabled title="${lockedWar ? "NPC 勢力不可外交" : declareBlocked ? `${declarationBlock?.name || "強制和平"}：停戰期內不得宣戰` : "交戰滿十回合後方可議和"}"` : ""}>${lockedWar ? "永久戰爭" : atWar ? "議和" : "宣戰"}</button>
           ${isPlayable ? `<button data-open-deal="${code}">交易</button>` : ""}
         </div>
         ${dealTarget === code ? `
@@ -7796,19 +7799,11 @@ function applyFrontendEventEffects(cardId) {
       if (gained.length) notes.push(`${army.designator}：${gained.join("、")}各 +1 營`);
     }
   }
-  if (cardId === "balfour_declaration") {
-    // 每位玩家隨機一位可變忠誠將領 +1。
-    for (const faction of TURN_PLAYERS) {
-      const pool = Object.values(generalTrees[faction]?.generals || {}).filter((general) =>
-        general.loyalty !== null && general.loyalty !== undefined
-        && !generalAbsoluteLoyaltyActive(general) && !general.loyalty_exempt
-        && generalOwners[general.id] === faction);
-      if (!pool.length) continue;
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      adjustGeneralLoyalty(pick.id, 1);
-      notes.push(`${FACTIONS[faction]?.shortName || faction} ${pick.name} 忠誠 +1`);
-    }
-  }
+  // 2.6 貝爾福宣言曾經在這裡自己挑人、自己加忠誠。那是第二套規則：
+  // 14.9 地方官貪腐做同一件事走的是後端的 frontend_effects → loyalty_random，
+  // 「抽幾位、加減多少」由後端決定，前端只負責抽人（將領樹住在前端）。
+  // 兩套並存的代價不只是重複——這一份用的是沒有種子的 Math.random()，
+  // 多人連線時每個 client 會挑到不同的將領。現在 2.6 也走同一條路了。
   return notes;
 }
 
@@ -9509,6 +9504,7 @@ window.__neDebug = {
   clearArmyResolved,
   generalById,
   getUiNotice: () => uiNotice,
+  getLoyaltyOverrides: () => loyaltyOverrides,
   forcePoints,
   applyNavyDuel,
   applyArmyNavyContact,

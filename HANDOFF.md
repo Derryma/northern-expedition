@@ -12,7 +12,7 @@
 
 * **後端**：Python，`backend/`。規則的唯一權威。
 * **前端**：單檔 `frontend/app.js`（約 9,500 行）。負責地圖、部隊擺位、呈現。
-* **測試**：`backend/test_backend.py`，目前 **1,118 項**，用
+* **測試**：`backend/test_backend.py`，目前 **1,122 項**，用
   `python3 -m unittest backend.test_backend` 跑（**不要**直接 `python3 backend/test_backend.py`）。
 
 四家玩家勢力：`F` 奉系、`W` 直系、`S` 孫傳芳、`N` 國民革命軍。
@@ -346,6 +346,19 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
 * **`/mnt/user-data/uploads/` 的快取可能是舊的**，要用 `device_bash` 的 md5 對過才算數。
 * **`comabt_system/test_combat.py` 從 repo 根目錄跑會 `ModuleNotFoundError`**，
   要進到那個資料夾裡跑（14 項）。這是既有的路徑怪癖，不是你弄壞的。
+* **「旗標寫進去了」不等於「機制存在」。** 這是這個專案最常見的缺陷形狀：
+  `oil_price_immunity`、`npc_general_recruited`、`blocks_declaration`、
+  `suppression_turn_bonus()`、`recover_battalions`、`lost_on_defection`
+  ——全都是寫進去了、沒有任何讀取者。**grep 抓不準**（tuple、
+  `LOYALTY_FUNCTION_CARD_IDS` 這種反推、JS 物件鍵都會製造誤報），
+  **測試也不一定守得住**（`ContestedNpcRecruitTests` 整批綠燈，
+  卻掩護著一條實戰永遠跑不到的多方競標規則，因為它手工塞好了 `responses`）。
+  唯一可靠的判準是**跑一次真實情境，看那個數字有沒有變**。
+  現在有兩組守門測試在防這一類：`OrphanedDataTests`（孤兒 mechanic／特質／技能）
+  與 `SingleSourceOfTruthTests`（同一條規則兩份、只有測試在叫的公開方法）。
+* **測試綠燈不等於規則可達。** 用手工塞好的狀態測結算邏輯，證明的是
+  「餵它這個輸入會算對」，不是「玩家有辦法走到這個輸入」。
+  牽涉到回應佇列、抽卡資格、卡池組成的規則，一定要從 `next_turn` 開始跑完整條路。
 * **`_adjusted_city_output` 用的是 `int(round())`，也就是銀行家捨入**，
   所以 5 級城市在學潮下掉的是 60% 而不是 50%。
   **已回報、刻意沒改**——那是規則決定，等使用者裁示。
@@ -396,6 +409,10 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
    ——別整份讀（很大）。用腳本把 ref 開頭是 15. 的卡連同
      effect / entry_condition / apply 印出來就好。
 
+這一輪（空轉機制稽核）新增的驗證腳本：
+* `scripts/checks/mutate_dead_mechanism_audit.py`（16 個突變體）
+* `scripts/checks/dead_mechanism_e2e.py`（真前端：宣戰鈕、暴動門檻、進度顯示）
+
 四條底線，違反等於白做：
 * 絕不推 main，一律 feature branch + PR。
 * 絕不在使用者本機那份 repo 裡跑任何 git 指令。
@@ -403,7 +420,7 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
 * 本質屬於後端的計算只能在後端，同一條規則不准前後端各寫一份。
 
 NPC 事件卡這條線**已經做完了**：33 張全部上線，apply.pending 清空，
-後端 1118 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
+後端 1182 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
 
 改任何東西之前先跑一次收尾流程（HANDOFF.md 第六節），確認現況真的是綠的；
 改完也照那份流程走一遍，尤其別跳過突變測試——這個專案裡它挖出過真漏洞，

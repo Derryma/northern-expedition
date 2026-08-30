@@ -60,5 +60,25 @@ nohup python3 scripts/checks/mutate_npc_force_scale.py > /tmp/mut.log 2>&1 &
 寫新的突變體時注意：`orig.count(old)` 必須剛好是 1，否則腳本會報
 「目標出現 N 次，跳過」。**縮排要照抄檔案裡真正的縮排**，我為此白跑過一輪。
 
-「逃掉的突變」幾乎都是**測試缺口**，不是死碼——目前四次全部都是真的漏驗，
-例如測試挑的數字剛好讓兩種算法算出同一個答案。
+「逃掉的突變」幾乎都是**測試缺口**，不是死碼——目前五次全部都是真的漏驗，
+例如測試挑的數字剛好讓兩種算法算出同一個答案；
+最近一次是「限時旗標到期了還算數」沒有任何測試在守。
+
+## 空轉機制稽核（這一輪新增）
+
+```bash
+# 16 個突變體，約 32 分鐘，一定要丟背景
+nohup python3 -u scripts/checks/mutate_dead_mechanism_audit.py > /tmp/mut_audit.log 2>&1 &
+
+# 真前端：非戰公約的宣戰鈕、治安期的暴動門檻、暴動進度顯示
+python3 scripts/checks/dead_mechanism_e2e.py
+```
+
+守「寫進去了卻沒人讀」這一類缺陷的兩組單元測試在 `backend/test_backend.py`：
+
+* `DeadMechanismAuditTests` —— 六條被修好的規則，每條都從 `next_turn` 跑完整條路。
+* `OrphanedDataTests` / `SingleSourceOfTruthTests` —— 孤兒 mechanic／特質／技能的白名單，
+  以及「同一條規則不准兩份」。
+
+**資料檔的守門測試要做負向檢查**：把缺陷放回去一個，確認它真的會紅。
+只看綠燈不算數——這種測試很容易寫成永遠成立的形狀。

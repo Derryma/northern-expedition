@@ -12,12 +12,6 @@
       "type": "engineering",
       "natural_acquisition": false,
       "notes": "構築要塞掩護部隊，減少所受傷害。"
-    },
-    "fortress_buster": {
-      "name": "破壘",
-      "type": "siege",
-      "natural_acquisition": false,
-      "notes": "無視守方要塞的減傷倍率。"
     }
   }
 }
