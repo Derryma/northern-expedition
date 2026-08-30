@@ -1,6 +1,6 @@
 {
   "version": "experimental-0.2",
-  "count": 89,
+  "count": 90,
   "cards": [
     {
       "id": "wang_yaqiao_assassination",
@@ -8,7 +8,6 @@
       "deck_type": "function",
       "category": "black_gold",
       "holdable": true,
-      "entry_requirement": "已收買黑金",
       "cost": 0,
       "effect": "透過斧頭幫進行一次暗殺行動，可指定任意一位敵方人物（含大帥與 NPC 陣營），成功率 20%；目標若已編成親衛隊則成功率降低。成功者當場身亡，其麾下少將忠誠歸零；失敗則無後果。",
       "mechanic": "assassination",
@@ -21,9 +20,8 @@
       "deck_type": "function",
       "category": "black_gold",
       "holdable": true,
-      "entry_requirement": "已收買黑金",
       "cost": 0,
-      "effect": "指定敵方一個省份（限江蘇、浙江、安徽、河南、湖北）發動黑幫暴動；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 2 回合才可平息。",
+      "effect": "指定敵方一個省份（限江蘇、浙江、安徽、湖北）發動黑幫暴動；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 2 回合才可平息。",
       "mechanic": "qing_gang_riot",
       "reward_rate": 0.5,
       "suppression_force": 15,
@@ -32,7 +30,6 @@
         "江蘇",
         "浙江",
         "安徽",
-        "河南",
         "湖北"
       ],
       "story": "三層樓的宅子裡，牌桌上只坐四個人，門外站著四十個。他把茶碗一放，整條法租界的碼頭與堂口就靜了下來。今晚押的不是錢，是一整座城的秩序——青幫從不下注，青幫只決定誰贏。",
@@ -44,7 +41,6 @@
       "deck_type": "function",
       "category": "black_gold",
       "holdable": true,
-      "entry_requirement": "已收買黑金",
       "cost": 0,
       "effect": "指定敵方一個省份（限廣東、廣西、福建、湖南、江西）發動洪門起義；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 2 回合才可平息。",
       "mechanic": "qing_gang_riot",
@@ -60,6 +56,28 @@
       ],
       "story": "香堂設在祠堂後院，關公像前燃著三炷香。老堂主翻開那本傳了幾代的簿子：辛亥年廣州死的七十二人，一半是自己弟兄。反清復明喊了兩百年，如今該反的換成了穿新軍裝的舊軍閥。",
       "disruption_label": "黑幫暴動"
+    },
+    {
+      "id": "red_spear_uprising",
+      "name": "紅槍會起義",
+      "deck_type": "function",
+      "category": "black_gold",
+      "holdable": true,
+      "cost": 0,
+      "effect": "指定敵方一個省份（限直隸、山東、山西、河南、奉天）發動紅槍會起義；該省敵方控制城市產出歸零且無期限，每回合被截斷之現金與工廠點的一半轉給發動者。目標須派至少 15 戰力軍隊在該省連續駐留 2 回合才可平息。",
+      "mechanic": "qing_gang_riot",
+      "reward_rate": 0.5,
+      "suppression_force": 15,
+      "suppression_turns": 2,
+      "provinces": [
+        "直隸",
+        "山東",
+        "山西",
+        "河南",
+        "奉天"
+      ],
+      "story": "香灰調水，符紙吞下，紅纓槍在打穀場上排成一片。師傅說唸滿四十九天咒，洋槍打上身只留一道白印——沒人敢問死在城牆下的那幾個是不是唸漏了。他們原是為了防土匪才結社的，可這些年下來，收糧的、拉伕的、掛著番號來要餉的，哪一樣不比土匪更準時。",
+      "disruption_label": "紅槍會暴動"
     },
     {
       "id": "behind_enemy_lines_sabotage",
@@ -556,7 +574,6 @@
       "category": "economic",
       "holdable": true,
       "source_event_card_id": "軍閥公債",
-      "entry_requirement": null,
       "effect": "發行：現金 +50、負債 +25，利率每回合 8%，須於 3 回合內還清；發行後 5 回合內橫濱正金、匯豐、東方匯理、花旗、德華五家銀行一律拒絕承作新借款，已借出的舊債與功能卡貸款不受影響。",
       "cost": 0,
       "mechanic": "warlord_bond",
@@ -575,16 +592,7 @@
       "category": "npc_or_other_force",
       "holdable": true,
       "source_event_card_id": "在野名將投效",
-      "entry_requirement": null,
       "effect": "自「在野將領池」中指定一名尚未出山的在野將領延攬，支付其身價的全額外加 $15 出山附加費：該將領帶著自帶部隊在你的大帥所在地現身，並編入你的將領樹。\n全場每位在野將領只能被延攬一次；若在野將領池已空，本卡改為補充步兵 ×2、機槍 ×1，只需支付募兵現金的一半（無條件進位），且不消耗工業點。",
-      "base_weight": 3.0,
-      "conditions": [
-        {
-          "description": "第 6 回合後",
-          "multiplier": 1.8,
-          "expression": "s.turn>=6"
-        }
-      ],
       "cost": 0,
       "mechanic": "exile_recruit",
       "story": "下野的督軍們照舊每日打牌會客。牌桌上輸掉的是銀元，桌下談的卻是舊部、槍械與一紙復出的通電，只待在這亂世中東山再起……。"
@@ -1195,7 +1203,6 @@
         "power": "su",
         "value": 5
       },
-      "anti_communist": true,
       "relation_effects": {
         "su": -2,
         "uk": 1,
@@ -1535,7 +1542,10 @@
       "cost": 0,
       "effect": "美國關係 6+：獲穩定油源，未來 10 回合內免疫事件卡〈國際油價上漲〉的建軍加價。",
       "duration_turns": 10,
-      "story": "美孚的油罐車沿著剛修好的公路開進兵站，車身上的飛馬標誌落了一層黃土。管油的參謀說，這年頭誰的油多，誰的卡車就跑得動。"
+      "story": "美孚的油罐車沿著剛修好的公路開進兵站，車身上的飛馬標誌落了一層黃土。管油的參謀說，這年頭誰的油多，誰的卡車就跑得動。",
+      "immune_cards": [
+        "world_oil_price_surge"
+      ]
     },
     {
       "id": "mechanized_division",

@@ -455,90 +455,6 @@
         }
       ]
     },
-    "warlord_supremacy": {
-      "name": "軍閥統御",
-      "background": "以個人威望維繫全軍，適合統率大型軍團與地方派系。",
-      "modifiers": [
-        {
-          "stat": "threshold",
-          "add": 0.03
-        }
-      ]
-    },
-    "industrial_organizer": {
-      "name": "工業組織者",
-      "background": "擅長兵工、補給與軍需組織，提高重裝部隊的持續作戰能力。",
-      "modifiers": [
-        {
-          "stat": "attack",
-          "unit": "artillery",
-          "multiplier": 1.1
-        }
-      ]
-    },
-    "confucian_general": {
-      "name": "儒將",
-      "background": "重視軍紀與傳統威望，有利於穩定部隊忠誠。",
-      "modifiers": [
-        {
-          "stat": "harm_taken",
-          "multiplier": 0.96
-        }
-      ]
-    },
-    "christian_general": {
-      "name": "基督將軍",
-      "background": "依靠教會與地方人脈組織軍隊和補給。",
-      "modifiers": [
-        {
-          "stat": "threshold",
-          "add": 0.03
-        }
-      ]
-    },
-    "soviet_trained": {
-      "name": "蘇式訓練",
-      "background": "接受蘇式參謀與協同作戰訓練。",
-      "modifiers": [
-        {
-          "stat": "attack",
-          "unit": "machine_gun",
-          "multiplier": 1.1
-        }
-      ]
-    },
-    "yangzi_defender": {
-      "name": "長江守備",
-      "background": "熟悉長江沿線防禦、渡口與水陸交通。",
-      "modifiers": [
-        {
-          "stat": "harm_taken",
-          "multiplier": 0.9
-        }
-      ]
-    },
-    "fujian_garrison": {
-      "name": "福建守備",
-      "background": "熟悉福建山地、港口與地方守備體系。",
-      "modifiers": [
-        {
-          "stat": "harm_taken",
-          "unit": "infantry",
-          "multiplier": 0.9
-        }
-      ]
-    },
-    "jiangxi_commander": {
-      "name": "江西統帥",
-      "background": "熟悉江西交通、補給與地方部隊動員。",
-      "modifiers": [
-        {
-          "stat": "attack",
-          "unit": "infantry",
-          "multiplier": 1.06
-        }
-      ]
-    },
     "layered_defender": {
       "name": "縱深防禦",
       "background": "以層層陣地遲滯對手，換取時間與空間。",
@@ -589,22 +505,6 @@
         }
       ]
     },
-    "entrenched_warlord": {
-      "name": "固守軍閥",
-      "background": "以既設塹壕與地方防務固守防區的地方指揮官。",
-      "modifiers": [
-        {
-          "stat": "harm_taken",
-          "unit": "infantry",
-          "multiplier": 0.9
-        },
-        {
-          "stat": "harm_taken",
-          "unit": "machine_gun",
-          "multiplier": 0.9
-        }
-      ]
-    },
     "shock_column_leader": {
       "name": "突擊縱隊",
       "background": "把步兵與騎兵直接推進對方弱點的猛將。",
@@ -638,18 +538,6 @@
           "stat": "threshold",
           "unit": "machine_gun",
           "add": 0.05
-        }
-      ]
-    },
-    "foreign_gunnery_advisor": {
-      "name": "外籍砲術顧問",
-      "background": "外籍砲術教官帶來的反砲兵射法。",
-      "modifiers": [
-        {
-          "stat": "attack",
-          "unit": "artillery",
-          "target": "artillery",
-          "multiplier": 1.2
         }
       ]
     }

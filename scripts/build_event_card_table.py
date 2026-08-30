@@ -226,6 +226,11 @@ def automation_text(card: dict) -> str:
     mechanised, pending = _collect(card)
     front = card["id"] in FRONTEND_CARDS
     if not mechanised and not pending:
+        # 前端親自處理的卡不是純敘事——它的效果只是不寫在 apply 裡。
+        # 2.6 貝爾福宣言曾經因此被標成「無機械化效果」，而它其實會替
+        # 每位玩家隨機一位將領加忠誠。
+        if front:
+            return "全自動（前端）"
         return "無機械化效果（純敘事）"
     if not pending:
         return "全自動" + ("（後端 ＋ 前端）" if front else "")

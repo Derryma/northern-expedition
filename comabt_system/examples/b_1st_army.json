@@ -1,6 +1,6 @@
 {
   "name": "B 1st Army",
-  "general": "entrenched_warlord",
+  "general": "layered_defender",
   "units": {
     "infantry": 35,
     "cavalry": 5,
