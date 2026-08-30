@@ -305,6 +305,7 @@ class GameEngine:
                     "province": city["province"],
                     "cash": scaled_city_value(self._with_level(city), "cash"),
                     "factory": scaled_city_value(self._with_level(city), "factory"),
+                    "level": int(self._with_level(city).get("level", city.get("level", 1))),
                 }
                 for city in cities
                 if city["faction"] == player
@@ -1112,6 +1113,7 @@ class GameEngine:
             if self.punishments.city_output_is_zero(city["id"], player):
                 economy.append({"id": city["id"], "name": city["name"],
                                 "province": city["province"], "cash": 0, "factory": 0,
+                                "level": int(self._with_level(city).get("level", city.get("level", 1))),
                                 "suppressed_by": self.punishments.city_status(city["id"])
                                 or {"status": "occupied"}})
                 continue
@@ -1135,6 +1137,7 @@ class GameEngine:
                 "province": city["province"],
                 "cash": cash,
                 "factory": factory,
+                "level": int(self._with_level(city).get("level", city.get("level", 1))),
             }
             # 前端的「每回合結算明細」要說得出這座城為什麼少了錢，所以把
             # 租界管制的細目一起送出去：哪幾國在管制、扣了多少、加成有沒有停。
