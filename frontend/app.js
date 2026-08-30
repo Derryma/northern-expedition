@@ -6297,21 +6297,25 @@ function portParalysedNote(city) {
 
 // 只有 3 級以上的港口（河港、海港皆同）才有船塢與軍需倉庫：修得了船、補得了艦。
 // 2 級小港只能讓艦隊停靠與登陸卸兵。
-const NAVY_SERVICE_PORT_LEVEL = 3;
+// 服務港的門檻住在 navy_rules.json，隨 bootstrap 送來。前端不留第二份數字——
+// 這個常數先前只存在於前端，後端連檢查都沒有。
+function navyServicePortLevel() {
+  return Number(navyRules()?.repair?.min_port_level ?? 3);
+}
 
 function portServiceLevel(city) {
   return city?.port ? Number(city.level || 0) : 0;
 }
 
 function isServicePort(city) {
-  return portServiceLevel(city) >= NAVY_SERVICE_PORT_LEVEL;
+  return portServiceLevel(city) >= navyServicePortLevel();
 }
 
 function portServiceNote(city) {
   if (!city?.port) return "此處不是港口。";
   return isServicePort(city)
     ? ""
-    : `${city.name}是 ${city.level} 級小港，只能停靠與登陸；修理與編補艦隊要到 3 級以上的港口。`;
+    : `${city.name}是 ${city.level} 級小港，只能停靠與登陸；修理與編補艦隊要到 ${navyServicePortLevel()} 級以上的港口。`;
 }
 
 function carriedArmy(navy) {
@@ -6520,6 +6524,9 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
         player: currentPlayer,
         navy: navySnapshotForServer(navy),
         target_hp: targetHp,
+        // 三道關（要在港口、港務沒癱瘓、港口等級夠）由後端判。
+        // 上面那幾個 showNotice 只是先擋一次給即時回饋，規則不在前端。
+        city_id: cell.city.id,
       });
       state = result.state;
       applyNavyStateFromServer(navy, result.navy);

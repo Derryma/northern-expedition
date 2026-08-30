@@ -14,7 +14,6 @@ from general_tree import (
     loyalty_report,
     record_battle_loss,
     recruit_general,
-    set_body_guard_level,
     transfer_troops_between_absolute_loyal_pair,
     validate_tree,
 )
@@ -139,15 +138,6 @@ class GeneralTreeTests(unittest.TestCase):
         self.assertEqual(tree["generals"]["chiang_kai_shek"]["units"]["infantry"], 16.0)
         self.assertEqual(tree["generals"]["he_yingqin"]["units"]["infantry"], 16.0)
 
-    def test_body_guard_level_is_general_state(self):
-        tree = load_template()
-        set_body_guard_level(tree, "bai_chongxi", "high")
-
-        self.assertEqual(tree["generals"]["bai_chongxi"]["body_guard_level"], "high")
-        with self.assertRaises(ValueError):
-            set_body_guard_level(tree, "bai_chongxi", "machine_gun_guard")
-
-
 class FlatCommandTreeTest(unittest.TestCase):
     """川軍與湘軍沒有大帥，將領彼此平行、互不隸屬。"""
 
@@ -159,14 +149,14 @@ class FlatCommandTreeTest(unittest.TestCase):
                 "liu_xiang": {
                     "id": "liu_xiang", "name": "劉湘", "role": "lieutenant_general",
                     "faction": "川軍", "loyalty": None, "loyalty_exempt": True,
-                    "body_guard_level": None, "command_cap": 42,
+                    "command_cap": 42,
                     "units": {"infantry": 9}, "parent_id": None,
                     "subordinate_slots": 0, "subordinates": [], "status": "active",
                 },
                 "yang_sen": {
                     "id": "yang_sen", "name": "楊森", "role": "lieutenant_general",
                     "faction": "川軍", "loyalty": 4, "loyalty_exempt": False,
-                    "body_guard_level": None, "command_cap": 26,
+                    "command_cap": 26,
                     "units": {"infantry": 7}, "parent_id": None,
                     "subordinate_slots": 0, "subordinates": [], "status": "active",
                 },

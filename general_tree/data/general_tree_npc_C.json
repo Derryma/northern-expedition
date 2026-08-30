@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 42,
       "traits": [
         "tianfu_land",
@@ -36,7 +35,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 30,
       "traits": [
         "elite_mountain_division"
@@ -63,7 +61,6 @@
       "core_faction": false,
       "loyalty": 4,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 26,
       "traits": [
         "mountain_division"

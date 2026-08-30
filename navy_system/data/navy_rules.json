@@ -4,7 +4,7 @@
     "tiles_per_turn": 2,
     "factory_cost": 10,
     "factory_cost_per_gun_boat": 5,
-    "allowed_tile_kinds": ["river_port", "water", "rail_bridge", "sea_port"]
+    "passable_cells_source": "可通行地格的唯一判準是 frontend/navy.js 的 navyCanEnterCell（河道／沿岸水域／航道／鐵路橋／河海港城市）——它依的是地格旗標，這裡無法用字串完整表達，所以不留副本。"
   },
   "units": {
     "gun_boat": {
@@ -31,7 +31,9 @@
   },
   "repair": {
     "factory_cost_per_hp": 2,
-    "harbor_only": true
+    "harbor_only": true,
+    "min_port_level": 3,
+    "note": "harbor_only 與 min_port_level 由後端 GameEngine.repair_navy 執行；前端只是先擋一次給即時回饋，不持有規則。"
   },
   "initial_divisions": [
     {

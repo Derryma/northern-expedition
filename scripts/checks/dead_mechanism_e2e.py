@@ -47,6 +47,7 @@ const other = ['F','W','S','N'].find(c => c !== me);
   }];
   snap.players[me].warlord_relations[other].status = 'peace';
   await push(snap);
+  await d.pullSharedState();
   let blocked = '**沒有被擋**';
   try { await d.api('/api/diplomacy', { player: me, target: other, status: 'war' }); }
   catch (e) { blocked = '被擋：' + String(e.message).slice(0, 40); }
@@ -101,6 +102,82 @@ out.治安惡化 = {
     out.進度顯示.那一行 = line || null;
   }
 }
+// ---- 四、艦艇修理的三道關現在住在後端 ----
+{
+  const snap = JSON.parse(JSON.stringify(await pull()));
+  snap.players[me].factory_points = 500;
+  await push(snap);
+  const cities = d.getBootstrap().strategic_map?.cities || [];
+  const level = (c) => Number(c.level || 0);
+  const big = cities.find(c => c.port && level(c) >= 3);
+  const small = cities.find(c => c.port && level(c) < 3);
+  const inland = cities.find(c => !c.port);
+  const fleet = { id: 'probe', gunBoats: [{ hp: 10, maxHp: 30 }], cargoBoats: 0, cargoBoatHp: [] };
+  const attempt = async (cityId) => {
+    try {
+      const r = await d.api('/api/repair-navy', {
+        player: me, navy: JSON.parse(JSON.stringify(fleet)), target_hp: 30, city_id: cityId });
+      return `修好了 ${r.hp} HP`;
+    } catch (e) { return '被擋：' + String(e.message).slice(0, 34); }
+  };
+  out.艦艇修理 = {
+    沒指定城市: await attempt(null),
+    內陸城: await attempt(inland?.id),
+    小港: await attempt(small?.id),
+    大港: await attempt(big?.id),
+  };
+}
+
+// ---- 五、三張黑幫暴動卡在畫面上是同一個標籤 ----
+{
+  const index = d.getCardIndex ? d.getCardIndex() : null;
+  const labels = {};
+  for (const id of ['du_yuesheng_gamble', 'hongmen_uprising', 'red_spear_uprising']) {
+    labels[id] = index?.[id]?.disruption_label || '(卡片索引查不到)';
+  }
+  out.黑幫暴動標籤 = labels;
+}
+
+// ---- 六、NPC 事件卡排在前面抽（NPC → NPC → NPC → 一般 → …）----
+// 放最後：這一段會真的推回合、真的抽卡，會動到整局狀態。
+{
+  await d.api('/api/new-game', {});
+  // NPC 卡的進入條件要看戰術快照（將領還在不在原陣營）。開新局之後快照是空的，
+  // 那些卡會一律 fail closed——真實對局裡前端每回合都會發布，這裡補一次。
+  await d.api('/api/shared-state', { tactical: d.tacticalSnapshot(), expected_revision: null });
+  const npcRefs = new Set();
+  const seq = [];
+  let state = null;
+  for (let turn = 0; turn < 60 && seq.length < 8; turn += 1) {
+    await d.api('/api/shared-state', { tactical: d.tacticalSnapshot(), expected_revision: null });
+    const stepped = await d.api('/api/next-turn', { active_player: me, force: true });
+    state = stepped.state;
+    let pending = state.pending_events;
+    while (pending && (pending.index || 0) < (pending.cards || []).length) {
+      const entry = pending.cards[pending.index];
+      if (!seq.length || seq[seq.length - 1].id !== entry.card_id) {
+        seq.push({ id: entry.card_id, ref: entry.card_id });
+      }
+      const waiting = (entry.responders || []).find(c => !(entry.responses || {})[c]);
+      if (!waiting) break;
+      let answered;
+      try {
+        answered = await d.api('/api/respond-event', { player: waiting });
+      } catch (e) {
+        try {
+          answered = await d.api('/api/respond-event', { player: waiting, choice: 'acknowledge' });
+        } catch (e2) { break; }
+      }
+      state = answered.state || state;
+      pending = state.pending_events;
+    }
+  }
+  out.抽卡順序 = {
+    前八張: seq.map(x => x.id),
+    // ref 由後端資料決定，這裡只看是不是 15 區塊：由引擎自己判，前端不重算。
+  };
+}
+
 return out;
 """
 

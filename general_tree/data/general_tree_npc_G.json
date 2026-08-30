@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 55,
       "traits": [
         "northwest_overlord"
@@ -39,7 +38,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 30,
       "traits": [
         "broadsword_corps"
@@ -66,7 +64,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 34,
       "traits": [
         "dodging_drift"
@@ -93,7 +90,6 @@
       "core_faction": false,
       "loyalty": 7,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 28,
       "traits": [
         "northwest_vanguard"

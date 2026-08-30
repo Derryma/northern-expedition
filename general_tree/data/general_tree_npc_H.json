@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 42,
       "traits": [
         "buddhist_general"
@@ -35,7 +34,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 26,
       "traits": [
         "anticommunist_vanguard"
@@ -60,7 +58,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 26,
       "traits": [
         "hunan_governor"

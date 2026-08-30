@@ -31,6 +31,9 @@ casualty state.
 
 from __future__ import annotations
 
+import json
+import pathlib
+
 from copy import deepcopy
 from dataclasses import dataclass
 from math import floor
@@ -85,41 +88,22 @@ ATTACK_PRIORITY = {
     "artillery": ("artillery", "line", "cavalry"),
 }
 
-# Experimental battalion stats. These are deliberately simple and should be
-# playtested before becoming final board-game values. Attack values live only
-# in ATTACK_MATRIX because each source unit hits each target unit differently.
+# 每營的基礎數值與攻擊矩陣的唯一真源是 comabt_system/data/unit_stats.json。
+# 先前這裡另有一份寫死的副本，資料檔那份沒有任何讀取者——兩份數字剛好一樣，
+# 但沒有任何東西保證它們會一直一樣。
+_UNIT_STATS = json.loads(
+    (pathlib.Path(__file__).resolve().parent / "data" / "unit_stats.json")
+    .read_text(encoding="utf-8"))
+
 BASE_STATS = {
-    "infantry": {"hp": 3.0, "force_points": 1.0},
-    "cavalry": {"hp": 3.0, "force_points": 1.0},
-    "artillery": {"hp": 2.0, "force_points": 4.0},
-    "machine_gun": {"hp": 3.0, "force_points": 2.0},
+    unit: {"hp": float(stats["hp"]), "force_points": float(stats["force_points"])}
+    for unit, stats in _UNIT_STATS["units"].items()
 }
 
+# 攻擊矩陣同樣讀資料檔：每一種來源兵種打每一種目標兵種的係數。
 ATTACK_MATRIX = {
-    "infantry": {
-        "infantry": 1.0,
-        "cavalry": 1.0,
-        "artillery": 1.0,
-        "machine_gun": 1.0,
-    },
-    "cavalry": {
-        "infantry": 2.0,
-        "cavalry": 2.0,
-        "artillery": 3.0,
-        "machine_gun": 1.0,
-    },
-    "artillery": {
-        "infantry": 3.0,
-        "cavalry": 1.0,
-        "artillery": 2.0,
-        "machine_gun": 3.0,
-    },
-    "machine_gun": {
-        "infantry": 2.0,
-        "cavalry": 3.0,
-        "artillery": 2.0,
-        "machine_gun": 2.0,
-    },
+    source: {target: float(value) for target, value in row.items()}
+    for source, row in _UNIT_STATS["attack_matrix"].items()
 }
 
 DEFAULT_BREAK_THRESHOLD = 0.30

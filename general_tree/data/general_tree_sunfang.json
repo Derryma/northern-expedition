@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 70,
       "traits": [
         "five_provinces_alliance"
@@ -39,7 +38,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 34,
       "traits": [
         "riverine_warfare"
@@ -67,7 +65,6 @@
       "loyalty": 10,
       "absolute_loyalty": true,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 36,
       "traits": [
         "riverine_warfare"
@@ -94,7 +91,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 32,
       "traits": [
         "assault_breaker"
