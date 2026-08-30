@@ -50,7 +50,13 @@ def _restore_from_pristine(saved: dict) -> bool:
     return ok
 
 
-def main(mutants):
+def main(mutants, runner=None, timeout=2400):
+    """runner：判定「這個突變有沒有被抓到」的指令。
+
+    預設是整套 backend 單元測試。前端行為的突變靠讀原始碼的字串斷言擋不住
+    （`if (false) {` 就繞過去了），所以那種輪次要改用真前端的 e2e 當 runner——
+    e2e 跑的是瀏覽器裡真正的那份程式碼。
+    """
     # 補齊三元組的預設目標檔
     normalised = [(m[0], m[1], m[2], m[3] if len(m) > 3 else DEFAULT_TARGET)
                   for m in mutants]
@@ -76,12 +82,15 @@ def main(mutants):
             (REPO / rel).write_bytes(blob)
     atexit.register(restore_all)
 
+    command = runner or [sys.executable, '-m', 'unittest', 'backend.test_backend', '-q']
+
     def run():
         for p in REPO.rglob('__pycache__'):
             shutil.rmtree(p, ignore_errors=True)
-        r = subprocess.run([sys.executable, '-m', 'unittest', 'backend.test_backend', '-q'],
-                           cwd=REPO, capture_output=True, text=True, timeout=2400)
-        return r.returncode == 0, r.stderr.count('FAIL:') + r.stderr.count('ERROR:')
+        r = subprocess.run(command, cwd=REPO, capture_output=True, text=True,
+                           timeout=timeout)
+        blob = r.stderr + r.stdout
+        return r.returncode == 0, blob.count('FAIL:') + blob.count('ERROR:') + blob.count('**沒過**')
 
     for name, old, new, rel in normalised:
         text = originals[rel].decode('utf-8')

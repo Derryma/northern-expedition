@@ -2802,6 +2802,8 @@ button, select, input, textarea {
 }
 .tile-tag-concession { border: 1px solid #c9a227; color: #e6c65c; }
 .tile-tag-port { border: 1px solid #5b86a6; color: #8fc0dc; }
+/* 城市被暴動／停產壓著時的標籤，用警示色跟港口、租界那些中性標籤分開。 */
+.tile-tag-disruption { border: 1px solid #a5563f; color: #e0a08c; background: rgba(120, 48, 32, 0.18); }
 .tile-tag-foreign { border: 1px solid #b02222; color: #e58a86; }
 .tile-foreign-note { color: #b3aa9c; font-size: 11px; }
 .tile-concession-power { display: inline-flex; align-items: center; }

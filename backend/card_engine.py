@@ -69,6 +69,9 @@ FUNCTION_CARD_COPIES = {
     "city_development": 8,
     "piaohao_network": 3,
     "intel_network": 6,
+    # 卡片 id 仍是 police_system（存檔與卡片資料都用它）；
+    # 改名的是 mechanic 與 timed_effect 的 kind：counter_intel。
+    # 「警政單位」是另一張卡（police_precinct，擋黑幫暴動），兩者無關。
     "police_system": 4,
     "du_yuesheng_gamble": 2,
     "hongmen_uprising": 2,
@@ -511,6 +514,10 @@ class GameEngine:
         # 從 city_output_effects 掃——前端自建視圖正是這個專案反覆掉欄位的地方。
         state["quellable_unrest"] = {player: self.quellable_unrest(player)
                                      for player in state["players"]}
+        # 地格資訊欄的癱瘓標籤：哪一種、進度多少，後端算好，前端只排版。
+        state["city_disruptions"] = self.city_disruption_report()
+        # 偵查：哪些省被揭露、誰有反情報。規則在後端，前端只負責「這支部隊在哪一省」。
+        state["intel"] = {player: self.intel_report(player) for player in state["players"]}
         # 已解算的徵募價格。募兵面板先前自己用
         # `bootstrap.recruit_costs × 陣營費率 + 固定加減` 重算一次，
         # 完全漏掉生產成本倍率（油價上漲、軍火禁運、香港軍火交易）與限時折抵
@@ -521,6 +528,8 @@ class GameEngine:
                 for unit in RECRUIT_COSTS
                 for cash, factory in [self._unit_cost_for(player, unit)]
             }
+            # 技能因列強關係失效的名單。判準在後端，畫面只讀結果。
+            payload["disabled_traits"] = self.disabled_traits(player)
             payload["resolved_navy_costs"] = {
                 unit: {"cash": cash, "factory": factory}
                 for unit in NAVY_RECRUIT_COSTS
@@ -1261,6 +1270,99 @@ class GameEngine:
                               "current_force": round(float(current_force), 2),
                               "baseline_force": round(initial, 2)}}
 
+    LOYALTY_OVERRIDE_MIN, LOYALTY_OVERRIDE_MAX = 1, 10
+
+    def mutable_loyalty_generals(self, owner: str,
+                                 tactical: Optional[Dict[str, Any]] = None) -> list:
+        """這位陣營底下「忠誠可變」的將領。
+
+        排除：忠誠為 null 的（派系核心）、絕對忠誠的、以及 loyalty_exempt 的。
+        判準跟 compute_loyalty 用的是同一組欄位，所以卡面說「全體可變忠誠將領」時
+        前後端指的是同一批人。
+        """
+        snapshot = tactical if isinstance(tactical, dict) else (self._tactical or {})
+        trees = snapshot.get("generalTrees") or {}
+        owners = snapshot.get("generalOwners") or {}
+        overrides = snapshot.get("loyaltyOverrides") or {}
+        out = []
+        for faction, tree in trees.items():
+            for general_id, general in (tree.get("generals") or {}).items():
+                if owners.get(general_id, faction) != owner:
+                    continue
+                if general.get("loyalty") is None or general.get("loyalty_exempt"):
+                    continue
+                absolute = bool(general.get("absolute_loyalty")) and not (
+                    general_id in overrides
+                    and float(overrides[general_id]) <= self.LOYALTY_OVERRIDE_MIN)
+                if absolute:
+                    continue
+                out.append(general_id)
+        return sorted(out)
+
+    def apply_loyalty_deltas(self, deltas, tactical: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
+        """把卡片的忠誠加減算成新的 loyaltyOverrides，回傳「將領 → 新的基礎值」。
+
+        **加減的是基礎值，不是畫面上顯示的那個數字。** 先前這一段在前端，
+        而且拿顯示值去加——顯示值已經含了相對實力與戰損的修正，後端再套一次，
+        於是「忠誠 +2」在強軍身上縮成 +1、在弱軍身上直接變成 **+0**（卡等於沒效果）。
+
+        deltas 是 [{"general_id": ..., "amount": n}] 或 [{"owner": ..., "amount": n}]；
+        指定 owner 就是「該陣營全體可變忠誠將領」。
+        """
+        snapshot = tactical if isinstance(tactical, dict) else (self._tactical or {})
+        trees = snapshot.get("generalTrees") or {}
+        overrides = dict(snapshot.get("loyaltyOverrides") or {})
+        base_of = {}
+        for tree in trees.values():
+            for general_id, general in (tree.get("generals") or {}).items():
+                base_of[general_id] = general.get("loyalty")
+        changed: Dict[str, int] = {}
+
+        def bump(general_id: str, amount: int) -> None:
+            if general_id not in base_of or base_of[general_id] is None:
+                return
+            current = overrides.get(general_id, base_of[general_id])
+            value = int(max(self.LOYALTY_OVERRIDE_MIN,
+                            min(self.LOYALTY_OVERRIDE_MAX, float(current) + float(amount))))
+            overrides[general_id] = value
+            changed[general_id] = value
+
+        for delta in deltas or []:
+            amount = int(delta.get("amount") or 0)
+            if not amount:
+                continue
+            if delta.get("general_id"):
+                targets = [str(delta["general_id"])]
+            elif delta.get("owner"):
+                targets = self.mutable_loyalty_generals(str(delta["owner"]), snapshot)
+            else:
+                targets = []
+            for general_id in targets:
+                bump(general_id, amount)
+        return changed
+
+    def resolve_loyalty_effect(self, kind: str, faction: str, effect: Dict[str, Any],
+                               tactical: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """事件卡交辦的忠誠加減：挑對象、算新的 loyaltyOverrides，全在後端。
+
+        `loyalty_all` 是全體可變忠誠將領；`loyalty_random` 是隨機幾位——
+        **抽籤也在後端**，用引擎自己的亂數，所以同一顆種子重播結果一致。
+        先前抽籤與加減都在前端，而且加在畫面顯示值上（見 apply_loyalty_deltas）。
+        """
+        snapshot = tactical if isinstance(tactical, dict) else (self._tactical or {})
+        amount = int(effect.get("amount") or 0)
+        pool = self.mutable_loyalty_generals(str(faction), snapshot)
+        if not amount or not pool:
+            return {"picked": [], "overrides": {}, "amount": amount}
+        if kind == "loyalty_random":
+            want = min(int(effect.get("count") or 0), len(pool))
+            picked = [pool[i] for i in self.random.sample(range(len(pool)), want)] if want else []
+        else:
+            picked = list(pool)
+        overrides = self.apply_loyalty_deltas(
+            [{"general_id": general_id, "amount": amount} for general_id in picked], snapshot)
+        return {"picked": picked, "overrides": overrides, "amount": amount}
+
     def loyalty_report(self, tactical: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """從伺服器手上的戰術狀態，算出每一位將領的忠誠。
 
@@ -1588,23 +1690,88 @@ class GameEngine:
                 return True
         return False
 
+    # 目標將領自帶的抗策反：唐生智的〈佛教將軍〉−5%。
+    # 這張表先前**只存在於前端**，後端是從請求裡收 resistance 這個數字——
+    # 等於成功率的一部分由客戶端說了算。現在表在後端，前端不再送這個欄位。
+    DEFECTION_RESISTANCE_TRAITS = {"buddhist_general": 0.05}
+
+    def _defection_resistance(self, traits) -> float:
+        return sum(self.DEFECTION_RESISTANCE_TRAITS.get(str(t), 0.0)
+                   for t in (traits or []))
+
+    def _defection_inputs(self, general_id: str,
+                          tactical: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """從伺服器手上的戰術快照湊出這一次策反的三個輸入：忠誠、戰力、抗性。
+
+        先前這三個都由前端算好送上來（連成功率的公式前端也自備一份）。
+        伺服器本來就存著 SHARED_TACTICAL_STATE，自己算得出來。
+        """
+        snapshot = tactical if isinstance(tactical, dict) else (self._tactical or {})
+        armies = snapshot.get("armies") or {}
+        trees = snapshot.get("generalTrees") or {}
+        general = None
+        for tree in trees.values():
+            found = (tree.get("generals") or {}).get(general_id)
+            if found:
+                general = found
+                break
+        army = next((a for a in armies.values() if a.get("generalId") == general_id), None)
+        units = (army or {}).get("units") or {}
+        force = sum(max(0, int(units.get(unit, 0) or 0)) * points
+                    for unit, points in UNIT_FORCE_POINTS.items())
+        report = self.loyalty_report(snapshot).get(general_id) or {}
+        return {
+            "loyalty": report.get("value"),
+            "force": force,
+            "resistance": self._defection_resistance((general or {}).get("traits")),
+            "traits": list((general or {}).get("traits") or []),
+            "known": bool(general),
+        }
+
+    def defection_quote(self, general_id: str,
+                        tactical: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """報價：策反這位將領要花多少、成功率多少。畫面上那兩個數字的唯一來源。"""
+        inputs = self._defection_inputs(general_id, tactical)
+        loyalty = max(1, min(10, int(inputs["loyalty"] or 1)))
+        force = max(1.0, float(inputs["force"]))
+        cost = int(math.ceil((10 + force * 3 + loyalty * 2) * 0.5))
+        base_chance = 0.45 - loyalty * 0.04 - force * 0.003
+        chance = max(0.03, min(0.60, base_chance * 1.25) - max(0.0, float(inputs["resistance"])))
+        return {
+            "general_id": general_id, "cost": cost, "chance": chance,
+            "loyalty": loyalty, "force": force, "resistance": inputs["resistance"],
+            "known": inputs["known"],
+        }
+
     def attempt_defection(self, player: str, loyalty: int) -> Dict[str, Any]:
         return self.attempt_defection_with_force(player, loyalty, 1)
 
     def attempt_defection_with_force(
-        self, player: str, loyalty: int, force: float, traits=None, resistance: float = 0.0,
-        general_id=None,
+        self, player: str, loyalty: int = 0, force: float = 0, traits=None,
+        resistance: float = 0.0, general_id=None,
+        tactical: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """成本與成功率一律由後端從戰術快照算。
+
+        指定 general_id 時，loyalty／force／resistance 三個參數一概忽略——
+        客戶端說的不算。舊的呼叫端（沒有 general_id 的測試夾具）才走傳進來的數字。
+        """
         player_state = self._player(player)
-        loyalty = max(1, min(10, int(loyalty)))
-        force = max(1.0, float(force))
-        cost = int(math.ceil((10 + force * 3 + loyalty * 2) * 0.5))
+        if general_id:
+            quote = self.defection_quote(str(general_id), tactical)
+            loyalty, force = quote["loyalty"], quote["force"]
+            cost, chance = quote["cost"], quote["chance"]
+            traits = traits if traits is not None else \
+                self._defection_inputs(str(general_id), tactical)["traits"]
+        else:
+            loyalty = max(1, min(10, int(loyalty)))
+            force = max(1.0, float(force))
+            cost = int(math.ceil((10 + force * 3 + loyalty * 2) * 0.5))
+            base_chance = 0.45 - loyalty * 0.04 - force * 0.003
+            chance = max(0.03, min(0.60, base_chance * 1.25) - max(0.0, float(resistance or 0.0)))
         if player_state.get("treasury", 0) < cost:
             raise ValueError(f"defection attempt requires {cost} cash")
         player_state["treasury"] -= cost
-        base_chance = 0.45 - loyalty * 0.04 - force * 0.003
-        # 目標將領自帶的抗策反（唐生智的〈佛教將軍〉-5%）。
-        chance = max(0.03, min(0.60, base_chance * 1.25) - max(0.0, float(resistance or 0.0)))
         roll = self.random.random()
         success = roll < chance
         joined = self.apply_general_join(player, traits, general_id) if success else {}
@@ -2131,12 +2298,12 @@ class GameEngine:
                 "target_province": province,
             }
             player_state.setdefault("timed_effects", []).append(deepcopy(timed_effect))
-        elif mechanic == "police_system":
+        elif mechanic == "counter_intel":
             duration = int(card.get("duration_turns", 3))
             timed_effect = {
                 "id": card_id,
                 "name": card.get("name", card_id),
-                "kind": "police_system",
+                "kind": "counter_intel",
                 "remaining_turns": duration,
                 "owners": [player],
             }
@@ -2152,9 +2319,13 @@ class GameEngine:
                 "id": card_id,
                 "card_id": card_id,
                 "created_turn": int(self.state["turn"]),
+                # 先前這一筆沒有 kind——地格資訊欄認不出它是哪一種癱瘓。
+                "kind": "communist_riot",
                 "name": card.get("name", card_id),
+                "label": str(card.get("disruption_label", card.get("name", card_id))),
                 "target_owner": target_owner,
                 "remaining_turns": int(card.get("duration_turns", 3)),
+                "total_turns": int(card.get("duration_turns", 3)),
                 "city_ids": [city["id"] for city in selected],
                 "cities": [{"id": city["id"], "name": city["name"]} for city in selected],
                 "cash_multiplier": float(card.get("cash_multiplier", 0)),
@@ -2649,6 +2820,14 @@ class GameEngine:
             }
         player_state["treasury"] -= cost
         cabinet_entry = self._register_cabinet_card(player, card) if card.get("cabinet") else None
+        # 忠誠加減：算出新的 loyaltyOverrides（加在**基礎值**上），前端照抄就好。
+        # 先前這一段在前端，而且拿畫面上的顯示值去加——顯示值含相對實力與戰損的
+        # 修正，後端再套一次，於是「+2」在弱軍身上會縮成 +0，卡等於沒效果。
+        loyalty_overrides = self.apply_loyalty_deltas(
+            ([{"general_id": target_general_id, "amount": loyalty_delta}]
+             if target_general_id and loyalty_delta else [])
+            + ([dict(loyalty_delta_all)] if loyalty_delta_all else [])
+            + [dict(swing) for swing in loyalty_swings])
         player_state["hand"].remove(card_id)
         player_state["discard"].append(card_id)
         self.state["last_action"] = {
@@ -2685,6 +2864,7 @@ class GameEngine:
             "riot_shield": riot_shield,
             "loan_effect": loan_effect,
             "relation_side_effects": relation_side_effects,
+            "loyalty_overrides": loyalty_overrides,
         }
         return {
             "card": card,
@@ -2718,6 +2898,7 @@ class GameEngine:
             "riot_shield": riot_shield,
             "loan_effect": loan_effect,
             "relation_side_effects": relation_side_effects,
+            "loyalty_overrides": loyalty_overrides,
             "state": self.snapshot(),
         }
 
@@ -4252,6 +4433,17 @@ class GameEngine:
     def _faction_has_trait(self, player: str, trait: str) -> bool:
         return trait in self.state.get("faction_general_traits", {}).get(player, [])
 
+    def disabled_traits(self, player: str) -> list:
+        """這位玩家名下有哪些技能因為列強關係而失效。
+
+        判準表在 backend/combat_modifiers.RELATION_DISABLED_TRAITS，只有一份。
+        先前前端另外抄了一份表、自己拿關係去比——畫面說失效、戰鬥算沒失效
+        （或反過來）都不會有任何東西叫。現在畫面讀這一份。
+        """
+        from .combat_modifiers import RELATION_DISABLED_TRAITS
+        return sorted(trait for trait, rule in RELATION_DISABLED_TRAITS.items()
+                      if self._trait_relation_disabled(player, rule))
+
     def _trait_relation_disabled(self, player: str, rule: Dict[str, Any]) -> bool:
         """技能因為持有陣營的列強關係而失效（何鍵：自己也親蘇就沒得剿了）。"""
 
@@ -4639,6 +4831,93 @@ class GameEngine:
             picks = self.random.sample(range(len(out)), count) if count else []
             out = [out[i] for i in sorted(picks)]
         return out
+
+    # 地格資訊欄要顯示的城市癱瘓標籤。哪一種、進度多少全由後端算，
+    # 前端只負責排版——先前前端根本沒有這一欄，玩家看不出這座城為什麼沒有產出。
+    DISRUPTION_LABELS = {
+        "qing_gang_riot": "黑幫暴動",
+        "red_army_uprising": "紅軍起義",
+        "communist_riot": "共黨暴動",
+        "city_halt": "產出受阻",
+        "city_output_timed": "產出受阻",
+    }
+
+    def intel_report(self, observer: str) -> Dict[str, Any]:
+        """偵查規則：這位觀察者這回合看得到哪些省、誰擋得住。
+
+        三條規則的優先序全在這裡：
+          1. 空中偵查（德國飛艇）照相片，情報局擋不住；
+          2. 情報局（counter_intel）擋得住一般情報網；
+          3. 情報網（intel_network）揭露指定的省。
+        「這支部隊在哪一省」是地圖的事，留在前端；規則不留第二份。
+        """
+        return {
+            "aerial_provinces": sorted({
+                str(province)
+                for effect in self._player(observer).get("timed_effects", [])
+                if effect.get("kind") == "aerial_recon"
+                and int(effect.get("remaining_turns", 0)) > 0
+                for province in (effect.get("target_provinces") or [])
+            }),
+            "intel_provinces": sorted({
+                str(effect.get("target_province"))
+                for effect in self._player(observer).get("timed_effects", [])
+                if effect.get("kind") == "intel_network"
+                and int(effect.get("remaining_turns", 0)) > 0
+                and effect.get("target_province")
+            }),
+            "counter_intel_factions": sorted({
+                code for code in self.state["players"]
+                if self.has_timed_flag(code, "counter_intel")
+            }),
+        }
+
+    def city_disruption_report(self) -> Dict[str, list]:
+        """城市 id → 目前壓在它頭上的癱瘓效果清單（含進度）。
+
+        兩種進度：
+          garrison —— 要駐軍才平息（黑幫暴動、紅軍起義），回報 progress/required。
+          timed    —— 到期自動解除（共黨暴動、各種停產），回報 elapsed/total。
+        """
+        report: Dict[str, list] = {}
+        for effect in self.state.get("city_output_effects", []):
+            kind = str(effect.get("kind") or "city_halt")
+            label = str(effect.get("label") or self.DISRUPTION_LABELS.get(kind)
+                        or effect.get("name") or "產出受阻")
+            required_turns = effect.get("required_turns")
+            for city_id in (effect.get("city_ids") or []):
+                entry = {
+                    "id": effect.get("id"),
+                    "kind": kind,
+                    "label": label,
+                    "name": effect.get("name"),
+                    "cash_multiplier": float(effect.get("cash_multiplier", 0)),
+                    "factory_multiplier": float(effect.get("factory_multiplier", 0)),
+                }
+                if required_turns is not None:
+                    progress = effect.get("garrison_progress")
+                    # 黑幫暴動整省一個計數；紅軍起義是逐城計數。
+                    if isinstance(progress, dict):
+                        progress = progress.get(city_id, 0)
+                    entry.update({
+                        "mode": "garrison",
+                        "progress": int(progress or 0),
+                        "required_turns": int(required_turns),
+                        "required_force": effect.get("required_force"),
+                        "required_battalions": effect.get("required_battalions"),
+                    })
+                else:
+                    remaining = effect.get("remaining_turns")
+                    total = effect.get("total_turns")
+                    entry.update({
+                        "mode": "timed",
+                        "remaining_turns": None if remaining is None else int(remaining),
+                        "total_turns": None if total is None else int(total),
+                        "elapsed_turns": (None if remaining is None or total is None
+                                          else max(0, int(total) - int(remaining))),
+                    })
+                report.setdefault(str(city_id), []).append(entry)
+        return report
 
     def quellable_unrest(self, player: str) -> list:
         """這位玩家現在可以花錢平息的事件（前端要據此畫按鈕）。"""
@@ -6306,7 +6585,10 @@ class GameEngine:
                                 continue
                             units[unit] += 1
                     army["units"] = {unit: 0 for unit in UNIT_FORCE_POINTS}
-                    army["status"] = "merged"
+                    # 被併掉的部隊要用大家都認得的退場狀態。先前用的那個字串
+                    # 前後端都沒有任何一處讀，於是黔軍的空殼部隊
+                    # 頂著 0 兵繼續留在地圖上——看起來就像吞併「沒有生效」。
+                    army["status"] = "destroyed"
                 target["units"] = units
                 cities = self._npc_faction_cities(source)
                 for city_id in cities:
@@ -7110,6 +7392,7 @@ class GameEngine:
                     # 不 +1 的話「本回合停產」會在生效前就被扣光。
                     # turns 為 null＝無限期（米騷動：不花錢賑濟就一直停產）。
                     "remaining_turns": (int(span) + 1) if span is not None else None,
+                    "total_turns": (int(span) + 1) if span is not None else None,
                 }
                 # 可以花錢提前平息的，把價碼記在效果上——玩家要看得到、按得到，
                 # 而不是自己記得「這張卡好像可以付 $10」。

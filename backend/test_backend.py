@@ -584,7 +584,10 @@ class BackendTests(unittest.TestCase):
 
         self.assertEqual(intel["timed_effect"]["kind"], "intel_network")
         self.assertEqual(intel["timed_effect"]["target_province"], "湖北")
-        self.assertTrue(any(effect["kind"] == "police_system" and effect["remaining_turns"] == 3 for effect in effects))
+        # 卡片 id 還是 police_system，但 mechanic 與 kind 已改名為 counter_intel——
+        # 「警政單位」是另一張卡（擋黑幫暴動），先前兩者的命名交叉，
+        # 卡面文字也因此寫錯了對象。
+        self.assertTrue(any(effect["kind"] == "counter_intel" and effect["remaining_turns"] == 3 for effect in effects))
 
     def test_communist_riot_suppresses_two_target_cities_temporarily(self):
         engine = GameEngine(seed=4)
@@ -10715,12 +10718,53 @@ class FrontendBackendParityTests(unittest.TestCase):
                 self._frontend_defection(5, 12, resistance),
                 (result["cost"], round(result["chance"], 6)), f"抗性={resistance}")
 
-    def test_the_frontend_clamps_exactly_like_the_backend(self):
-        """守門：兩邊的夾值必須一樣，否則超出範圍時就會分岔。"""
-        panel = FRONTEND_SOURCE[FRONTEND_SOURCE.index("const defectionForce"):]
-        panel = panel[:panel.index("const defectionChance")]
-        self.assertIn("Math.max(1, forcePoints(units))", panel, "戰力要夾 ≥1")
-        self.assertIn("Math.max(1, Math.min(10, loyalty || 1))", panel, "忠誠要夾 1–10")
+    def test_the_frontend_owns_no_copy_of_the_defection_formula(self):
+        """規則只能有一份。前端先前有一份逐字相同的副本，還靠這一組測試盯著兩邊——
+        那不是單一來源，那是兩份規則加一個看門的。現在前端只顯示後端的報價。
+        """
+        for fragment in ("0.45 - ", "* 1.25", "Math.min(0.60", "* 3 + ", "defectionResistance",
+                         "DEFECTION_RESISTANCE_TRAITS"):
+            self.assertNotIn(fragment, FRONTEND_SOURCE,
+                             f"前端又出現策反公式的一部分：{fragment}")
+        self.assertIn("/api/defection-quote", FRONTEND_SOURCE, "面板要跟後端要報價")
+
+    def test_the_client_cannot_dictate_the_odds(self):
+        """帶 general_id 時，客戶端送什麼忠誠／戰力／抗性都不算數。"""
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        tactical = {
+            "armies": {"W-1": {"generalId": "wu_peifu", "faction": "W", "status": "active",
+                               "units": {"infantry": 10, "cavalry": 2}}},
+            "generalTrees": {"W": {"generals": {"wu_peifu": {"id": "wu_peifu", "loyalty": 5,
+                                                             "traits": []}}}},
+            "generalOwners": {"wu_peifu": "W"}, "loyaltyOverrides": {},
+        }
+        engine.state["players"]["F"]["treasury"] = 99999
+        honest = engine.defection_quote("wu_peifu", tactical)
+        cheated = engine.attempt_defection_with_force(
+            "F", loyalty=1, force=1, resistance=-99, general_id="wu_peifu", tactical=tactical)
+        self.assertEqual(cheated["cost"], honest["cost"], "成本被客戶端帶偏了")
+        self.assertAlmostEqual(cheated["chance"], honest["chance"], places=9,
+                               msg="成功率被客戶端帶偏了")
+
+    def test_the_resistance_table_lives_in_the_backend(self):
+        engine = GameEngine(seed=3)
+        self.assertEqual(engine.DEFECTION_RESISTANCE_TRAITS, {"buddhist_general": 0.05})
+        tactical = {
+            "armies": {"H-1": {"generalId": "tang_shengzhi", "faction": "H", "status": "active",
+                               "units": {"infantry": 10}}},
+            "generalTrees": {"H": {"generals": {
+                "tang_shengzhi": {"id": "tang_shengzhi", "loyalty": 5,
+                                  "traits": ["buddhist_general"]}}}},
+            "generalOwners": {"tang_shengzhi": "H"}, "loyaltyOverrides": {},
+        }
+        quote = engine.defection_quote("tang_shengzhi", tactical)
+        self.assertAlmostEqual(quote["resistance"], 0.05)
+        plain = dict(tactical)
+        plain["generalTrees"] = {"H": {"generals": {
+            "tang_shengzhi": {"id": "tang_shengzhi", "loyalty": 5, "traits": []}}}}
+        self.assertGreater(engine.defection_quote("tang_shengzhi", plain)["chance"],
+                           quote["chance"], "〈佛教將軍〉要真的壓低成功率")
 
     # ---- 後端→前端的交辦不能沒人執行 ----
 
@@ -10889,24 +10933,39 @@ class LoyaltyRulesTests(unittest.TestCase):
                       "loyaltyBaselineArmyUnits", "generalOwners"):
             self.assertIn(field, snapshot, f"忠誠計算需要 {field}")
 
-    def test_the_frontend_prefers_the_backend_result(self):
-        """守門：前端必須優先採用後端算好的忠誠，本地那段只是過渡值。"""
+    def test_the_frontend_has_no_loyalty_formula_at_all(self):
+        """守門：忠誠只有一個計算引擎。前端拿不到後端的值時顯示「計算中」，不自己算。"""
         body = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function calculateGeneralLoyalty"):]
-        body = body[:body.index("\nfunction ", 10)]
+        body = body[:body.index("\n// 後端算完的忠誠")]
         self.assertIn("backendLoyalty?.[general.id]", body)
-        # 而且要在本地算式之前就回傳
-        self.assertLess(body.index("fromBackend"), body.index("relationPenalty"),
-                        "後端結果必須優先於本地算式")
+        for fragment in ("relationPenalty", "relativePower", "battleLoss", "baseLoyalty",
+                         "LOYALTY_BASELINE_ARMY_UNITS", "averageForce"):
+            self.assertNotIn(fragment, body, f"前端又自己算忠誠了：{fragment}")
+        self.assertIn("pending: true", body, "沒有後端的值就要顯示計算中")
+        self.assertNotIn("function traitLoyaltyAdjustment", FRONTEND_SOURCE,
+                         "列強關係扣分是後端 compute_loyalty 的事")
         self.assertIn('"loyalty": ENGINE.loyalty_report',
                       (pathlib.Path(__file__).resolve().parent / "server.py")
                       .read_text(encoding="utf-8"),
                       "server 沒把忠誠算給前端")
 
-    def test_the_defection_uses_the_same_loyalty_the_panel_shows(self):
-        """策反送出的忠誠與面板顯示的是同一個值（都來自 calculateGeneralLoyalty）。"""
-        body = FRONTEND_SOURCE[FRONTEND_SOURCE.index("/api/attempt-defection") - 1200:]
+    def test_the_panel_refreshes_instead_of_showing_a_stale_number(self):
+        """守門：本地快照與已發布的那份不一致時，畫面要主動補發一次再重畫。"""
+        self.assertIn("function ensureBackendDerivedFresh", FRONTEND_SOURCE)
+        self.assertIn("function backendDerivedStateIsStale", FRONTEND_SOURCE)
+        panel = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function renderPanel(panelName)"):]
+        panel = panel[:panel.index("switch (panelName)")]
+        self.assertIn("ensureBackendDerivedFresh(panelName)", panel,
+                      "面板重畫前沒有確認後端算的數字是不是舊的")
+        self.assertIn("function requestLoyaltyRefresh", FRONTEND_SOURCE)
+
+    def test_the_defection_request_sends_no_numbers_of_its_own(self):
+        """策反請求只指名對象；忠誠、戰力、抗性由後端從共享快照自己算。"""
+        body = FRONTEND_SOURCE[FRONTEND_SOURCE.index("/api/attempt-defection") - 900:]
         body = body[:body.index("/api/attempt-defection") + 400]
-        self.assertIn("calculateGeneralLoyalty(general, army).value", body)
+        self.assertIn("general_id: general?.id", body)
+        for field in ("loyalty,", "force: forcePoints", "resistance:"):
+            self.assertNotIn(field, body, f"前端還在送自己算的 {field}")
 
 
 class UnitForcePointsSourceTests(unittest.TestCase):
@@ -15686,7 +15745,9 @@ class NpcStructuralChangeTests(unittest.TestCase):
         self._fire(engine, "liu_xiang_annexes_qian", "npc_faction_merge")
         qian = engine._tactical["armies"]["Q-1"]
         self.assertEqual(GameEngine._force_of(qian["units"]), 0)
-        self.assertEqual(qian["status"], "merged")
+        # 退場狀態必須是前後端都認得的那幾個之一，否則空殼部隊會留在地圖上。
+        self.assertEqual(qian["status"], "destroyed")
+        self.assertIn(qian["status"], GameEngine.DEAD_ARMY_STATUSES)
         self.assertIn("Q", engine.retired_npc_factions())
 
     def test_the_qian_territory_changes_hands(self):
@@ -15841,7 +15902,8 @@ class FrontendEffectChannelTests(unittest.TestCase):
                / "frontend" / "app.js").read_text(encoding="utf-8")
         block = app.split("const PENDING_EFFECT_HANDLERS = {", 1)[1]
         block = block.split("\nasync function consumePendingFrontendEffects", 1)[0]
-        return set(re.findall(r'^  ([a-z_]+): \(', block, re.M))
+        # 有些處理器要 await 後端（忠誠加減），寫成 `kind: async (…) =>`。
+        return set(re.findall(r'^  ([a-z_]+): (?:async )?\(', block, re.M))
 
     def test_every_kind_the_backend_queues_has_a_frontend_handler(self):
         queued = self._queued_kinds()
@@ -17356,6 +17418,626 @@ class NpcEventCardsComeFirstTests(unittest.TestCase):
         after = engine.state["event_draw_index"]
         drawn = len((engine.state.get("pending_events") or {}).get("cards") or [])
         self.assertEqual(after - before, drawn, "序號只能跟著真的抽出去的張數走")
+
+
+class BackendIsTheOnlyEngineTests(unittest.TestCase):
+    """後端是唯一的計算引擎，前端只呈現。
+
+    這一組守的是「前端不准自己有一份」。做法一律是**全檔搜字串**：只要那個公式、
+    那張表、那個裸數字回到前端，就紅。比對兩邊算出同一個值的做法已經廢掉——
+    那不是單一來源，那是兩份規則加一個看門的。
+    """
+
+    # 前端不准再出現的東西：規則公式的片段、規則表名、以及規則數字的字面值。
+    FORBIDDEN = {
+        "策反公式": ("0.45 - ", "* 1.25", "Math.min(0.60"),
+        "抗策反表": ("DEFECTION_RESISTANCE_TRAITS", "defectionResistance"),
+        "忠誠算式": ("relativePower", "battleLoss", "traitLoyaltyAdjustment"),
+        "技能失效判準表": ("RELATION_DISABLED_TRAITS = {",),
+        "規則數字的第二份": ("MAX_HAND_SIZE = 6", "DEFAULT_FUNCTION_CARD_DRAW_COST",
+                             "ENGINEERING_FALLBACK", "const FORCED_MARCH = {",
+                             "army_force_cap || 100", "tiles_per_turn || 2",
+                             "factory_cost_per_gun_boat || 5", "gun_boat?.hp || 30"),
+    }
+
+    def test_the_frontend_keeps_no_copy_of_any_backend_rule(self):
+        for label, fragments in self.FORBIDDEN.items():
+            for fragment in fragments:
+                self.assertNotIn(fragment, FRONTEND_SOURCE,
+                                 f"{label}：前端又出現「{fragment}」")
+
+    def test_rule_numbers_come_from_the_backend_or_show_a_dash(self):
+        """拿不到後端的數字時要顯示「—」，不是端出一個看起來很像真的數字。"""
+        self.assertIn("function backendRule(", FRONTEND_SOURCE)
+        self.assertIn("function showNumber(", FRONTEND_SOURCE)
+        for getter in ("function functionCardDrawCost", "function functionCardMaxHandSize",
+                       "function armyForceCap", "function forcedMarchRules",
+                       "function engineeringRules"):
+            body = FRONTEND_SOURCE[FRONTEND_SOURCE.index(getter):]
+            body = body[:body.index("\n}") + 2]
+            self.assertNotRegex(body, r"\|\|\s*\d", f"{getter} 還留著寫死的退路值")
+
+    def test_every_rule_number_the_ui_shows_is_exported_by_the_backend(self):
+        """畫面要用的規則數字，後端都得送出來——不然前端只能自己編。"""
+        engine = GameEngine(seed=1)
+        boot = engine.bootstrap()
+        for path in (("features", "function_card_draw_cost"),
+                     ("features", "function_card_draw_factory_cost"),
+                     ("features", "function_card_purchase_limit"),
+                     ("features", "function_card_max_hand_size"),
+                     ("features", "army_force_cap"),
+                     ("features", "unit_force_points"),
+                     ("features", "forced_march"),
+                     ("engineering", "pontoon_bridge"),
+                     ("navy_system", "move"),
+                     ("navy_system", "repair")):
+            node = boot
+            for key in path:
+                self.assertIn(key, node, ".".join(path))
+                node = node[key]
+
+    def test_the_snapshot_carries_every_derived_value_the_ui_renders(self):
+        """忠誠、失效技能、已解算價目——畫面要顯示的都得在後端算好隨狀態送出。"""
+        engine = GameEngine(seed=1)
+        snapshot = engine.snapshot()
+        for player, payload in snapshot["players"].items():
+            for key in ("disabled_traits", "resolved_recruit_costs", "resolved_navy_costs"):
+                self.assertIn(key, payload, f"{player} 少了 {key}")
+        self.assertIn("quellable_unrest", snapshot)
+        server_source = (REPO_ROOT / "backend" / "server.py").read_text(encoding="utf-8")
+        for key in ('"loyalty": ENGINE.loyalty_report',
+                    '"navy_outlook": ENGINE.navy_outlook',
+                    '"railway_access": ENGINE.railway_access'):
+            self.assertIn(key, server_source, f"shared-state 沒送 {key}")
+
+    def test_disabled_traits_follow_the_backend_table(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["F"]
+        payload["foreign_relations"]["su"] = -10
+        self.assertEqual(engine.disabled_traits("F"), [])
+        payload["foreign_relations"]["su"] = 9
+        self.assertEqual(engine.disabled_traits("F"),
+                         ["anticommunist_vanguard", "white_russian_mercenaries"])
+        from backend.combat_modifiers import RELATION_DISABLED_TRAITS
+        self.assertEqual(set(engine.disabled_traits("F")), set(RELATION_DISABLED_TRAITS))
+
+    def test_the_defection_quote_reads_the_loyalty_from_the_snapshot(self):
+        """突變測試逃掉過一次：報價把 loyalty_report 換成 {} 也沒人紅。
+
+        忠誠越高越難策反、也越貴——所以同一支部隊換一個忠誠，報價就得跟著動。
+        """
+        engine = GameEngine(seed=3)
+
+        def quote(loyalty):
+            tactical = {
+                "armies": {"W-1": {"generalId": "wu_peifu", "faction": "W", "status": "active",
+                                   "units": {"infantry": 10}}},
+                "generalTrees": {"W": {"generals": {
+                    "wu_peifu": {"id": "wu_peifu", "loyalty": loyalty, "traits": []}}}},
+                "generalOwners": {"wu_peifu": "W"}, "loyaltyOverrides": {},
+            }
+            return engine.defection_quote("wu_peifu", tactical)
+
+        low, high = quote(2), quote(9)
+        self.assertEqual(low["loyalty"], engine.loyalty_report(
+            {"armies": {"W-1": {"generalId": "wu_peifu", "faction": "W", "status": "active",
+                                "units": {"infantry": 10}}},
+             "generalTrees": {"W": {"generals": {
+                 "wu_peifu": {"id": "wu_peifu", "loyalty": 2, "traits": []}}}},
+             "generalOwners": {"wu_peifu": "W"}, "loyaltyOverrides": {}})["wu_peifu"]["value"],
+            "報價的忠誠必須就是 loyalty_report 算出來的那一個")
+        self.assertNotEqual(low["loyalty"], high["loyalty"], "忠誠沒有從快照讀進來")
+        self.assertLess(high["chance"], low["chance"], "忠誠高就該更難策反")
+        self.assertGreater(high["cost"], low["cost"], "忠誠高就該更貴")
+
+    def test_the_snapshot_disabled_traits_are_real_not_an_empty_placeholder(self):
+        """突變測試逃掉過一次：snapshot 裡塞死 [] 也沒人紅。"""
+        engine = GameEngine(seed=3)
+        engine.state["players"]["F"]["foreign_relations"]["su"] = 9
+        payload = engine.snapshot()["players"]["F"]
+        self.assertEqual(payload["disabled_traits"], engine.disabled_traits("F"))
+        self.assertNotEqual(payload["disabled_traits"], [], "snapshot 沒把真的名單送出去")
+        engine.state["players"]["F"]["foreign_relations"]["su"] = -10
+        self.assertEqual(engine.snapshot()["players"]["F"]["disabled_traits"], [])
+
+    def test_the_rule_getters_return_the_backend_value_and_nothing_else(self):
+        """突變測試逃掉過一次：`return 6;` 這種寫死法躲得過「|| 數字」的檢查。
+
+        改成逐個函式檢查它的函式體裡除了 backendRule／backendNumber 之外
+        不准出現任何裸數字。
+        """
+        getters = ("functionCardDrawCost", "functionCardDrawFactoryCost",
+                   "functionCardMaxHandSize", "armyForceCap")
+        for name in getters:
+            body = FRONTEND_SOURCE[FRONTEND_SOURCE.index(f"function {name}("):]
+            body = body[body.index("{") + 1:]
+            body = body[:body.index("\n}")]
+            self.assertRegex(body, r"backend(Rule|Number)\(",
+                             f"{name} 沒有跟後端要值")
+            self.assertNotRegex(body, r"(?<![\w.\[])\d+(?![\w\]])",
+                                f"{name} 的函式體裡出現了寫死的數字")
+
+    def test_the_ui_probe_harness_exists_and_can_move_every_number(self):
+        """隨機調後端數字看畫面跟不跟得動的那支腳本，本身也要在。"""
+        harness = REPO_ROOT / "scripts" / "checks" / "backend_drives_ui_e2e.py"
+        launcher = REPO_ROOT / "scripts" / "checks" / "_probe_server.py"
+        self.assertTrue(harness.exists() and launcher.exists())
+        text = launcher.read_text(encoding="utf-8")
+        for knob in ("function_card_max_hand_size", "function_card_draw_cost",
+                     "army_force_cap", "unit_force_points", "forced_march",
+                     "ENGINEERING_OPERATIONS", "DEFECTION_RESISTANCE_TRAITS",
+                     "factory_cost_per_gun_boat"):
+            self.assertIn(knob, text, f"探針沒有動到 {knob}")
+        # 產品程式碼裡不准有測試旗標——探針只在啟動器裡改值。
+        for rel in ("backend/card_engine.py", "backend/server.py", "frontend/app.js"):
+            self.assertNotIn("NE_UI_PROBE", (REPO_ROOT / rel).read_text(encoding="utf-8"), rel)
+
+
+class LoyaltyDeltasActuallyLandTests(unittest.TestCase):
+    """功能卡與事件卡的忠誠加減。
+
+    先前這一段在前端，而且加在**畫面顯示值**上——顯示值已經含了相對實力與戰損的
+    修正，後端拿它當基礎再套一次，於是「忠誠 +2」在強軍身上縮成 +1、
+    在弱軍身上直接變成 **+0**，卡等於完全沒效果。加減現在只在後端做，加的是基礎值。
+    """
+
+    def _tactical(self, base=7):
+        return {
+            "armies": {
+                # 一支很大、一支很小——相對實力的修正一正一負，
+                # 正好照出「加在顯示值上」與「加在基礎值上」的差別。
+                "W-1": {"generalId": "wu_peifu", "faction": "W", "status": "active",
+                        "units": {"infantry": 30, "cavalry": 5, "machine_gun": 2, "artillery": 2}},
+                "W-2": {"generalId": "jin_yun_e", "faction": "W", "status": "active",
+                        "units": {"infantry": 6}},
+            },
+            "generalTrees": {"W": {"generals": {
+                "wu_peifu": {"id": "wu_peifu", "loyalty": base, "traits": []},
+                "jin_yun_e": {"id": "jin_yun_e", "loyalty": base, "traits": []}}}},
+            "generalOwners": {"wu_peifu": "W", "jin_yun_e": "W"},
+            "loyaltyOverrides": {}, "loyaltyBaselineArmyUnits": {},
+        }
+
+    def test_a_plus_two_really_raises_the_base_by_two(self):
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        overrides = engine.apply_loyalty_deltas([{"owner": "W", "amount": 2}], tactical)
+        self.assertEqual(overrides, {"wu_peifu": 9, "jin_yun_e": 9},
+                         "加的必須是基礎值 7 → 9")
+
+    def test_the_weak_army_case_that_used_to_come_out_as_zero(self):
+        """靳雲鶚（小部隊、相對實力 −2）先前吃到的實際變化是 +0。"""
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        before = engine.loyalty_report(tactical)["jin_yun_e"]["value"]
+        overrides = engine.apply_loyalty_deltas([{"owner": "W", "amount": 2}], tactical)
+        after = engine.loyalty_report({**tactical, "loyaltyOverrides": overrides})["jin_yun_e"]["value"]
+        self.assertEqual(after - before, 2, f"忠誠 +2 實際只變了 {after - before}")
+
+    def test_a_minus_one_really_lowers_it(self):
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        before = engine.loyalty_report(tactical)["jin_yun_e"]["value"]
+        overrides = engine.apply_loyalty_deltas([{"owner": "W", "amount": -1}], tactical)
+        after = engine.loyalty_report({**tactical, "loyaltyOverrides": overrides})["jin_yun_e"]["value"]
+        self.assertEqual(after - before, -1)
+
+    def test_deltas_stack_on_the_previous_override_not_on_the_base(self):
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        first = engine.apply_loyalty_deltas([{"owner": "W", "amount": 2}], tactical)
+        second = engine.apply_loyalty_deltas(
+            [{"owner": "W", "amount": 2}], {**tactical, "loyaltyOverrides": first})
+        self.assertEqual(second["jin_yun_e"], 10, "第二次要從 9 再加，不是從 7 重來")
+
+    def test_the_override_is_clamped_between_one_and_ten(self):
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        self.assertEqual(engine.apply_loyalty_deltas(
+            [{"owner": "W", "amount": 99}], tactical)["wu_peifu"], 10)
+        self.assertEqual(engine.apply_loyalty_deltas(
+            [{"owner": "W", "amount": -99}], tactical)["wu_peifu"], 1)
+
+    def test_absolute_and_exempt_generals_are_left_alone(self):
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        tactical["generalTrees"]["W"]["generals"]["wu_peifu"]["absolute_loyalty"] = True
+        tactical["generalTrees"]["W"]["generals"]["jin_yun_e"]["loyalty_exempt"] = True
+        self.assertEqual(engine.mutable_loyalty_generals("W", tactical), [])
+        self.assertEqual(engine.apply_loyalty_deltas([{"owner": "W", "amount": 2}], tactical), {})
+
+    def test_using_a_loyalty_card_returns_the_new_overrides(self):
+        """功能卡打出去之後，回應裡要帶著新的 loyaltyOverrides 讓前端照抄。
+
+        〈國家的干城〉限國民革命軍，所以把那兩位將領放在 N 底下再打。
+        """
+        engine = GameEngine(seed=3)
+        card = next(c for c in engine.data["function_cards"]["cards"]
+                    if c.get("mechanic") == "loyalty_all"
+                    and int(c.get("loyalty_delta", 0)) > 0
+                    and engine._card_allowed_for_player(c["id"], "N"))
+        tactical = self._tactical()
+        tactical["generalTrees"] = {"N": tactical["generalTrees"]["W"]}
+        tactical["generalOwners"] = {"wu_peifu": "N", "jin_yun_e": "N"}
+        for army in tactical["armies"].values():
+            army["faction"] = "N"
+        engine._tactical = tactical
+        payload = engine.state["players"]["N"]
+        payload["treasury"] = 500
+        payload["hand"].append(card["id"])
+        result = engine.use_function("N", card["id"])
+        self.assertTrue(result["loyalty_overrides"], "回應裡沒有新的 overrides")
+        amount = int(card["loyalty_delta"])
+        for general_id, value in result["loyalty_overrides"].items():
+            self.assertEqual(value, min(10, 7 + amount), general_id)
+
+    def test_the_event_channel_resolves_targets_and_overrides_in_the_backend(self):
+        engine = GameEngine(seed=3)
+        tactical = self._tactical()
+        everyone = engine.resolve_loyalty_effect(
+            "loyalty_all", "W", {"amount": 1}, tactical)
+        self.assertEqual(sorted(everyone["picked"]), ["jin_yun_e", "wu_peifu"])
+        self.assertEqual(everyone["overrides"], {"wu_peifu": 8, "jin_yun_e": 8})
+        one = engine.resolve_loyalty_effect(
+            "loyalty_random", "W", {"amount": -1, "count": 1}, tactical)
+        self.assertEqual(len(one["picked"]), 1, "抽籤要在後端做，而且照 count 抽")
+        self.assertEqual(list(one["overrides"]), one["picked"])
+
+    def test_the_random_pick_is_reproducible_from_the_seed(self):
+        """抽籤搬到後端的意義之一：同一顆種子重播結果一致。"""
+        picks = set()
+        for _ in range(5):
+            engine = GameEngine(seed=11)
+            picks.add(tuple(engine.resolve_loyalty_effect(
+                "loyalty_random", "W", {"amount": -1, "count": 1}, self._tactical())["picked"]))
+        self.assertEqual(len(picks), 1, f"同一顆種子抽出不同結果：{picks}")
+
+    def test_the_frontend_only_copies_what_the_backend_sends(self):
+        self.assertNotIn("function adjustGeneralLoyalty", FRONTEND_SOURCE,
+                         "前端又自己算忠誠加減了")
+        self.assertIn("function applyLoyaltyOverrides", FRONTEND_SOURCE)
+        for handler in ("loyalty_all", "loyalty_random"):
+            block = FRONTEND_SOURCE[FRONTEND_SOURCE.index(f"  {handler}: async ("):]
+            block = block[:block.index("\n  },")]
+            self.assertIn('/api/loyalty-effect', block, f"{handler} 沒跟後端要結果")
+            self.assertNotIn("Math.random", block, f"{handler} 還在前端抽籤")
+
+
+class FunctionCardSummaryTests(unittest.TestCase):
+    """出牌摘要不能把生效的卡說成「無效果，浪費一次出牌」。"""
+
+    def _summary_body(self):
+        body = FRONTEND_SOURCE[:FRONTEND_SOURCE.index("：已生效（本卡的效果沒有可顯示的摘要）。")]
+        return body[body.rindex("function "):]
+
+    def test_every_result_field_the_backend_returns_has_a_description(self):
+        engine_source = (REPO_ROOT / "backend" / "card_engine.py").read_text(encoding="utf-8")
+        start = engine_source.index('            "card": card,\n            "target_general_id"')
+        block = engine_source[start:engine_source.index('"state": self.snapshot(),', start)]
+        # loyalty_overrides 不是一種效果，是「忠誠加減算完之後的新基礎值」，
+        # 給前端照抄用；摘要描述的是 loyalty_delta / _all / _swings 那幾個。
+        fields = set(re.findall(r'"([a-z_]+)":', block)) - {"card", "state", "loyalty_overrides"}
+        body = self._summary_body()
+        missing = sorted(f for f in fields if f"action.{f}" not in body)
+        self.assertEqual(missing, [],
+                         f"這些效果生效了卻沒有摘要，畫面會說「無效果」：{missing}")
+
+    def test_the_fallback_no_longer_claims_the_card_was_wasted(self):
+        self.assertNotIn("無效果，浪費一次出牌", FRONTEND_SOURCE,
+                         "摘要寫不出來不等於卡沒效果——後端已經扣過錢了")
+
+    def test_each_undescribed_field_has_its_own_guard_branch(self):
+        """突變測試逃掉過一次：把 `if (action.railway_effect) {` 改成 `if (false) {`，
+        而字串 `action.railway_effect` 還在區塊裡，只檢查字串的測試就抓不到。
+        所以改成檢查**判斷式本身**。
+        """
+        body = self._summary_body()
+        for field in ("railway_effect", "port_demolition", "cabinet_entry", "exile_recruit"):
+            self.assertIn(f"if (action.{field}) {{", body,
+                          f"{field} 的摘要分支被拆掉了")
+        self.assertIn("for (const change of action.relation_side_effects || [])", body)
+
+    def test_the_railway_sabotage_result_carries_what_the_summary_needs(self):
+        """崩鐵玩家：先前這張卡打出去，摘要一律說「無效果，浪費一次出牌」。"""
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["F"]
+        payload["treasury"] = 500
+        payload["factory_points"] = 500
+        card = next(c for c in engine.data["function_cards"]["cards"]
+                    if c.get("mechanic") == "railway_sabotage")
+        payload["hand"].append(card["id"])
+        railway = (card.get("railways") or [
+            line["name"] for line in engine.data["strategic_map"]["railroads"]])[0]
+        result = engine.use_function("F", card["id"], target_railway=railway)
+        effect = result["railway_effect"]
+        self.assertTrue(effect)
+        for field in ("railway", "remaining_turns", "repair_factory_cost"):
+            self.assertIn(field, effect, field)
+        self.assertIn("action.railway_effect", self._summary_body())
+
+
+class CityDisruptionTagsTests(unittest.TestCase):
+    """被暴動／停產壓著的城市，地格資訊欄要看得到是哪一種、還差多少。"""
+
+    @staticmethod
+    def _own(engine, province, code):
+        for city in engine.data["strategic_map"]["cities"]:
+            if city.get("province") == province:
+                engine.state["city_owners"][city["id"]] = code
+
+    def _engine(self):
+        engine = GameEngine(seed=3)
+        self._own(engine, "江蘇", "N")
+        payload = engine.state["players"]["F"]
+        payload["treasury"] = 500
+        payload["foreign_relations"]["su"] = 8
+        payload["hand"] += ["du_yuesheng_gamble", "red_army_uprising", "communist_riot"]
+        engine.use_function("F", "du_yuesheng_gamble", target_owner="N", target_province="江蘇")
+        engine.use_function("F", "red_army_uprising", target_owner="W")
+        engine.use_function("F", "communist_riot", target_owner="S")
+        return engine
+
+    def test_every_disrupted_city_is_in_the_report(self):
+        engine = self._engine()
+        report = engine.city_disruption_report()
+        listed = {city_id for city_id in report}
+        affected = {city_id for effect in engine.state["city_output_effects"]
+                    for city_id in (effect.get("city_ids") or [])}
+        self.assertEqual(listed, affected, "有城市被壓著卻不在報告裡")
+        self.assertTrue(affected)
+
+    def test_the_three_riot_kinds_report_the_right_shape(self):
+        engine = self._engine()
+        report = engine.city_disruption_report()
+        seen = {}
+        for entries in report.values():
+            for entry in entries:
+                seen.setdefault(entry["kind"], entry)
+        self.assertEqual(sorted(seen), ["communist_riot", "qing_gang_riot", "red_army_uprising"])
+        self.assertEqual(seen["qing_gang_riot"]["label"], "黑幫暴動")
+        self.assertEqual(seen["red_army_uprising"]["label"], "紅軍起義")
+        self.assertEqual(seen["communist_riot"]["label"], "共黨暴動")
+        for kind in ("qing_gang_riot", "red_army_uprising"):
+            self.assertEqual(seen[kind]["mode"], "garrison")
+            self.assertIn("progress", seen[kind])
+            self.assertGreaterEqual(seen[kind]["required_turns"], 2)
+        self.assertEqual(seen["communist_riot"]["mode"], "timed")
+        self.assertEqual(seen["communist_riot"]["elapsed_turns"], 0)
+        self.assertEqual(seen["communist_riot"]["total_turns"],
+                         seen["communist_riot"]["remaining_turns"])
+
+    def test_the_garrison_progress_moves_with_the_backend(self):
+        engine = self._engine()
+        riot = next(e for e in engine.state["city_output_effects"]
+                    if e.get("kind") == "qing_gang_riot")
+        city_id = riot["city_ids"][0]
+        self.assertEqual(engine.city_disruption_report()[city_id][0]["progress"], 0)
+        engine.next_turn(active_player="F", riot_garrisons={riot["id"]: True}, force=True)
+        after = engine.city_disruption_report().get(city_id)
+        self.assertTrue(after, "駐紮一回合之後這座城還在暴動中")
+        self.assertEqual(after[0]["progress"], 1, "進度沒有跟著駐軍走")
+
+    def test_the_red_army_progress_is_per_city(self):
+        """紅軍起義的鎮壓進度是**逐城**記的（黑幫暴動是整省一個計數）。
+
+        突變測試逃掉過一次：把逐城取值改成一律 0 也沒人紅。
+        """
+        engine = self._engine()
+        rising = next(e for e in engine.state["city_output_effects"]
+                      if e.get("kind") == "red_army_uprising")
+        first, second = rising["city_ids"][0], rising["city_ids"][1]
+        rising["garrison_progress"] = {first: 1, second: 0}
+        report = engine.city_disruption_report()
+        self.assertEqual(report[first][0]["progress"], 1, "駐滿一回合的那座城進度沒算到")
+        self.assertEqual(report[second][0]["progress"], 0)
+
+    def test_the_report_rides_along_in_the_snapshot(self):
+        engine = self._engine()
+        self.assertEqual(engine.snapshot()["city_disruptions"], engine.city_disruption_report())
+
+    def test_the_frontend_reads_the_report_instead_of_scanning_effects(self):
+        self.assertIn("state?.city_disruptions?.[cityId]", FRONTEND_SOURCE)
+        block = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function cityDisruptions("):]
+        block = block[:block.index("\n}")]
+        self.assertNotIn("city_output_effects", block, "前端又自己掃 city_output_effects 了")
+        self.assertIn("tile-tag-disruption", FRONTEND_SOURCE, "地格資訊欄沒有癱瘓標籤")
+
+
+class IntelAndPoliceCardsTests(unittest.TestCase):
+    """情報網 / 情報局 / 警政單位 / 黑幫暴動：四者互不相干，卡面也要說對。"""
+
+    def _cards(self):
+        return {c["id"]: c for c in
+                json.loads(FUNCTION_CARDS_PATH.read_text(encoding="utf-8"))["cards"]}
+
+    def test_the_intel_network_card_names_the_right_blocker(self):
+        """擋情報網的是情報局，不是警政單位。卡面先前寫錯了對象。"""
+        text = self._cards()["intel_network"]["effect"]
+        self.assertIn("情報局", text)
+        self.assertNotIn("警政", text)
+
+    def test_the_two_cards_no_longer_share_a_confusable_mechanic_name(self):
+        cards = self._cards()
+        self.assertEqual(cards["police_system"]["mechanic"], "counter_intel")
+        self.assertEqual(cards["police_precinct"]["mechanic"], "gang_riot_shield")
+
+    def test_the_counter_intel_flag_blocks_only_the_intel_network(self):
+        engine = GameEngine(seed=3)
+        payload = engine.state["players"]["W"]
+        payload["treasury"] = 500
+        payload["hand"].append("police_system")
+        engine.use_function("W", "police_system")
+        observer = engine.state["players"]["F"]
+        observer["timed_effects"].append(
+            {"kind": "intel_network", "target_province": "直隸", "remaining_turns": 1})
+        report = engine.intel_report("F")
+        self.assertIn("直隸", report["intel_provinces"])
+        self.assertIn("W", report["counter_intel_factions"])
+        # 飛艇無視反情報
+        observer["timed_effects"].append(
+            {"kind": "aerial_recon", "target_provinces": ["山東"], "remaining_turns": 1})
+        self.assertIn("山東", engine.intel_report("F")["aerial_provinces"])
+
+    def test_aerial_recon_sees_through_counter_intel(self):
+        """飛艇在雲上照相，情報局擋不住——這條先前沒有任何測試在守。"""
+        engine = GameEngine(seed=3)
+        engine.state["players"]["W"]["timed_effects"].append(
+            {"kind": "counter_intel", "remaining_turns": 3, "owners": ["W"]})
+        observer = engine.state["players"]["F"]
+        observer["timed_effects"].append(
+            {"kind": "intel_network", "target_province": "直隸", "remaining_turns": 1})
+        observer["timed_effects"].append(
+            {"kind": "aerial_recon", "target_provinces": ["山東"], "remaining_turns": 1})
+        report = engine.intel_report("F")
+        self.assertIn("W", report["counter_intel_factions"], "情報局要擋得住情報網")
+        self.assertIn("山東", report["aerial_provinces"], "飛艇照到的省要照樣回報")
+        # 前端的判定順序：飛艇 > 情報局 > 情報網。這裡守的是那個順序沒有被拿掉。
+        block = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function provinceRevealedTo("):]
+        block = block[:block.index("\n}")]
+        self.assertLess(block.index("aerial_provinces"), block.index("counter_intel_factions"),
+                        "飛艇必須排在情報局之前判，否則情報局會把飛艇也擋掉")
+        self.assertIn("intel.aerial_provinces.includes(province)) return true", block)
+
+    def test_the_police_precinct_shield_blocks_only_gang_riots(self):
+        """警政單位擋的是黑幫暴動，不是共黨暴動、紅軍起義，更不是情報網。"""
+        engine = GameEngine(seed=3)
+        for city in engine.data["strategic_map"]["cities"]:
+            if city.get("province") == "河南":
+                engine.state["city_owners"][city["id"]] = "F"
+        payload = engine.state["players"]["F"]
+        payload["treasury"] = 500
+        payload["hand"].append("police_precinct")
+        engine.use_function("F", "police_precinct", target_province="河南")
+        self.assertTrue(engine._gang_riot_shielded("F", "河南", "qing_gang_riot"))
+        for mechanic in ("communist_riot", "red_army_uprising", "security_event"):
+            self.assertFalse(engine._gang_riot_shielded("F", "河南", mechanic), mechanic)
+        self.assertEqual(engine.intel_report("F")["counter_intel_factions"], [],
+                         "警政單位不該擋情報網")
+
+    def test_the_gang_event_cards_respect_the_precinct_and_nothing_else_does(self):
+        cards = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        respecting = sorted(c["name"] for c in cards
+                            if "respect_police" in json.dumps(c, ensure_ascii=False))
+        self.assertEqual(respecting, ["會黨滋事", "黑幫動亂"])
+        precinct = self._cards()["police_precinct"]["effect"]
+        for name in respecting:
+            self.assertIn(name, precinct, f"警政單位擋得到〈{name}〉，卡面卻沒寫")
+
+    def test_the_visibility_rule_lives_in_the_backend(self):
+        block = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function provinceRevealedTo("):]
+        block = block[:block.index("\n}")]
+        self.assertIn("state?.intel?.[observer]", block)
+        for fragment in ('activeTimedEffects(observer, "aerial_recon")',
+                         'activeTimedEffects(observer, "intel_network")',
+                         "factionHasPoliceProtection"):
+            self.assertNotIn(fragment, FRONTEND_SOURCE, f"偵查規則又回到前端：{fragment}")
+
+
+class BlockingAndNpcTransferTests(unittest.TestCase):
+    """鐵路阻截、急行軍支援、NPC 轉屬重編番號、吞併類地盤易主。
+
+    行為本身由 scripts/checks/blocking_and_npc_transfer_e2e.py 在真前端上驗；
+    這裡守的是「規則沒有被搬回兩份」與「沒有再冒出沒人讀的狀態字串」。
+    """
+
+    def _block(self, name: str) -> str:
+        start = FRONTEND_SOURCE.index(f"function {name}(")
+        return FRONTEND_SOURCE[start:FRONTEND_SOURCE.index("\n}", start)]
+
+    def test_rail_and_forced_march_share_one_blocking_rule(self):
+        # 阻截判定只能有一份。兩條路徑都得走 transitBlockedAt，
+        # 不能各自再抄一段「這格有沒有敵軍」。
+        for name in ("railwayPath", "forcedMarchPath"):
+            self.assertIn("transitBlockedAt(", self._block(name),
+                          f"{name} 沒有走共用的阻截判定")
+        self.assertEqual(FRONTEND_SOURCE.count("function transitBlockedAt("), 1)
+        self.assertEqual(FRONTEND_SOURCE.count("function blockingArmyAtCell("), 1)
+
+    def test_the_battle_support_range_is_the_movement_range(self):
+        # 支援範圍不能自己再寫一套格數，要問 forcedMarchPath。
+        block = self._block("armyCanReachBattleCell")
+        self.assertIn("forcedMarchPath(", block)
+        self.assertNotIn("cellWithinRange", block)
+        self.assertIn("armyCanReachBattleCell(", self._block("joinableBattleForArmy"))
+
+    def test_npc_transfers_go_through_one_renumbering_path(self):
+        # 三個 NPC 交辦處理器都得走同一個重編函式，不能各自寫一份 army.faction = ...
+        block = FRONTEND_SOURCE[FRONTEND_SOURCE.index("npc_general_transferred:"):
+                                FRONTEND_SOURCE.index("loyalty_all: async")]
+        for handler in ("npc_general_transferred", "npc_general_recruited",
+                        "npc_faction_absorbed"):
+            section = block[block.index(f"{handler}:"):]
+            section = section[:section.index("\n  },")]
+            self.assertIn("reassignGeneralAndArmy(", section,
+                          f"{handler} 沒有走重編番號／換將領樹的共用路徑")
+        self.assertIn("formatArmyDesignator(nextAvailableArmyNumber(",
+                      self._block("reassignGeneralAndArmy"))
+
+    def test_annexed_cities_are_painted_on_the_map(self):
+        # 後端把城市記在 city_owners，地圖畫的是 city.faction 與 cell.fac。
+        # 吞併類的兩個處理器都要把後端算好的名單畫上去。
+        block = FRONTEND_SOURCE[FRONTEND_SOURCE.index("npc_faction_absorbed:"):
+                                FRONTEND_SOURCE.index("loyalty_all: async")]
+        self.assertEqual(block.count("applyBackendCityTransfers(effect.cities"), 2)
+        painter = self._block("applyBackendCityTransfers")
+        self.assertIn("cell.fac = faction", painter)
+        self.assertIn("transferCityEconomy(", painter)
+        # 這條路不該再打一次佔領 API——城已經是後端自己轉的。
+        self.assertNotIn("/api/capture-city", painter)
+
+    def test_no_army_status_that_nothing_recognises(self):
+        # 「寫了但沒人讀」的狀態字串是這個專案反覆出事的地方：
+        # 被併掉的部隊先前掛 "merged"，前後端都沒有一處認得。
+        known = set(GameEngine.DEAD_ARMY_STATUSES) | {"active"}
+        engine_source = (REPO_ROOT / "backend" / "card_engine.py").read_text(encoding="utf-8")
+        written = set(re.findall(r'army\["status"\]\s*=\s*"([a-z_]+)"', engine_source))
+        self.assertTrue(written, "抓不到後端寫部隊狀態的地方，這條守門等於沒跑")
+        self.assertFalse(written - known,
+                         f"後端寫了沒人認得的部隊狀態：{written - known}")
+        # 前端把「已經不在場上」的名單抄了好幾份；後端寫的每個退場狀態
+        # 都必須被每一份抄本認得，否則空殼部隊會留在地圖上。
+        filters = re.findall(r'\[("(?:jailed|killed|destroyed|merged)"(?:,\s*"[a-z_]+")*)\]\.includes\(',
+                             FRONTEND_SOURCE)
+        self.assertTrue(filters, "找不到前端的退場狀態清單")
+        for raw in filters:
+            recognised = set(re.findall(r'"([a-z_]+)"', raw))
+            for status in written - {"active"}:
+                self.assertIn(status, recognised,
+                              f"前端有一份退場清單不認得後端寫的 {status}：{raw}")
+        self.assertNotIn('"merged"', FRONTEND_SOURCE,
+                         "前端還留著沒人讀的 merged 狀態")
+        self.assertNotIn('"merged"', engine_source,
+                         "後端還留著沒人讀的 merged 狀態")
+
+    def test_the_merge_retires_the_absorbed_army_for_real(self):
+        engine = GameEngine(seed=5)
+        engine.new_game()
+        engine._tactical = {
+            "armies": {
+                "C-1": {"generalId": "liu_xiang", "faction": "C", "status": "active",
+                        "units": {"infantry": 8, "cavalry": 2,
+                                  "machine_gun": 1, "artillery": 1}},
+                "Q-1": {"generalId": "qian_local_militia", "faction": "Q",
+                        "status": "active",
+                        "units": {"infantry": 8, "cavalry": 2,
+                                  "machine_gun": 1, "artillery": 1}},
+            },
+            "generalOwners": {}, "generalTrees": {}, "jailedGenerals": [],
+        }
+        card = next(c for c in json.loads(
+            EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+            if c["id"] == "liu_xiang_annexes_qian")
+        applied = engine._apply_event_payload(card["apply"],
+                                              players=list(engine.state["players"]),
+                                              card=card)
+        entry = next(a for a in applied if a["kind"] == "npc_faction_merge")
+        qian = engine._tactical["armies"]["Q-1"]
+        self.assertIn(qian["status"], GameEngine.DEAD_ARMY_STATUSES)
+        self.assertEqual(GameEngine._force_of(qian["units"]), 0)
+        # 這支部隊在後端的「還活著的 NPC 部隊」名單裡也必須消失。
+        self.assertNotIn("Q-1", engine._living_npc_armies(engine._tactical))
+        for city_id in entry["cities"]:
+            self.assertEqual(engine.state["city_owners"][city_id], "C")
 
 
 if __name__ == "__main__":

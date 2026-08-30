@@ -17,6 +17,8 @@
 | `mutate_safe.py` | 突變測試的骨架（安全版，見下） |
 | `mutate_npc_unit_delta.py` | 批次一的 12 個突變體 |
 | `mutate_npc_force_scale.py` | 批次二 A 的 10 個突變體 |
+| `blocking_and_npc_transfer_e2e.py` | Playwright 開真前端 29 關：鐵路與急行軍被敵軍阻截、急行軍支援 2 格外的戰鬥、NPC 轉屬／招募／歸附重編番號與換將領樹、吞併類的城市與地格真的易主 |
+| `mutate_blocking_and_npc_transfer.py` | 上面那一輪的 14 個突變體。**判定器是 e2e 不是單元測試**——前端行為靠讀原始碼的字串斷言擋不住 `if (false) {` |
 | `fingerprint.py` | 算「整體指紋」，用來確認 clone 與使用者本機完全一致 |
 
 ## 怎麼跑
@@ -31,6 +33,7 @@ python3 scripts/checks/npc_scale_replay.py
 pkill -f "backend[.]server"                       # 這行必須自己一行
 python3 scripts/checks/npc_delta_e2e.py
 python3 scripts/checks/npc_scale_e2e.py
+python3 scripts/checks/blocking_and_npc_transfer_e2e.py   # 期望 29/29
 
 python3 scripts/checks/fingerprint.py .           # 整體指紋
 ```

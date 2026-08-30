@@ -83,9 +83,26 @@ let selectedArmyId = null;
 let selectedNavyId = null;
 const resolvedArmyIds = new Set();
 const resolvedNavyIds = new Set();
-const MAX_HAND_SIZE = 6;
-const DEFAULT_FUNCTION_CARD_DRAW_COST = 5;
-const DEFAULT_FUNCTION_CARD_DRAW_FACTORY_COST = 5;
+// 規則數字**一律**來自後端（bootstrap.features / bootstrap.navy_system / …）。
+// 先前每一處都寫成 `後端值 || 字面值`，那個字面值就是第二份規則：後端改了、
+// bootstrap 還沒到或欄位改名，畫面就安靜地端出舊數字，而且沒有任何東西會叫。
+// 現在拿不到就回 null，畫面顯示「—」。
+function backendRule(path, { required = true } = {}) {
+  const value = path.split(".").reduce((node, key) => (node == null ? node : node[key]), bootstrap);
+  if (value === undefined || value === null) {
+    if (required && bootstrap) console.warn(`[backendRule] 後端沒有送來 ${path}`);
+    return null;
+  }
+  return value;
+}
+function backendNumber(path) {
+  const value = backendRule(path);
+  return value === null ? null : Number(value);
+}
+// 顯示用：拿不到就是「—」，不是一個看起來很像真的數字。
+function showNumber(value, suffix = "") {
+  return value === null || value === undefined ? "—" : `${value}${suffix}`;
+}
 let foreignTab = "warlords";
 let dealTarget = null;
 let moveMode = false;
@@ -576,20 +593,14 @@ const PENDING_EFFECT_HANDLERS = {
 
   // 隨機幾位可變忠誠將領各加減忠誠（14.9 地方官貪腐選整頓：隨機 2 位 −1）。
   // 由前端抽，因為將領樹住在前端；後端只說「抽幾位、加減多少」。
-  loyalty_random: (faction, effect) => {
-    const amount = Number(effect.amount || 0);
-    const want = Number(effect.count || 0);
-    if (!amount || !want) return [];
-    const ids = mutableGeneralIdsForOwner(faction);
-    if (!ids.length) return [];
-    const pool = [...ids];
-    const picked = [];
-    while (picked.length < Math.min(want, pool.length)) {
-      picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    }
-    picked.forEach((generalId) => adjustGeneralLoyalty(generalId, amount));
-    const sign = amount > 0 ? `+${amount}` : `${amount}`;
-    const names = picked.map((id) => generalById(id)?.name || id).join("、");
+  loyalty_random: async (faction, effect) => {
+    // 抽誰、加多少、算成什麼 override 全在後端（抽籤用引擎的亂數，重播才一致）。
+    const resolved = await api("/api/loyalty-effect",
+      { kind: "loyalty_random", faction, effect });
+    const picked = applyLoyaltyOverrides(resolved.overrides);
+    if (!picked.length) return [];
+    const sign = resolved.amount > 0 ? `+${resolved.amount}` : `${resolved.amount}`;
+    const names = resolved.picked.map((id) => generalById(id)?.name || id).join("、");
     return [`${factionLabel(faction, faction === currentPlayer)}${names} 忠誠 ${sign}`];
   },
 
@@ -617,8 +628,7 @@ const PENDING_EFFECT_HANDLERS = {
     for (const entry of effect.armies || []) {
       const army = armyById(entry.armyId);
       if (!army) continue;
-      army.faction = effect.to_faction;
-      generalOwners[effect.general_id] = effect.to_faction;
+      const designator = reassignGeneralAndArmy(army, effect.general_id, effect.to_faction);
       const spec = effect.relocate;
       let moved = "";
       if (spec) {
@@ -632,7 +642,8 @@ const PENDING_EFFECT_HANDLERS = {
           moved = `，但${city.name}周邊沒有空地格可以進駐`;
         }
       }
-      notes.push(`${effect.general}改投${FACTIONS[effect.to_faction]?.shortName || effect.to_faction}${moved}`);
+      notes.push(`${effect.general}改投${FACTIONS[effect.to_faction]?.shortName || effect.to_faction}`
+        + `，改編為${designator}${moved}`);
     }
     return notes;
   },
@@ -642,28 +653,31 @@ const PENDING_EFFECT_HANDLERS = {
   // 於是錢扣了、贏家也抽出來了，畫面上的部隊卻還掛著原本的旗。
   npc_general_recruited: (_faction, effect) => {
     const notes = [];
+    // 先把將領本人轉過去（就算他名下一支部隊都不剩，名冊也得對）。
+    reassignGeneralAndArmy(null, effect.general_id, effect.owner);
     for (const entry of effect.armies || []) {
       const army = armyById(entry.armyId);
       if (!army) continue;
-      army.faction = effect.owner;
-      notes.push(`${army.designator}改隸${FACTIONS[effect.owner]?.shortName || effect.owner}`);
+      notes.push(`改編為${reassignGeneralAndArmy(army, effect.general_id, effect.owner)}`);
     }
-    if (effect.general_id) generalOwners[effect.general_id] = effect.owner;
     const who = FACTIONS[effect.owner]?.shortName || effect.owner;
     return [`${effect.general}率部歸附${who}` + (notes.length ? `（${notes.join("、")}）` : "")];
   },
 
   // 整個 NPC 陣營歸附玩家（15.13 馬家軍歸附）：部隊原地換旗，地盤一併轉屬。
   npc_faction_absorbed: (_faction, effect) => {
+    const designators = [];
     for (const entry of effect.armies || []) {
       const army = armyById(entry.armyId);
       if (!army) continue;
-      army.faction = effect.owner;
-      if (entry.generalId) generalOwners[entry.generalId] = effect.owner;
+      const designator = reassignGeneralAndArmy(army, entry.generalId, effect.owner);
+      if (designator) designators.push(designator);
     }
+    const cities = applyBackendCityTransfers(effect.cities, effect.owner);
     const owner = FACTIONS[effect.owner]?.shortName || effect.owner;
-    return [`${FACTIONS[effect.faction]?.shortName || effect.faction}全軍歸附${owner}，`
-      + `${(effect.cities || []).length} 座城一併轉屬`];
+    return [`${FACTIONS[effect.faction]?.shortName || effect.faction}全軍歸附${owner}`
+      + (designators.length ? `，改編為${designators.join("、")}` : "")
+      + (cities.length ? `；${cities.join("、")} 等 ${cities.length} 座城一併轉屬` : "")];
   },
 
   // NPC 併 NPC（15.14／15.27 黔軍遭吞併）：被併的部隊清空退場，
@@ -677,22 +691,25 @@ const PENDING_EFFECT_HANDLERS = {
       // 逐鍵歸零，不要寫成 { infantry: 0, ... } 的字面量——那形狀會被
       // UnitForcePointsSourceTests 誤認成前端自己寫死的戰力點表。
       army.units = Object.fromEntries(Object.keys(UNIT_META).map((unit) => [unit, 0]));
-      army.status = "merged";
+      // 退場狀態要用大家都認得的那幾個。先前用的那個字串前後端都沒有一處讀，
+      // 於是空殼部隊頂著 0 兵留在地圖上，看起來就像吞併沒有生效。
+      army.status = "destroyed";
     }
+    const cities = applyBackendCityTransfers(effect.cities, effect.into_faction);
     return [`${FACTIONS[effect.from_faction]?.shortName || effect.from_faction}`
-      + `全軍併入${generalById(effect.into_general_id)?.name || effect.into_general_id}部，`
-      + `${(effect.cities || []).length} 座城轉屬`];
+      + `全軍併入${generalById(effect.into_general_id)?.name || effect.into_general_id}部`
+      + (cities.length ? `，${cities.join("、")} 等 ${cities.length} 座城轉屬` : "")];
   },
 
-  loyalty_all: (faction, effect) => {
-    const amount = Number(effect.amount || 0);
-    if (!amount) return [];
-    const ids = mutableGeneralIdsForOwner(faction);
-    if (!ids.length) return [];
-    ids.forEach((generalId) => adjustGeneralLoyalty(generalId, amount));
-    const sign = amount > 0 ? `+${amount}` : `${amount}`;
+  loyalty_all: async (faction, effect) => {
+    const resolved = await api("/api/loyalty-effect",
+      { kind: "loyalty_all", faction, effect });
+    const picked = applyLoyaltyOverrides(resolved.overrides);
+    if (!picked.length) return [];
+    const sign = resolved.amount > 0 ? `+${resolved.amount}` : `${resolved.amount}`;
     const amplified = effect.amplified_by === 'radio_station' ? '（廣播電台放大）' : '';
-    return [`${factionLabel(faction, faction === currentPlayer)}全體可變忠誠將領 ${ids.length} 位忠誠 ${sign}${amplified}`];
+    return [`${factionLabel(faction, faction === currentPlayer)}全體可變忠誠將領 `
+      + `${resolved.picked.length} 位忠誠 ${sign}${amplified}`];
   },
 };
 
@@ -709,7 +726,8 @@ async function consumePendingFrontendEffects() {
         console.warn(`[pending_frontend_effects] 沒有處理器的 kind：${effect.kind}`, effect);
         continue;
       }
-      notes.push(...(handler(faction, effect) || []));
+      // 有些處理器要跟後端要結果（忠誠加減的抽籤與算式都在後端），所以 await。
+      notes.push(...(await handler(faction, effect) || []));
       handled = true;
     }
     if (handled) drained.push(faction);
@@ -721,7 +739,13 @@ async function consumePendingFrontendEffects() {
     state = result.state;
   }
   if (drained.length) {
+    // 有些交辦會改地盤歸屬（NPC 吞併類）與將領樹（將領轉屬類）——
+    // 只重畫部隊標記的話，換了主的城市與省份還是舊顏色。
+    syncStrategicCitiesFromState();
+    initMap();
     renderArmyMarkers(currentPlayer);
+    generalTreeData = generalTrees[currentPlayer];
+    renderGeneralsPanel();
     renderPendingActions();
   }
   return notes;
@@ -872,15 +896,12 @@ const TRAIT_DESCRIPTIONS = {
 // 戰鬥用的省份條件表已搬到 backend/combat_modifiers.py——規則只留一份在後端。
 
 
-// 所屬陣營與列強關係太好／太差時會失效的技能。
-const RELATION_DISABLED_TRAITS = {
-  white_russian_mercenaries: { power: "su", min: 6, loyalty_penalty: 5 },
-  anticommunist_vanguard: { power: "su", min: 6, loyalty_penalty: 5 },
-};
+// 「技能因列強關係失效」的判準表在後端，結果隨 snapshot 的
+// players[x].disabled_traits 送來。前端不留第二份表。
 
 // 同陣營有指定將領時忠誠 +1。
-// 被策反時對方成功率的額外修正（唐生智的〈佛教將軍〉）。
-const DEFECTION_RESISTANCE_TRAITS = { buddhist_general: 0.05 };
+// 抗策反（唐生智的〈佛教將軍〉）已搬到後端——成功率的每一項都只在後端算，
+// 前端不留副本，連表名都不留（守門測試是全檔搜字串）。
 
 // 買辦技能：帶著它的將領轉投某陣營時，該陣營對該國關係上升；
 // 該陣營抽到那一國的 [懲戒] **事件卡**時有機率被擋下並靜默重抽
@@ -964,13 +985,9 @@ function traitChip(trait, generalId = null) {
 }
 
 // 工事的成本與工期住在後端 GameEngine.ENGINEERING_OPERATIONS，隨 bootstrap 送來。
-// 這裡只留 key 的清單（哪些技能算工事）與 bootstrap 拿不到時的顯示用退路。
-const ENGINEERING_FALLBACK = {
-  pontoon_bridge: { label: "架設浮橋", turns: 2, factory_cost: 10 },
-  fortress_builder: { label: "構築要塞", turns: 3, factory_cost: 10 },
-};
+// 先前這裡還留了一份「拿不到時的顯示用退路」——那份就是第二套價目表。
 function engineeringRules() {
-  return bootstrap?.engineering || ENGINEERING_FALLBACK;
+  return backendRule("engineering") || {};
 }
 function engineeringRule(skill) {
   return engineeringRules()[skill] || null;
@@ -1300,20 +1317,22 @@ function mutableGeneralIdsForOwner(owner) {
     });
 }
 
-function adjustGeneralLoyalty(generalId, amount) {
-  const general = generalById(generalId);
-  if (!general || general.loyalty === null || generalAbsoluteLoyaltyActive(general) || general.loyalty_exempt) return;
-  const fieldArmy = allArmies(true).find((army) => army.generalId === generalId);
-  const current = calculateGeneralLoyalty(general, fieldArmy).value ?? 1;
-  loyaltyOverrides[generalId] = Math.max(1, Math.min(10, current + Number(amount || 0)));
+// 後端算好的新基礎值，照抄進 loyaltyOverrides。
+// 先前這裡是 `override = 畫面顯示值 + 幅度`——顯示值已經含相對實力與戰損的修正，
+// 後端拿去當基礎再套一次，於是「忠誠 +2」在弱軍身上實際變成 **+0**（卡等於沒效果）。
+// 現在加減只在後端做（apply_loyalty_deltas），加的是基礎值。
+function applyLoyaltyOverrides(overrides) {
+  for (const [generalId, value] of Object.entries(overrides || {})) {
+    loyaltyOverrides[generalId] = Number(value);
+  }
+  return Object.keys(overrides || {});
 }
 
 function applyFunctionSideEffects(result) {
   if (result.assassination) applyAssassination(result.assassination);
   if (result.exile_recruit) applyExileRecruit(result.exile_recruit);
-  if (result.target_general_id && result.loyalty_delta) {
-    adjustGeneralLoyalty(result.target_general_id, result.loyalty_delta);
-  }
+  // 忠誠加減的結果由後端算好隨回應送來（result.loyalty_overrides）。
+  applyLoyaltyOverrides(result.loyalty_overrides);
   if (result.affiliation_slot_delta) {
     const { general_id: generalId, amount } = result.affiliation_slot_delta;
     const general = generalById(generalId);
@@ -1323,13 +1342,6 @@ function applyFunctionSideEffects(result) {
         Math.max(GENERAL_SLOT_DEFAULTS.lieutenant_general, Number(general.subordinate_slots || GENERAL_SLOT_DEFAULTS.lieutenant_general) + Number(amount || 0)),
       );
     }
-  }
-  if (result.loyalty_delta_all) {
-    mutableGeneralIdsForOwner(result.loyalty_delta_all.owner)
-      .forEach((generalId) => adjustGeneralLoyalty(generalId, result.loyalty_delta_all.amount));
-  }
-  for (const swing of result.loyalty_swings || []) {
-    mutableGeneralIdsForOwner(swing.owner).forEach((generalId) => adjustGeneralLoyalty(generalId, swing.amount));
   }
   if (result.army_unit_delta) {
     const { general_id: generalId, unit_reserves: units, requires_active: requiresActive } = result.army_unit_delta;
@@ -2060,11 +2072,15 @@ function updateTopBar() {
 }
 
 function functionCardDrawCost() {
-  return bootstrap?.features?.function_card_draw_cost || DEFAULT_FUNCTION_CARD_DRAW_COST;
+  return backendNumber("features.function_card_draw_cost");
 }
 
 function functionCardDrawFactoryCost() {
-  return bootstrap?.features?.function_card_draw_factory_cost ?? DEFAULT_FUNCTION_CARD_DRAW_FACTORY_COST;
+  return backendNumber("features.function_card_draw_factory_cost");
+}
+
+function functionCardMaxHandSize() {
+  return backendNumber("features.function_card_max_hand_size");
 }
 
 function functionPurchasePromptKey(player = currentPlayer) {
@@ -2163,25 +2179,24 @@ function activeTimedEffects(player, kind = null) {
     .filter((effect) => Number(effect.remaining_turns || 0) > 0 && (!kind || effect.kind === kind));
 }
 
-function factionHasPoliceProtection(player) {
-  return activeTimedEffects(player, "police_system").length > 0;
-}
-
 function provinceForArmy(army) {
   return cityForArmy(army)?.province || strategicProvinceForCell(cells[army?.cellKey]) || null;
+}
+
+// 偵查的三條規則（飛艇無視反情報 > 情報局擋情報網 > 情報網揭露該省）全在後端
+// intel_report 裡；前端只負責「這支部隊在哪一省」——地圖是前端的事。
+function provinceRevealedTo(province, targetFaction, observer = currentPlayer) {
+  const intel = state?.intel?.[observer];
+  if (!intel || !province) return false;
+  if (intel.aerial_provinces.includes(province)) return true;
+  if ((intel.counter_intel_factions || []).includes(targetFaction)) return false;
+  return (intel.intel_provinces || []).includes(province);
 }
 
 function armyRevealedByIntel(army, observer = currentPlayer) {
   const armyFaction = factionForArmy(army);
   if (!army || armyFaction === observer) return false;
-  const province = provinceForArmy(army);
-  // 飛艇在雲上照相，情報局的反情報擋不住；一般情報網照舊會被擋。
-  const byAir = activeTimedEffects(observer, "aerial_recon")
-    .some((effect) => (effect.target_provinces || []).includes(province));
-  if (byAir) return true;
-  if (factionHasPoliceProtection(armyFaction)) return false;
-  return activeTimedEffects(observer, "intel_network")
-    .some((effect) => effect.target_province === province);
+  return provinceRevealedTo(provinceForArmy(army), armyFaction, observer);
 }
 
 function activeEffectsMarkup(payload = state.players[currentPlayer]) {
@@ -2206,7 +2221,7 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     && !ports.length && !economyFlags) return "";
   return `<div class="active-effect-list">
     ${effects.map((effect) => {
-      const label = effect.kind === "police_system"
+      const label = effect.kind === "counter_intel"
         ? `警政保護剩餘 ${effect.remaining_turns} 回合`
         : effect.kind === "aerial_recon"
           ? `飛艇偵查：${(effect.target_provinces || []).join("、")}，剩餘 ${effect.remaining_turns} 回合`
@@ -2419,7 +2434,7 @@ function functionActionMessage(action, viewer = currentPlayer) {
       .join("、");
     const effectDetail = action.timed_effect.kind === "intel_network"
       ? `揭露${action.timed_effect.target_province}`
-      : action.timed_effect.kind === "police_system"
+      : action.timed_effect.kind === "counter_intel"
         ? "反情報保護"
         : action.timed_effect.name || "持續效果";
     parts.push(`${owners}${effectDetail}啟動 ${turns} 回合`);
@@ -2436,7 +2451,38 @@ function functionActionMessage(action, viewer = currentPlayer) {
       parts.push(`${target}${cities}產出停擺 ${action.city_disruption.remaining_turns} 回合`);
     }
   }
-  return `${actor}打出「${cardName}」${parts.length ? `：${parts.join("；")}。` : "：無效果，浪費一次出牌。"}`;
+  // 崩鐵玩家、大港開炸、內閣卡、在野名將投效、外交後果——這五種先前沒有任何
+  // 描述分支，於是明明生效了，摘要卻說這張卡沒有效果、浪費了一次出牌。
+  if (action.railway_effect) {
+    const rail = action.railway_effect;
+    const repair = rail.repair_factory_cost
+      ? `；其餘勢力各分攤搶修工業點 ${rail.repair_factory_cost}` : "";
+    parts.push(`${rail.railway}停運 ${rail.remaining_turns} 回合，期間不可做鐵路運輸${repair}`);
+  }
+  if (action.port_demolition) {
+    const ports = (action.port_demolition.ports || []).map((port) =>
+      `${port.city_name}（${factionLabel(port.owner, port.owner === viewer)}，${port.remaining_turns} 回合）`
+    ).join("、");
+    parts.push(`港務癱瘓：${ports || "無符合條件的港口"}`);
+  }
+  if (action.cabinet_entry) {
+    const entry = action.cabinet_entry;
+    parts.push(`${entry.person}入閣任${entry.skill || "閣員"}${
+      entry.lapse_text ? `（失效條件：${entry.lapse_text}）` : ""}`);
+  }
+  if (action.exile_recruit) {
+    const recruit = action.exile_recruit;
+    parts.push(`延攬在野將領${recruit.name}（$${recruit.price}）${
+      recruit.units ? `，自帶 ${unitSummary(recruit.units)}` : ""}`);
+  }
+  for (const change of action.relation_side_effects || []) {
+    const labels = { jp: "日本", su: "蘇聯", uk: "英國", fr: "法國", us: "美國" };
+    parts.push(`${labels[change.power] || change.power}關係 ${change.before} → ${change.after}`);
+  }
+  // 真的什麼都沒有時也不要斷言「浪費」——後端已經扣過錢、卡也進棄牌堆了，
+  // 說得出來的就說，說不出來就照實說說不出來。
+  return `${actor}打出「${cardName}」${
+    parts.length ? `：${parts.join("；")}。` : "：已生效（本卡的效果沒有可顯示的摘要）。"}`;
 }
 
 function functionActionVisibleTo(action, viewer = currentPlayer) {
@@ -2505,10 +2551,41 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+// 畫面上凡是由後端算出來的數字（忠誠、艦隊預估、鐵路通行），都是後端拿
+// **已發布的**戰術快照算的。所以只要本地快照跟已發布的那份不一樣，畫面上那些
+// 數字就是舊的。這裡在畫之前補發一次，回來再重畫一次——「即時呈現」靠的是這個，
+// 不是等玩家下一次按下某顆會順便發布的按鈕。
+let backendDerivedRefreshPending = null;
+function backendDerivedStateIsStale() {
+  if (!sharedReady) return false;
+  try {
+    return JSON.stringify(tacticalSnapshot()) !== sharedSnapshotHash;
+  } catch (error) {
+    return false;
+  }
+}
+function ensureBackendDerivedFresh(panelName) {
+  if (backendDerivedRefreshPending || !backendDerivedStateIsStale()) return;
+  backendDerivedRefreshPending = (async () => {
+    try {
+      await publishSharedState();
+    } catch (error) {
+      try { await pullSharedState(); } catch (ignored) { /* 下一次再試 */ }
+    } finally {
+      backendDerivedRefreshPending = null;
+    }
+    // 重畫一次，讓剛拿回來的後端數字上畫面。
+    const open = document.querySelector(".overlay-panel.active");
+    if (open) renderPanel(open.id.replace("panel", "").toLowerCase());
+    renderPendingActions();
+  })();
+}
+
 function renderPanel(panelName) {
   const contentId = `${panelName}Content`;
   const element = $(contentId);
   if (!element) return;
+  ensureBackendDerivedFresh(panelName);
 
   switch (panelName) {
     case "generals":
@@ -2865,6 +2942,86 @@ function recruitCapturedGeneral(record, faction, superiorId, deploymentCell) {
   }
 }
 
+// 將領換旗的完整動作：從舊的將領樹拆下來、掛進新陣營的樹、部隊改旗，
+// **番號依新陣營重編**。策反（transferDefectingCommand）與招降
+// （recruitCapturedGeneral）本來就是這樣做的；NPC 事件的處理器先前只寫了
+// army.faction，於是韓復榘加入南京之後名冊上查無此人、部隊還頂著
+// 西北軍的「第三軍」。
+function reassignGeneralAndArmy(army, generalId, toFaction) {
+  const id = generalId || army?.generalId || null;
+  if (!toFaction) return null;
+  const fromFaction = id ? (generalOwners[id] || (army ? factionForArmy(army) : null)) : null;
+  if (id && fromFaction !== toFaction) {
+    const general = generalById(id);
+    if (general) {
+      const copy = JSON.parse(JSON.stringify(general));
+      const sourceTree = generalTrees[fromFaction];
+      detachGeneralFromTree(sourceTree, id);
+      if (sourceTree?.generals) delete sourceTree.generals[id];
+      attachGeneralToFaction(copy, toFaction);
+    } else {
+      generalOwners[id] = toFaction;
+    }
+  }
+  if (!army) return null;
+  army.faction = toFaction;
+  army.designator = formatArmyDesignator(nextAvailableArmyNumber(toFaction, army.id));
+  army.general = (id && generalById(id)?.name) || army.general;
+  return army.designator;
+}
+
+// 掛進新陣營的將領樹。優先走既有的 installTransferredCommand（中將底下的少將位）；
+// 位子滿了也不能讓將領憑空消失——退而求其次掛在總司令直屬。
+function attachGeneralToFaction(general, toFaction) {
+  try {
+    installTransferredCommand([general], toFaction, null, 2);
+    return;
+  } catch (error) {
+    console.warn(`[將領轉屬] ${toFaction} 沒有空的少將位，改掛總司令直屬：${error.message}`);
+  }
+  const tree = generalTrees[toFaction];
+  if (!tree) return;
+  const superior = tree.generals?.[tree.great_general_id];
+  const copied = JSON.parse(JSON.stringify(general));
+  Object.assign(copied, {
+    faction: FACTIONS[toFaction]?.name || copied.faction,
+    status: "active",
+    loyalty_exempt: false,
+    loyalty: 2,
+    role: "major_general",
+    subordinate_slots: 0,
+    subordinates: [],
+    parent_id: tree.great_general_id || null,
+  });
+  tree.generals ||= {};
+  tree.generals[copied.id] = copied;
+  if (superior) {
+    superior.subordinates ||= [];
+    if (!superior.subordinates.includes(copied.id)) superior.subordinates.push(copied.id);
+  }
+  generalOwners[copied.id] = toFaction;
+  loyaltyOverrides[copied.id] = copied.loyalty;
+}
+
+// 後端算好的城市易手要真的畫上地圖。後端記在 state.city_owners，
+// 但地圖畫的是 city.faction 與 cell.fac——這兩個先前沒有任何人寫，
+// 所以吞併類 NPC 事件在畫面上等於完全沒發生。
+// 這裡不打 /api/capture-city：那條路是「前端發動佔領、請後端算錢」，
+// 城已經是後端自己轉的，再打一次會重算一遍收入。
+function applyBackendCityTransfers(cityIds, faction) {
+  const names = [];
+  for (const cityId of cityIds || []) {
+    const city = (bootstrap.strategic_map?.cities || []).find((item) => item.id === cityId);
+    if (!city) continue;
+    if (city.faction !== faction) transferCityEconomy(city, city.faction, faction);
+    const cell = cells[city.cellKey];
+    if (cell) cell.fac = faction;
+    names.push(city.name);
+  }
+  if (names.length) syncStrategicCitiesFromState();
+  return names;
+}
+
 function detachGeneralFromTree(tree, generalId) {
   for (const general of Object.values(tree?.generals || {})) {
     if (general.subordinates?.includes(generalId)) {
@@ -2913,13 +3070,13 @@ async function attemptArmyDefection(army, superiorId) {
     showNotice("我方中將空位不足，無法接收這名將領。");
     return;
   }
+  // 忠誠、戰力、抗策反都由後端從共享戰術快照自己算——客戶端說的不算。
+  // 這裡只指名對象，以及「哪些技能會跟著人走」（將領樹住在前端）。
+  await publishSharedState(true);
   const result = await api("/api/attempt-defection", {
     player: currentPlayer,
-    loyalty,
-    force: forcePoints(armyUnits(army)),
     traits: transferringTraits(generalTrees[factionForArmy(army)], general),
     general_id: general?.id,
-    resistance: defectionResistance(general),
   });
   state = result.state;
   syncStrategicCitiesFromState();
@@ -2981,43 +3138,34 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
 
 function calculateGeneralLoyalty(general, fieldArmy) {
   if (general.loyalty === null || general.loyalty === undefined) return { value: null, tooltip: "" };
-  // 規則的權威來源是後端 card_engine.compute_loyalty。收到了就照它顯示，
-  // 底下那段本地算式只在還沒同步到後端結果時當過渡值——**不是**第二套規則。
+  // 忠誠**只有一個計算引擎**：後端的 card_engine.compute_loyalty。
+  // 這裡先前留著一整份「過渡用」的本地算式（基礎值、列強關係扣分、相對實力、
+  // 戰損、無部隊上限），只要後端那筆還沒到就會安靜地端出自己算的數字——
+  // 那正是畫面與後端對不上的原因。現在沒有後端的值就顯示「計算中」，
+  // 不猜、不自己算。
   const fromBackend = backendLoyalty?.[general.id];
   if (fromBackend && fromBackend.value !== null && fromBackend.value !== undefined) {
     return { value: fromBackend.value, tooltip: loyaltyTooltip(general, fromBackend.breakdown) };
   }
-  if (generalAbsoluteLoyaltyActive(general)) {
-    return { value: 10, tooltip: "絕對忠誠: 固定 10\n不受功能卡、戰損或策反效果影響" };
-  }
-  const relationPenalty = traitLoyaltyAdjustment(general);
-  const hasOverride = Object.hasOwn(loyaltyOverrides, general.id);
-  const baseSource = hasOverride ? loyaltyOverrides[general.id] : Number(general.loyalty);
-  const baseLoyalty = Math.max(0, Math.min(10, Number(baseSource) + relationPenalty.amount));
-  const overrideNote = hasOverride ? "\n當前忠誠曾受俘虜、招降、策反或功能卡改變" : "";
-  if (general.status === "in_exile") {
-    return { value: baseLoyalty, tooltip: `出山時的基礎忠誠: ${baseLoyalty}${relationPenalty.note}\n在野期間不套用部隊相關的增減` };
-  }
-  if (!fieldArmy || fieldArmy.status === "jailed" || general.status === "recruited") {
-    const value = Math.min(baseLoyalty, 2);
-    return { value, tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}${overrideNote}\n無直屬部隊: -${Math.max(0, baseLoyalty - value)}` };
-  }
-  const faction = factionForArmy(fieldArmy);
-  const friendlyForces = allArmies()
-    .filter((army) => factionForArmy(army) === faction)
-    .filter((army) => army.status !== "jailed")
-    .map((army) => forcePoints(armyUnits(army)));
-  const currentForce = forcePoints(armyUnits(fieldArmy));
-  const averageForce = friendlyForces.reduce((sum, value) => sum + value, 0) / Math.max(1, friendlyForces.length);
-  const relativePower = Math.max(-2, Math.min(2, Math.round((currentForce / Math.max(1, averageForce) - 1) * 3)));
-  const initialForce = forcePoints(LOYALTY_BASELINE_ARMY_UNITS[fieldArmy.id] || INITIAL_ARMY_UNITS[fieldArmy.id] || {});
-  const lossRate = Math.max(0, (initialForce - currentForce) / Math.max(1, initialForce));
-  const battleLoss = -Math.min(4, Math.floor(lossRate * 5));
-  const value = Math.max(0, Math.min(10, baseLoyalty + relativePower + battleLoss));
-  return {
-    value,
-    tooltip: `基礎忠誠: ${baseLoyalty}${relationPenalty.note}${overrideNote}\n相對實力影響: ${relativePower >= 0 ? '+' : ''}${relativePower}\n戰損影響: ${battleLoss}\n現有戰力: ${Math.round(currentForce)} / 基準 ${Math.round(initialForce)}`,
-  };
+  // 沒收到就去要一次；回來之後 refreshBackendDerivedState 會重畫。
+  requestLoyaltyRefresh();
+  return { value: null, pending: true, tooltip: "忠誠計算中：等待後端回報" };
+}
+
+// 後端算完的忠誠還沒到手時去要一次。同一輪只發一個請求，
+// 拿到之後重畫，畫面才會「即時」跟著後端走而不是等下一次發布。
+let loyaltyRefreshPending = null;
+function requestLoyaltyRefresh() {
+  if (loyaltyRefreshPending || !sharedReady) return;
+  loyaltyRefreshPending = (async () => {
+    try {
+      await publishSharedState(true);
+    } catch (error) {
+      try { await pullSharedState(); } catch (ignored) { /* 下一次再試 */ }
+    } finally {
+      loyaltyRefreshPending = null;
+    }
+  })();
 }
 
 // 把後端回傳的拆帳明細轉成人看得懂的提示。數字全部來自後端，這裡只排版。
@@ -3036,14 +3184,6 @@ function loyaltyTooltip(general, breakdown = {}) {
   return lines.join("\n");
 }
 
-// 被策反時對方成功率的額外扣減（唐生智的〈佛教將軍〉-5%）。
-function defectionResistance(general) {
-  return (general?.traits || []).reduce(
-    (total, trait) => total + (DEFECTION_RESISTANCE_TRAITS[trait] || 0),
-    0,
-  );
-}
-
 function factionHoldingGeneral(generalId) {
   return generalOwners[generalId]
     || Object.keys(FACTIONS).find((key) => generalTrees[key]?.generals?.[generalId])
@@ -3052,21 +3192,6 @@ function factionHoldingGeneral(generalId) {
 
 // 技能帶來的忠誠增減（回傳的 amount 已經是帶正負號的總和）：
 // 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5）。
-function traitLoyaltyAdjustment(general) {
-  const faction = factionHoldingGeneral(general.id);
-  if (!faction) return { amount: 0, note: "" };
-  let amount = 0;
-  const reasons = [];
-  for (const trait of general.traits || []) {
-    const rule = RELATION_DISABLED_TRAITS[trait];
-    if (rule?.loyalty_penalty && traitDisabledByRelations(trait, faction)) {
-      amount -= rule.loyalty_penalty;
-      reasons.push(`〈${traitLabel(trait, general.id)}〉失效: -${rule.loyalty_penalty}`);
-    }
-  }
-  return { amount, note: reasons.length ? `\n${reasons.join("\n")}` : "" };
-}
-
 function getGeneralPortrait(general) {
   return PORTRAIT_BY_ID[general.id] || null;
 }
@@ -3548,7 +3673,7 @@ function renderCardsPanel() {
     ${pendingCard ? `<div class="discard-panel-notice">新牌「${pendingCard.name}」等待加入。請棄置一張現有手牌。</div>` : ""}
     <div style="margin-bottom: 16px; padding: 12px; background: var(--terracotta-tint); border-radius: 8px;">
       <div style="font-size: 13px; color: var(--muted);">
-        牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length}/${MAX_HAND_SIZE} · 棄牌 ${payload.discard.length} · 本回合抽牌 ${payload.function_purchase_count || 0}/${functionCardDrawLimit()}
+        牌庫 ${payload.function_deck.length} · 手牌 ${payload.hand.length}/${showNumber(functionCardMaxHandSize())} · 棄牌 ${payload.discard.length} · 本回合抽牌 ${payload.function_purchase_count || 0}/${functionCardDrawLimit()}
       </div>
     </div>
     <div class="card-detail-list">${cardsHtml}</div>
@@ -4810,13 +4935,13 @@ function navyCellLabel(cell) {
 }
 
 function navyMoveFactoryCost(navy) {
-  const perGunBoat = Number(navyRules().move?.factory_cost_per_gun_boat || 5);
+  const perGunBoat = Number(navyRules().move?.factory_cost_per_gun_boat);
   normalizeNavyDivision(navy, navyRules());
   return Math.max(0, (navy?.gunBoats || []).length * perGunBoat);
 }
 
 function navyMoveCostText(navy) {
-  const perGunBoat = Number(navyRules().move?.factory_cost_per_gun_boat || 5);
+  const perGunBoat = Number(navyRules().move?.factory_cost_per_gun_boat);
   const gunBoats = (navy?.gunBoats || []).length;
   return `每艘砲艇工業點 ${perGunBoat}；本艦隊 ${gunBoats} 艘砲艇，共工業點 ${navyMoveFactoryCost(navy)}`;
 }
@@ -5135,12 +5260,24 @@ function absoluteTransferPartners(army) {
   return currentArmies().filter((other) => absoluteTransferPair(army, other));
 }
 
+// 支援戰場的範圍＝這支部隊這回合走得到的範圍：相鄰一格是基本盤，
+// 急行軍中就照急行軍的格數算（路上有敵軍阻截一樣過不去，
+// 由 forcedMarchPath 判）。先前這裡只認相鄰格，於是花錢買了急行軍的部隊
+// 站在 2 格外，看得到戰場卻投不進去。
+function armyCanReachBattleCell(army, battleCellKey) {
+  const source = cells[army?.cellKey];
+  const target = cells[battleCellKey];
+  if (!source || !target) return false;
+  if (cellNeighbors(source).some((cell) => cell.key === target.key)) return true;
+  return Boolean(forcedMarchPath(source, target, army));
+}
+
 function joinableBattleForArmy(army) {
   if (!army || army.status === "jailed" || armyIsResolvedThisTurn(army) || activeBattleForArmy(army)) return null;
   const faction = factionForArmy(army);
   return activeBattles.find((battle) => {
     if (!["pending", "ongoing"].includes(battle.status) || !battleSideForFaction(battle, faction)) return false;
-    return cellNeighbors(cells[army.cellKey]).some((cell) => cell.key === battle.cellKey);
+    return armyCanReachBattleCell(army, battle.cellKey);
   }) || null;
 }
 
@@ -5280,12 +5417,7 @@ function navyIsVisible(navy, observer = currentPlayer) {
   );
   if (nearbyArmy || nearbyNavy) return true;
   const province = cell.city?.province || strategicProvinceForCell(cell);
-  const byAir = activeTimedEffects(observer, "aerial_recon")
-    .some((effect) => (effect.target_provinces || []).includes(province));
-  if (byAir) return true;
-  if (factionHasPoliceProtection(faction)) return false;
-  return activeTimedEffects(observer, "intel_network")
-    .some((effect) => effect.target_province === province);
+  return provinceRevealedTo(province, faction, observer);
 }
 
 function selectedArmy() {
@@ -5305,25 +5437,16 @@ function wholeUnits(units) {
   ]));
 }
 
-// 急行軍改成逐軍購買的軍令：付錢後該支部隊 3 回合內每回合可走 2 格，
-// 效果結束再冷卻 3 回合才能為同一支部隊再買一次。
-const FORCED_MARCH = {
-  cash: 10,
-  factory: 10,
-  durationTurns: 3,
-  cooldownTurns: 3,
-  tiles: 2,
-};
-
+// 急行軍是逐軍購買的軍令。價目與回合數全在後端 GameEngine.FEATURES["forced_march"]，
+// 隨 bootstrap 送來——前端不留第二份數字。
 function forcedMarchRules() {
-  const feature = bootstrap?.features?.forced_march;
-  if (!feature) return FORCED_MARCH;
+  const feature = backendRule("features.forced_march") || {};
   return {
-    cash: Number(feature.cash ?? FORCED_MARCH.cash),
-    factory: Number(feature.factory ?? FORCED_MARCH.factory),
-    durationTurns: Number(feature.duration_turns ?? FORCED_MARCH.durationTurns),
-    cooldownTurns: Number(feature.cooldown_turns ?? FORCED_MARCH.cooldownTurns),
-    tiles: Number(feature.tiles ?? FORCED_MARCH.tiles),
+    cash: feature.cash ?? null,
+    factory: feature.factory ?? null,
+    durationTurns: feature.duration_turns ?? null,
+    cooldownTurns: feature.cooldown_turns ?? null,
+    tiles: feature.tiles ?? null,
   };
 }
 
@@ -5438,28 +5561,22 @@ function forceMeterMarkup(units, { compact = false } = {}) {
 // 再補一營這個兵種會不會爆表。
 function reinforcementWouldExceedCap(units, unitType, count = 1) {
   const cap = armyForceCap();
-  const points = bootstrap?.features?.unit_force_points || {
-    infantry: 1, cavalry: 1, machine_gun: 2, artillery: 4,
-  };
+  const points = backendRule("features.unit_force_points") || {};
   return forcePoints(units) + Number(points[unitType] || 0) * count > cap;
 }
 
 function armyForceCap() {
-  return Number(bootstrap?.features?.army_force_cap || 100);
+  return backendNumber("features.army_force_cap");
 }
 
 function forcePoints(units) {
-  const points = bootstrap?.features?.unit_force_points || {
-    infantry: 1, cavalry: 1, machine_gun: 2, artillery: 4,
-  };
+  const points = backendRule("features.unit_force_points") || {};
   return Object.keys(UNIT_META).reduce((sum, type) =>
     sum + Math.max(0, Number(units?.[type] || 0)) * Number(points[type] || 0), 0);
 }
 
 function clampUnitsToForceCap(units, cap = armyForceCap()) {
-  const points = bootstrap?.features?.unit_force_points || {
-    infantry: 1, cavalry: 1, machine_gun: 2, artillery: 4,
-  };
+  const points = backendRule("features.unit_force_points") || {};
   const normalized = wholeUnits(units);
   const trimOrder = Object.keys(UNIT_META)
     .sort((a, b) => Number(points[b] || 0) - Number(points[a] || 0));
@@ -5867,6 +5984,27 @@ function selectTile(cell) {
 }
 
 // 列強租借地：不屬於任何省分，只標等級；也沒有中國勢力的產出可言。
+// 這座城現在被哪些癱瘓效果壓著。清單由後端算好放在 snapshot，前端不自己掃
+// city_output_effects——那是這個專案反覆掉欄位的地方。
+function cityDisruptions(cityId) {
+  if (!cityId) return [];
+  return state?.city_disruptions?.[cityId] || [];
+}
+
+// 標籤文字：駐軍才平息的顯示「鎮壓 進度/門檻」，到期自動解除的顯示「已過/總共」。
+function disruptionTagText(entry) {
+  if (entry.mode === "garrison") {
+    return `${entry.label} (鎮壓 ${entry.progress}/${entry.required_turns})`;
+  }
+  if (entry.remaining_turns === null || entry.remaining_turns === undefined) {
+    return `${entry.label} (無期限)`;
+  }
+  if (entry.total_turns === null || entry.total_turns === undefined) {
+    return `${entry.label} (剩 ${entry.remaining_turns} 回合)`;
+  }
+  return `${entry.label} (${entry.elapsed_turns}/${entry.total_turns})`;
+}
+
 // 地格資訊上的鐵路狀態：搶修中、或列強線關係不到都要標出來，
 // 否則玩家會以為點得動卻走不了三格。
 function railwayStatusLabel(name) {
@@ -5930,6 +6068,12 @@ function renderTileInfo() {
   // 租界僅標明身分與租界國，不寫加成數字。港口同樣只標身分。
   const concessionPowers = Array.isArray(city?.concession) ? city.concession : [];
   const tags = [];
+  // 城市被暴動／停產壓著的時候，要在地格資訊欄看得到是哪一種、還差多少。
+  // 種類與進度全由後端算好放在 state.city_disruptions，前端只排版。
+  for (const entry of cityDisruptions(city?.id)) {
+    tags.push(`<span class="tile-tag tile-tag-disruption" title="${
+      (entry.name || entry.label)}">${disruptionTagText(entry)}</span>`);
+  }
   if (city?.port === "river") tags.push('<span class="tile-tag tile-tag-port">河港</span>');
   if (city?.port === "sea") tags.push('<span class="tile-tag tile-tag-port">海港</span>');
   if (portParalysed(city)) tags.push('<span class="tile-tag tile-tag-port">港務搶修中</span>');
@@ -6072,6 +6216,32 @@ async function startEngineeringOperation(army, engineering, targetCellKey) {
   return action;
 }
 
+// 策反報價的快取。鍵是「將領 + 已發布的戰術快照版本」——快照一變（兵力、忠誠
+// 覆寫、誰在誰手上），報價就作廢重要一次，畫面才不會停在舊價目。
+const defectionQuotes = new Map();
+let defectionQuoteInFlight = null;
+function defectionQuoteKey(generalId) {
+  return `${generalId}@${sharedRevision}`;
+}
+function defectionQuoteFor(generalId) {
+  const key = defectionQuoteKey(generalId);
+  if (defectionQuotes.has(key)) return defectionQuotes.get(key);
+  if (defectionQuoteInFlight === key || !sharedReady) return null;
+  defectionQuoteInFlight = key;
+  (async () => {
+    try {
+      const quote = await api("/api/defection-quote", { general_id: generalId });
+      defectionQuotes.set(key, quote);
+      renderPendingActions();
+    } catch (error) {
+      /* 下一次重畫再試 */
+    } finally {
+      defectionQuoteInFlight = null;
+    }
+  })();
+  return null;
+}
+
 function renderArmyDetail() {
   const root = $("armyDetail");
   const navy = selectedNavy();
@@ -6102,22 +6272,19 @@ function renderArmyDetail() {
   const engineering = isOwnArmy ? engineeringOperationsFor(army) : [];
   const joinableBattle = isOwnArmy ? joinableBattleForArmy(army) : null;
   const loyalty = general ? calculateGeneralLoyalty(general, army).value : null;
-  // 策反的成本與成功率公式在後端 attempt_defection_with_force 裡也有一份。
-  // 兩邊必須逐字相同，包含夾值——後端把忠誠夾在 1–10、戰力夾在 ≥1，
-  // 這裡先前沒夾上限也沒夾戰力下限，超出範圍時面板報的價與實收就會差一截。
-  // DefectionQuoteParityTests 會拿同一組輸入掃過兩邊比對。
-  const defectionForce = Math.max(1, forcePoints(units));
-  const loyaltyForDefection = Math.max(1, Math.min(10, loyalty || 1));
-  const defectionCost = Math.ceil((10 + defectionForce * 3 + loyaltyForDefection * 2) * 0.5);
-  const defectionBaseChance = 0.45 - loyaltyForDefection * 0.04 - defectionForce * 0.003;
-  const defectionChance = Math.round(
-    Math.max(0.03, Math.min(0.60, defectionBaseChance * 1.25) - defectionResistance(general)) * 100,
-  );
+  // 策反的成本與成功率**只有後端算**（card_engine.defection_quote）。
+  // 這裡先前有一份逐字相同的副本，還靠一條 parity 測試盯著兩邊——
+  // 那不是單一來源，那是兩份規則加一個看門的。現在改成跟後端要報價，
+  // 還沒拿到就顯示「計算中」，不自己算。
+  const quote = general ? defectionQuoteFor(general.id) : null;
+  const defectionCost = quote?.cost ?? null;
+  const defectionChance = quote ? Math.round(quote.chance * 100) : null;
   const lieutenants = availableLieutenantGenerals(currentPlayer);
   const branchSize = transferBranchSize(generalTrees[armyFaction], army.generalId);
   const canDefect = loyalty !== null && !general?.loyalty_exempt && !generalAbsoluteLoyaltyActive(general) && lieutenants.length
     && availableMajorGeneralSlots(currentPlayer) >= branchSize
-    && (showComposition ? profile.treasury >= defectionCost : profile.treasury >= 10);
+    && (showComposition ? (defectionCost !== null && profile.treasury >= defectionCost)
+                        : profile.treasury >= 10);
 
   root.hidden = false;
   root.innerHTML = `
@@ -6140,7 +6307,7 @@ function renderArmyDetail() {
       ${forceMeterMarkup(units)}
     ` : `<div class="enemy-hidden-composition"><b>兵力不明</b><span>敵軍編制需交戰或情報網揭露。</span></div>`}
     ${isOwnArmy ? absoluteTransferMarkup(army) : ""}
-    ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? `策反費用 $${defectionCost} · 成功率 ${defectionChance}%` : "兵力未明，策反費用與成功率不公開"}${availableMajorGeneralSlots(currentPlayer) < branchSize ? ` · 我方少將空位不足` : ""}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
+    ${!isOwnArmy ? `<div class="enemy-intelligence"><b>敵軍情報</b><span>忠誠 ${loyalty ?? "核心將領"}${loyalty === null ? "" : " / 10"}</span><small>${loyalty === null ? "派系核心不可策反" : showComposition ? (quote ? `策反費用 $${defectionCost} · 成功率 ${defectionChance}%` : "策反費用與成功率計算中…") : "兵力未明，策反費用與成功率不公開"}${availableMajorGeneralSlots(currentPlayer) < branchSize ? ` · 我方少將空位不足` : ""}</small><select data-defect-superior>${lieutenants.map((item) => `<option value="${item.id}">成功後隸屬 ${item.name}</option>`).join("")}</select><button data-defect-army="${army.id}" ${canDefect ? "" : "disabled"}>策反</button></div>` : ""}
     ${fightingBattle ? `<div class="active-operation">交戰中：不可移動、急行軍或補充。請在戰鬥情報中定策。</div>` : ""}
     ${!fightingBattle && resolvedThisTurn ? `<div class="active-operation">本回合軍令已執行。</div>` : ""}
     ${army.specialOperation ? `<div class="active-operation">進行中：${army.specialOperation.label} · 尚需 ${army.specialOperation.turnsRemaining} 回合</div>` : ""}
@@ -6187,7 +6354,7 @@ function forcedMarchButtonMarkup(army) {
   const profile = state.players[currentPlayer];
   const affordable = Number(profile?.treasury || 0) >= rules.cash
     && Number(profile?.factory_points || 0) >= rules.factory;
-  return `<button data-army-operation="forced_march" ${affordable ? "" : "disabled"}>急行軍 ($${rules.cash} + ${rules.factory} 工廠)</button>`;
+  return `<button data-army-operation="forced_march" ${affordable ? "" : "disabled"}>急行軍 ($${showNumber(rules.cash)} + ${showNumber(rules.factory)} 工廠)</button>`;
 }
 
 async function buyForcedMarch(army, button) {
@@ -6389,7 +6556,7 @@ function renderNavyDetail(root, navy) {
     ${isOwnNavy ? `
       <div class="army-operations navy-operations">
         ${!canOrder ? `<button disabled>${lockedInPort ? "封港中" : navyIsResolvedThisTurn(navy) ? "本回合已行動" : "不可行動"}</button>${inContact && !lockedInPort ? `<button data-navy-operation="retreat">撤退</button>` : ""}` : `
-          <button class="${navyMoveMode ? "active" : ""}" data-navy-operation="move" title="沿可航行水道最多 ${navyRules().move?.tiles_per_turn || 2} 格；${navyMoveCostText(navy)}">移動（${moveCost ? `工${moveCost}` : "工0"}）</button>
+          <button class="${navyMoveMode ? "active" : ""}" data-navy-operation="move" title="沿可航行水道最多 ${navyRules().move?.tiles_per_turn} 格；${navyMoveCostText(navy)}">移動（${moveCost ? `工${moveCost}` : "工0"}）</button>
           <button data-navy-operation="hold">待命</button>
           ${canRepair ? `<button data-navy-operation="repair">修理</button>` : ""}
           ${inContact ? `<button data-navy-operation="retreat">撤退</button>` : ""}
@@ -6483,7 +6650,7 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
     moveMode = false;
     engineeringMode = null;
     showNotice(navyMoveMode
-      ? `選擇可航行地格；艦隊最多 ${navyRules().move?.tiles_per_turn || 2} 格，${navyMoveCostText(navy)}。`
+      ? `選擇可航行地格；艦隊最多 ${navyRules().move?.tiles_per_turn} 格，${navyMoveCostText(navy)}。`
       : "已取消艦隊移動。");
     $("mapStage").classList.toggle("move-mode", navyMoveMode);
     renderArmyDetail();
@@ -6510,7 +6677,7 @@ async function handleNavyOperation(navy, operation, embarkArmyId, target, reinfo
       showNotice(portServiceNote(cell.city));
       return;
     }
-    const raw = window.prompt("將所有現存艦艇至少修到幾 HP？", String(navyRules().units?.gun_boat?.hp || 30));
+    const raw = window.prompt("將所有現存艦艇至少修到幾 HP？", String(navyRules().units?.gun_boat?.hp));
     if (raw === null) return;
     const targetHp = Number(raw);
     if (!Number.isFinite(targetHp) || targetHp <= 0) {
@@ -6602,7 +6769,7 @@ async function reinforceNavyFromReserve(navy, unitType, target) {
     });
     state = result.state;
     if (unitType === "gun_boat") {
-      const hp = Number(navyRules().units?.gun_boat?.hp || 30);
+      const hp = Number(navyRules().units?.gun_boat?.hp);
       navy.gunBoats ||= [];
       navy.gunBoats.push({ id: `${navy.id}-G${navy.gunBoats.length + 1}`, hp, maxHp: hp });
     } else if (unitType === "cargo_boat") {
@@ -6642,7 +6809,9 @@ function joinBattle(army, battle) {
     return;
   }
   if (!battle || !side || joinableBattleForArmy(army)?.id !== battle.id) {
-    showNotice("此軍目前不在可支援戰場的相鄰地格。");
+    showNotice(forcedMarchActive(army)
+      ? `此軍走不到該戰場：急行軍可走 ${showNumber(forcedMarchRules().tiles)} 格，且沿途不得有敵軍阻截。`
+      : "此軍目前不在可支援戰場的相鄰地格；購買急行軍後可支援更遠的戰場。");
     return;
   }
   const action = beginArmyOrder(army, "join_battle");
@@ -7324,7 +7493,28 @@ function hostileBlockingNavyAtCell(cell, movingFaction = currentPlayer) {
   ) || null;
 }
 
-function railwayPath(source, destination) {
+// 途中有別人的部隊擋著就過不去——鐵路與急行軍一律適用。
+// 先前只擋艦隊，於是列車可以從敵軍頭上開過去，繞到後方再落地；
+// 急行軍同理。攔阻不看有沒有宣戰：和平方的部隊也實實在在佔著那一格。
+function blockingArmyAtCell(cell, movingFaction = currentPlayer) {
+  if (!cell) return null;
+  return allArmies().find((army) =>
+    army.cellKey === cell.key && factionForArmy(army) !== movingFaction
+  ) || null;
+}
+
+// 這一格擋不擋路（終點不算——終點本來就是要打進去或走進去的地方）。
+// 回傳 { kind, faction }，沒擋就回 null。
+function transitBlockedAt(cell, destination, movingFaction = currentPlayer) {
+  if (!cell || (destination && cell.key === destination.key)) return null;
+  const army = blockingArmyAtCell(cell, movingFaction);
+  if (army) return { kind: "army", faction: factionForArmy(army) };
+  const navy = hostileBlockingNavyAtCell(cell, movingFaction);
+  if (navy) return { kind: "navy", faction: navyFaction(navy) };
+  return null;
+}
+
+function railwayPath(source, destination, { ignoreBlockers = false } = {}) {
   if (!source.railNeighbors?.size || !destination.railroads?.size) return null;
   const downed = unusableRailways();
   const railLimit = railwayMoveLimit(currentPlayer);
@@ -7338,7 +7528,7 @@ function railwayPath(source, destination) {
       if (visited.has(key)) continue;
       const next = cells[key];
       if (!next || next.power || !railLinkUsable(cell, next, downed)) continue;
-      if (next.key !== destination.key && hostileBlockingNavyAtCell(next, currentPlayer)) continue;
+      if (!ignoreBlockers && transitBlockedAt(next, destination, currentPlayer)) continue;
       if (!riverStepAllowed(cell, next, true)) continue;
       visited.add(key);
       queue.push({ cell: next, path: [...path, next] });
@@ -7353,10 +7543,11 @@ function cellUsableForForcedMarch(cell) {
   return Boolean(cell) && !cell.power;
 }
 
-function forcedMarchPath(source, destination, army) {
+function forcedMarchPath(source, destination, army, { ignoreBlockers = false } = {}) {
   if (!forcedMarchActive(army)) return null;
+  // 格數是後端規則；沒收到就不放行（寧可不能走，也不要用一個編出來的格數走）。
   const limit = forcedMarchRules().tiles;
-  if (limit <= 1) return null;
+  if (limit === null || limit <= 1) return null;
   if (!cellUsableForForcedMarch(destination)) return null;
   const queue = [{ cell: source, path: [source] }];
   const visited = new Set([source.key]);
@@ -7367,12 +7558,30 @@ function forcedMarchPath(source, destination, army) {
     for (const next of cellNeighbors(cell)) {
       if (visited.has(next.key)) continue;
       if (!cellUsableForForcedMarch(next)) continue;
+      if (!ignoreBlockers && transitBlockedAt(next, destination, army && factionForArmy(army))) continue;
       if (!riverStepAllowed(cell, next, false)) continue;
       visited.add(next.key);
       queue.push({ cell: next, path: [...path, next] });
     }
   }
   return null;
+}
+
+// 只有在「不管攔阻就走得到、把攔阻算進去就走不到」時才是被擋住。
+// 回傳擋路者的說明字串，沒被擋就回 null。
+function blockedTransitReason(source, destination, army) {
+  const openRail = railwayPath(source, destination, { ignoreBlockers: true });
+  const openMarch = openRail ? null : forcedMarchPath(source, destination, army, { ignoreBlockers: true });
+  const openPath = openRail || openMarch;
+  if (!openPath) return null;
+  const movingFaction = factionForArmy(army);
+  // 起點不算——那是自己站的地方；終點由 transitBlockedAt 自己排除。
+  const blocked = openPath.slice(1).find((cell) => transitBlockedAt(cell, destination, movingFaction));
+  if (!blocked) return null;
+  const stopper = transitBlockedAt(blocked, destination, movingFaction);
+  const who = FACTIONS[stopper.faction]?.shortName || stopper.faction;
+  return `${blocked.province || blocked.key} 有${who}${stopper.kind === "navy" ? "艦隊" : "兵力"}阻截，`
+    + `${openRail ? "鐵路" : "急行軍"}無法通過——必須先擊破或繞開。`;
 }
 
 function railwayMoveLimit(player = currentPlayer) {
@@ -7948,13 +8157,11 @@ function absoluteTransferMarkup(army) {
 }
 
 // 技能是否因為所屬陣營的列強關係而失效（張宗昌的〈白俄傭兵〉）。
+// 判準在後端（combat_modifiers.RELATION_DISABLED_TRAITS + _trait_relation_disabled），
+// 結果隨 snapshot 送來。前端先前抄了一份表自己比——畫面說失效、戰鬥算沒失效
+// 兩邊會分岔而且不會有任何東西叫。
 function traitDisabledByRelations(trait, faction) {
-  const rule = RELATION_DISABLED_TRAITS[trait];
-  if (!rule) return false;
-  const value = Number(state?.players?.[faction]?.foreign_relations?.[rule.power] ?? 0);
-  if (rule.min !== undefined && value >= rule.min) return true;
-  if (rule.max !== undefined && value <= rule.max) return true;
-  return false;
+  return (state?.players?.[faction]?.disabled_traits || []).includes(trait);
 }
 
 // 這場戰鬥打在哪個省。攻方部隊還站在出發格，所以優先看戰場那一格。
@@ -8643,7 +8850,7 @@ function setupPendingActions() {
       moveMode = !moveMode;
       engineeringMode = null;
       showNotice(moveMode
-        ? `選擇地格；${forcedMarchActive(army) ? `急行軍中可走 ${forcedMarchRules().tiles} 格陸地` : "一般移動限相鄰地格"}；鐵路最多 ${railwayMoveLimit(currentPlayer)} 格；跨河需要浮橋或鐵路橋。`
+        ? `選擇地格；${forcedMarchActive(army) ? `急行軍中可走 ${showNumber(forcedMarchRules().tiles)} 格陸地` : "一般移動限相鄰地格"}；鐵路最多 ${railwayMoveLimit(currentPlayer)} 格；跨河需要浮橋或鐵路橋。`
         : "已取消移動。");
       $("mapStage").classList.toggle("move-mode", moveMode);
       renderArmyDetail();
@@ -8784,7 +8991,7 @@ async function handleNavyDestination(destination) {
   }
   const path = navyPath(source, destination, cellNeighbors, navyRules());
   if (!path) {
-    showNotice(`艦隊一回合最多沿可航行水道移動 ${navyRules().move?.tiles_per_turn || 2} 格。`);
+    showNotice(`艦隊一回合最多沿可航行水道移動 ${navyRules().move?.tiles_per_turn} 格。`);
     return;
   }
   // 炸壞的港口連通行都不行，航線經過也算，得繞開。
@@ -8930,9 +9137,11 @@ async function handleMapDestination(destination) {
     const railPath = railwayPath(source, destination);
     const marchPath = railPath ? null : forcedMarchPath(source, destination, army);
     if (!adjacent && !railPath && !marchPath) {
-      showNotice(forcedMarchActive(army)
-        ? `急行軍中可走 ${forcedMarchRules().tiles} 格陸地；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`
-        : `一般移動限相鄰地格；購買急行軍後可走 ${forcedMarchRules().tiles} 格；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`);
+      // 走不到有兩種原因，講清楚是哪一種：路太遠，還是路上有人擋著。
+      const blocker = blockedTransitReason(source, destination, army);
+      showNotice(blocker || (forcedMarchActive(army)
+        ? `急行軍中可走 ${showNumber(forcedMarchRules().tiles)} 格陸地；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`
+        : `一般移動限相鄰地格；購買急行軍後可走 ${showNumber(forcedMarchRules().tiles)} 格；位於鐵路時可沿相連鐵路移動最多 ${railwayMoveLimit(currentPlayer)} 格。`));
       return;
     }
     if (adjacent && !railPath && !marchPath && !blockingNavy && !riverStepAllowed(source, destination, false)) {
@@ -9465,6 +9674,8 @@ window.__neDebug = {
   gangRiotTargets,
   riotTargets,
   getCardIndex: () => cardIndex,
+  functionActionMessage,
+  provinceRevealedTo,
   cells,
   selectTile,
   selectArmy,
@@ -9511,6 +9722,8 @@ window.__neDebug = {
   clearArmyResolved,
   generalById,
   getUiNotice: () => uiNotice,
+  traitDisabledByRelations,
+  defectionQuoteFor,
   getLoyaltyOverrides: () => loyaltyOverrides,
   forcePoints,
   applyNavyDuel,
@@ -9578,6 +9791,20 @@ window.__neDebug = {
   cellNeighbors,
   railwayPath,
   railwayMoveLimit,
+  // 阻截與支援範圍：自動化檢查要能直接問「這條路被誰擋住」、
+  // 「這支部隊投不投得進那場仗」，而不是靠點地圖猜。
+  FACTIONS,
+  transitBlockedAt,
+  blockingArmyAtCell,
+  blockedTransitReason,
+  joinableBattleForArmy,
+  armyCanReachBattleCell,
+  joinBattle,
+  consumePendingFrontendEffects,
+  nextAvailableArmyNumber,
+  applyBackendCityTransfers,
+  reassignGeneralAndArmy,
+  getArmyPositions: () => ARMY_POSITIONS,
 };
 
 boot().catch((error) => {
