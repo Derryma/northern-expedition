@@ -26,7 +26,6 @@ DEFAULT_SLOTS = {
     "major_general": 0,
 }
 
-BODY_GUARD_LEVELS = (None, "low", "high")
 
 CHILD_ROLE = {
     "great_general": "lieutenant_general",
@@ -81,9 +80,6 @@ def validate_tree(tree: GeneralTree) -> GeneralTree:
             _set_loyalty(general, loyalty)
         if _is_absolute_loyal(general):
             general["loyalty"] = 10
-        body_guard_level = general.get("body_guard_level")
-        if body_guard_level not in BODY_GUARD_LEVELS:
-            raise ValueError(f"{general_id} has invalid body_guard_level {body_guard_level!r}")
         subordinates = _subordinates(general)
         if len(subordinates) > int(general.get("subordinate_slots", DEFAULT_SLOTS[role])):
             raise ValueError(f"{general_id} has more subordinates than slots")
@@ -138,7 +134,6 @@ def recruit_general(
         "loyalty": general.get("loyalty"),
         "absolute_loyalty": bool(general.get("absolute_loyalty", False)),
         "loyalty_exempt": bool(general.get("loyalty_exempt", False)),
-        "body_guard_level": general.get("body_guard_level"),
         "command_cap": command_cap,
         "traits": list(general.get("traits", [])),
         "skills": list(general.get("skills", [])),
@@ -280,15 +275,6 @@ def transfer_troops_between_absolute_loyal_pair(
 
     source["units"] = source_units
     target["units"] = target_units
-    return tree
-
-
-def set_body_guard_level(tree: GeneralTree, general_id: str, level: Any) -> GeneralTree:
-    """Set a general's body guard level to None, low, or high."""
-
-    if level not in BODY_GUARD_LEVELS:
-        raise ValueError("body guard level must be None, 'low', or 'high'")
-    _general(tree, general_id)["body_guard_level"] = level
     return tree
 
 

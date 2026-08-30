@@ -11,7 +11,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 80,
       "traits": [
         "shock_column_leader"
@@ -41,7 +40,6 @@
       "loyalty": 10,
       "absolute_loyalty": true,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 42,
       "traits": [
         "steady_drillmaster"
@@ -68,7 +66,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 40,
       "traits": [
         "fire_support_savant"
@@ -95,7 +92,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 34,
       "traits": [
         "local_supply_boss"
@@ -120,7 +116,6 @@
       "core_faction": true,
       "loyalty": 7,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 20,
       "traits": [
         "layered_defender"
@@ -147,7 +142,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 24,
       "traits": [
         "cavalry_screen_commander"

@@ -109,7 +109,10 @@ class BackendTests(unittest.TestCase):
     def test_navy_repair_costs_two_factory_per_hp(self):
         engine = GameEngine(seed=7)
         before = engine.state["players"]["W"]["factory_points"]
-        result = engine.repair_navy("W", 3)
+        # 修理有港口門檻（3 級以上、未癱瘓）。這條驗的是單價，停在合格的大港上。
+        port = next(c["id"] for c in engine.data["strategic_map"]["cities"]
+                    if c.get("port") and int(engine._with_level(c).get("level", 0)) >= 3)
+        result = engine.repair_navy("W", 3, city_id=port)
         self.assertEqual(result["factory"], 6)
         self.assertEqual(result["state"]["players"]["W"]["factory_points"], before - 6)
 
@@ -1491,7 +1494,8 @@ class EventCardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "一黨之國"):
             engine.use_function("F", "local_autonomy_agitation",
                                 target_general_id="wu_peifu", target_owner="W")
-        for card_id in ("communist_riot", "hongmen_uprising", "peking_university_movement"):
+        for card_id in ("communist_riot", "hongmen_uprising", "red_spear_uprising",
+                        "peking_university_movement"):
             self.assertEqual(payload["function_deck"].count(card_id), 0, card_id)
 
     def test_showa_accession_hardens_tokyo_three_turns_later(self):
@@ -11743,6 +11747,10 @@ class NavyRepairTests(unittest.TestCase):
         self.assertEqual([b["hp"] for b in fleet["gunBoats"]], [30, 30])
         self.assertEqual([b["hp"] for b in fleet["cargoBoatHp"]], [10])
 
+    # 修理有港口門檻（在港口、港務沒癱瘓、3 級以上）。這一組驗的是「補幾點、
+    # 收多少」，所以一律停在一座合格的大港上。
+    REPAIR_PORT = "jinzhou"
+
     def test_a_boat_already_above_the_floor_is_left_alone(self):
         from navy_system.navy import restore_hp_to_floor
         fleet = self._fleet([28], cargo_hp=())
@@ -11759,7 +11767,7 @@ class NavyRepairTests(unittest.TestCase):
         engine = GameEngine(seed=7)
         before = engine.state["players"]["W"]["factory_points"]
         fleet = self._fleet([25], cargo_hp=())
-        result = engine.repair_navy("W", 0, fleet, 30)
+        result = engine.repair_navy("W", 0, fleet, 30, self.REPAIR_PORT)
         self.assertEqual(result["hp"], 5)
         self.assertEqual(result["factory"], 10, "每點 2 工業點")
         self.assertEqual(result["state"]["players"]["W"]["factory_points"], before - 10)
@@ -11770,20 +11778,20 @@ class NavyRepairTests(unittest.TestCase):
         engine.state["players"]["W"]["factory_points"] = 100
         before = engine.state["players"]["W"]["factory_points"]
         fleet = self._fleet([10], cargo_hp=())
-        result = engine.repair_navy("W", 0, fleet, 30)
+        result = engine.repair_navy("W", 0, fleet, 30, self.REPAIR_PORT)
         self.assertEqual(result["hp"], 20, "後端自己算，不看前端送的 hp")
         self.assertEqual(result["state"]["players"]["W"]["factory_points"], before - 40)
 
     def test_a_client_claiming_a_huge_number_cannot_buy_phantom_hp(self):
         engine = GameEngine(seed=7)
         fleet = self._fleet([29], cargo_hp=())
-        result = engine.repair_navy("W", 999, fleet, 30)
+        result = engine.repair_navy("W", 999, fleet, 30, self.REPAIR_PORT)
         self.assertEqual(result["hp"], 1)
 
     def test_repairing_a_fleet_that_needs_nothing_is_refused(self):
         engine = GameEngine(seed=7)
         with self.assertRaises(ValueError):
-            engine.repair_navy("W", 0, self._fleet([30], cargo_hp=(10,)), 30)
+            engine.repair_navy("W", 0, self._fleet([30], cargo_hp=(10,)), 30, self.REPAIR_PORT)
 
     def test_the_frontend_no_longer_computes_the_restored_hp(self):
         navy_js = (pathlib.Path(__file__).resolve().parents[1]
@@ -11794,6 +11802,7 @@ class NavyRepairTests(unittest.TestCase):
         repair = FRONTEND_SOURCE.split('operation === "repair"', 1)[1][:1400]
         self.assertIn("navy: navySnapshotForServer(navy)", repair)
         self.assertIn("target_hp: targetHp", repair)
+        self.assertIn("city_id: cell.city.id", repair)
         self.assertIn("applyNavyStateFromServer(navy, result.navy)", repair)
 
     def test_the_frontend_no_longer_owns_the_damage_allocation_either(self):
@@ -16055,7 +16064,9 @@ class RedSpearUprisingTests(unittest.TestCase):
         self.assertEqual(sorted(effect["city_ids"]), sorted(hebei))
         self.assertEqual((effect["required_force"], effect["required_turns"]), (15, 2))
         self.assertEqual(effect["reward_rate"], 0.5)
-        self.assertEqual(effect["label"], "紅槍會暴動")
+        # 實質效果就是黑幫暴動，三張卡共用同一個標籤——不另立新標籤，
+        # 否則畫面、卡面與所有「黑幫暴動」的說明都會對不起來。
+        self.assertEqual(effect["label"], "黑幫暴動")
 
     def test_a_province_outside_the_list_is_refused(self):
         engine = self._engine()
@@ -16770,6 +16781,581 @@ class SingleSourceOfTruthTests(unittest.TestCase):
                      "active_timed_flag(", "_purge_card_everywhere("):
             self.assertGreaterEqual(source.count(name), 2,
                                     f"{name} 在 production 程式碼裡沒有呼叫端")
+
+
+class GangRiotCardsBehaveIdenticallyTests(unittest.TestCase):
+    """〈杜月笙的豪賭〉〈洪門起義〉〈紅槍會起義〉是同一套機制，只是省份不同。
+
+    加第三張卡時最容易出的錯，是某個機制的名單只寫了前兩張——它不會報錯，
+    只會讓新卡安靜地免疫掉一條規則。所以這裡逐張跑，不逐張寫。
+    """
+
+    @property
+    def CARDS(self):
+        cards = json.loads(FUNCTION_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        return [c for c in cards if c.get("mechanic") == "qing_gang_riot"]
+
+    @staticmethod
+    def _own(engine, province, code):
+        for city in engine.data["strategic_map"]["cities"]:
+            if city.get("province") == province:
+                engine.state["city_owners"][city["id"]] = code
+
+    @staticmethod
+    def _fire(engine, card_id, choice=None):
+        engine.state["event_pool"] = [card_id]
+        current = int(engine.state["turn"])
+        engine.state["turn"] = ((current // 3) + 1) * 3 - 1
+        engine.next_turn(active_player="F")
+        view = engine.pending_event_view()
+        while view:
+            options = [o["id"] for o in ((view["card"].get("resolution") or {}).get("options") or [])]
+            pick = choice if choice in options else (options[0] if options else None)
+            engine.respond_event(view["waiting_for"], **({"choice": pick} if pick else {}))
+            view = engine.pending_event_view()
+
+    def _play(self, engine, card, province, owner="N", player="F"):
+        payload = engine.state["players"][player]
+        payload["treasury"] = 500
+        payload["hand"].append(card["id"])
+        return engine.use_function(player, card["id"],
+                                   target_owner=owner, target_province=province)
+
+    def test_they_all_share_one_disruption_label(self):
+        """紅槍會不另立標籤——實質效果就是黑幫暴動。"""
+        labels = {c["disruption_label"] for c in self.CARDS}
+        self.assertEqual(labels, {"黑幫暴動"})
+
+    def test_they_all_share_the_same_numbers(self):
+        for key in ("suppression_force", "suppression_turns", "reward_rate", "cost", "mechanic"):
+            values = {c.get(key) for c in self.CARDS}
+            self.assertEqual(len(values), 1, f"{key} 三張卡不一致：{values}")
+
+    def test_they_all_have_the_same_number_of_copies(self):
+        from backend.card_engine import FUNCTION_CARD_COPIES
+        counts = {FUNCTION_CARD_COPIES[c["id"]] for c in self.CARDS}
+        self.assertEqual(len(counts), 1, f"卡池份數不一致：{counts}")
+
+    def test_no_two_cards_claim_the_same_province(self):
+        seen = {}
+        for card in self.CARDS:
+            for province in card["provinces"]:
+                self.assertNotIn(province, seen,
+                                 f'{province} 同時掛在 {seen.get(province)} 與 {card["id"]} 底下')
+                seen[province] = card["id"]
+
+    def test_every_card_lands_the_same_shape_of_riot(self):
+        shapes = set()
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            effect = self._play(engine, card, province)["city_disruption"]
+            shapes.add((effect["kind"], effect["label"], effect["required_force"],
+                        effect["required_turns"], effect["reward_rate"]))
+        self.assertEqual(len(shapes), 1, f"三張卡落地的形狀不一樣：{shapes}")
+
+    def test_one_party_state_blocks_every_one_of_them(self):
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            self._fire(engine, "one_party_state")
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            with self.assertRaises(ValueError, msg=card["id"]):
+                self._play(engine, card, province)
+
+    def test_one_party_state_quells_every_one_of_them(self):
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            self._play(engine, card, province)
+            self.assertTrue([e for e in engine.state["city_output_effects"]
+                             if e.get("kind") == "qing_gang_riot"], card["id"])
+            self._fire(engine, "one_party_state")
+            self.assertEqual([e for e in engine.state["city_output_effects"]
+                              if e.get("kind") == "qing_gang_riot"], [], card["id"])
+
+    def test_a_police_precinct_blocks_every_one_of_them(self):
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            engine.state["players"]["N"].setdefault("timed_effects", []).append(
+                {"kind": "gang_riot_shield", "province": province, "remaining_turns": 3,
+                 "blocked_mechanics": ["qing_gang_riot"]})
+            with self.assertRaises(ValueError, msg=card["id"]):
+                self._play(engine, card, province)
+
+    def test_a_security_crackdown_lifts_every_one_of_their_thresholds(self):
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            self._fire(engine, "burning_red_lotus")
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            effect = self._play(engine, card, province)["city_disruption"]
+            self.assertEqual(effect["required_turns"], 3, card["id"])
+
+    def test_none_of_them_can_be_stacked_on_the_same_province(self):
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            self._play(engine, card, province)
+            with self.assertRaisesRegex(ValueError, "已經在暴動中", msg=card["id"]):
+                self._play(engine, card, province)
+
+    def test_every_one_of_them_is_quelled_by_garrisoning(self):
+        for card in self.CARDS:
+            engine = GameEngine(seed=6)
+            province = card["provinces"][0]
+            self._own(engine, province, "N")
+            effect_id = self._play(engine, card, province)["city_disruption"]["id"]
+            for _ in range(3):
+                engine.next_turn(active_player="F", riot_garrisons={effect_id: True})
+            self.assertFalse([e for e in engine.state["city_output_effects"]
+                              if e.get("id") == effect_id], card["id"])
+
+    def test_the_card_text_says_the_same_thing_about_the_riot(self):
+        """卡面不該有三種說法——只有省份清單可以不同。"""
+        for card in self.CARDS:
+            self.assertIn("發動黑幫暴動", card["effect"], card["id"])
+
+    def test_soong_patronage_immunity_covers_every_card_that_can_reach_shanghai(self):
+        """〈上海灘宋貴人〉的 immune_cards 是逐張列的。
+
+        它今天只列〈杜月笙的豪賭〉是對的——上海在江蘇，而只有那張卡打得到江蘇。
+        但省份名單一改就會出現「宋家擋不住的黑幫暴動」，而且不會有任何東西報錯。
+        """
+        cards = json.loads(FUNCTION_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        soong = next(c for c in cards if c["id"] == "soong_patronage")
+        engine = GameEngine(seed=1)
+        city_id = soong.get("city_id", "shanghai")
+        province = next(c["province"] for c in engine.data["strategic_map"]["cities"]
+                        if c["id"] == city_id)
+        reachable = {c["id"] for c in self.CARDS if province in c["provinces"]}
+        immune = set(soong.get("immune_cards") or [])
+        self.assertEqual(reachable - immune, set(),
+                         f"{province} 打得到、但宋家擋不住的黑幫暴動卡")
+
+    def test_the_police_precinct_card_text_lists_all_of_them(self):
+        """警政單位擋的是 mechanic，所以三張都擋得到——卡面文字也要說得出三張。"""
+        cards = json.loads(FUNCTION_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        precinct = next(c for c in cards if c["id"] == "police_precinct")
+        for card in self.CARDS:
+            self.assertIn(card["name"], precinct["effect"], card["id"])
+
+    def test_one_party_state_lists_all_of_them_on_the_card_face(self):
+        events = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        one_party = next(c for c in events if c["id"] == "one_party_state")
+        for card in self.CARDS:
+            self.assertIn(f'〈{card["name"]}〉', one_party["effect"], card["id"])
+            self.assertIn(card["id"], one_party["apply"]["perk_suspension"]["cards"], card["id"])
+
+    def test_burning_red_lotus_lists_all_of_them_on_the_card_face(self):
+        events = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        lotus = next(c for c in events if c["id"] == "burning_red_lotus")
+        for card in self.CARDS:
+            self.assertIn(f'〈{card["name"]}〉', lotus["effect"], card["id"])
+
+
+class SecondSourceOfTruthTests(unittest.TestCase):
+    """幾份「看起來是資料、其實沒人讀」的檔案。
+
+    它們不影響執行，但讀的人會把它們當規則書。既然要留，就得跟真源對死——
+    不然它們只是安靜地過時（NPC 名冊少了 7 支部隊、川軍兩支的駐地還是舊的，
+    親衛隊那一節描述的是一個從未實作過的設計）。
+    """
+
+    def test_the_npc_roster_matches_the_map(self):
+        """NPC/data/npc_factions.json 的 initial_armies 沒有任何讀取者。
+
+        真源是 frontend/map.js 的 FACTION_ARMIES。這條測試把兩邊對死。
+        """
+        roster = json.loads((REPO_ROOT / "NPC" / "data" / "npc_factions.json")
+                            .read_text(encoding="utf-8"))
+        cities = json.loads((REPO_ROOT / "scenario" / "data" / "strategic_map.json")
+                            .read_text(encoding="utf-8"))["cities"]
+        city_name = {c["id"]: c["name"] for c in cities}
+        map_source = (REPO_ROOT / "frontend" / "map.js").read_text(encoding="utf-8")
+        live = {}
+        for match in re.finditer(
+                r"\{\s*id:\s*'([A-Z]-\d+)',\s*generalId:\s*'[a-z_]+',"
+                r"\s*general:\s*'([^']+)'.*?startCityId:\s*'([a-z_]+)'.*?units:\s*\{([^}]*)\}",
+                map_source):
+            army_id, general, city, units = match.groups()
+            live[army_id] = {
+                "general": general,
+                "spawn_city": city_name[city],
+                "units": {unit: int(n) for unit, n in re.findall(r"(\w+):\s*(\d+)", units)},
+            }
+        npc_codes = {f["code"] for f in roster["npc_factions"]}
+        expected = sorted(a for a in live if a.split("-")[0] in npc_codes)
+        listed = sorted(a["id"] for f in roster["npc_factions"] for a in f["initial_armies"])
+        self.assertEqual(listed, expected, "名冊上的部隊編號與地圖對不上")
+        for faction in roster["npc_factions"]:
+            for army in faction["initial_armies"]:
+                actual = live[army["id"]]
+                self.assertEqual(army["general"], actual["general"], army["id"])
+                self.assertEqual(army["spawn_city"], actual["spawn_city"], army["id"])
+                self.assertEqual({u: n for u, n in army["units"].items() if n},
+                                 {u: n for u, n in actual["units"].items() if n},
+                                 army["id"])
+
+    def test_the_npc_rules_note_does_not_contradict_the_engine(self):
+        """名冊上寫過「NPC 不會自己成長」——但 npc_reinforcements 每 3／5 回合就補兵。"""
+        roster = json.loads((REPO_ROOT / "NPC" / "data" / "npc_factions.json")
+                            .read_text(encoding="utf-8"))
+        rules = roster["npc_rules"]
+        engine = GameEngine(seed=3)
+        tactical = {"armies": {"Y-1": {"generalId": "yan_xishan", "faction": "Y",
+                                       "status": "active",
+                                       "units": {"infantry": 8, "cavalry": 3,
+                                                 "machine_gun": 1, "artillery": 1}}},
+                    "generalOwners": {}, "generalTrees": {}, "jailedGenerals": []}
+        grows = any(engine.npc_reinforcements(tactical, turn)["grown"] for turn in range(1, 11))
+        self.assertEqual(bool(rules["growth"]), grows,
+                         "npc_rules.growth 與引擎的實際行為不一致")
+        self.assertNotIn("do not grow", rules["army_behavior"])
+
+    def test_the_card_pool_draw_numbers_match_the_engine(self):
+        from backend.card_engine import (MAX_HAND_SIZE, FUNCTION_CARD_DRAW_COST,
+                                         FUNCTION_CARD_DRAW_LIMIT)
+        rules = json.loads((REPO_ROOT / "cards" / "data" / "card_pool_rules.json")
+                           .read_text(encoding="utf-8"))["draw_timing"]["function_cards"]
+        self.assertEqual(int(rules["draw_cost"]), FUNCTION_CARD_DRAW_COST)
+        self.assertEqual(int(rules["purchase_limit_per_turn"]), FUNCTION_CARD_DRAW_LIMIT)
+        self.assertEqual(int(rules["max_hand_size"]), MAX_HAND_SIZE)
+
+    def test_the_body_guard_section_describes_the_mechanic_that_exists(self):
+        """那一節描述的是 low/high 兩級 +3／+6——一個從未實作過的設計。"""
+        rules = json.loads((REPO_ROOT / "cards" / "data" / "card_pool_rules.json")
+                           .read_text(encoding="utf-8"))["body_guard_state"]
+        cards = json.loads(FUNCTION_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        guard = next(c for c in cards if c.get("mechanic") == "body_guard")
+        self.assertEqual(float(rules["assassination_reduction"]),
+                         float(guard["assassination_reduction"]))
+        for gone in ("valid_values", "low_defense_bonus_against_assassination",
+                     "high_defense_bonus_against_assassination"):
+            self.assertNotIn(gone, rules, "這是那個沒實作過的設計留下的欄位")
+
+    def test_the_navy_repair_gates_live_in_the_backend(self):
+        """「只能在港口修」先前只寫在 app.js，navy_rules.json 的 harbor_only 沒人讀。
+
+        伺服器照單全收——直接打 /api/repair-navy 就能在任何地方修好艦隊。
+        """
+        engine = GameEngine(seed=3)
+        engine.state["players"]["F"]["factory_points"] = 500
+        fleet = {"id": "F-N1", "gunBoats": [{"hp": 10, "maxHp": 30}],
+                 "cargoBoats": 0, "cargoBoatHp": []}
+        cities = engine.data["strategic_map"]["cities"]
+        big = next(c["id"] for c in cities
+                   if c.get("port") and int(engine._with_level(c).get("level", 0)) >= 3)
+        small = next(c["id"] for c in cities
+                     if c.get("port") and int(engine._with_level(c).get("level", 0)) < 3)
+        inland = next(c["id"] for c in cities if not c.get("port"))
+        for city_id, why in ((None, "沒指定城市"), (inland, "內陸城"), (small, "小港")):
+            with self.assertRaises(ValueError, msg=why):
+                engine.repair_navy("F", navy=deepcopy(fleet), target_hp=30, city_id=city_id)
+        ok = engine.repair_navy("F", navy=deepcopy(fleet), target_hp=30, city_id=big)
+        self.assertEqual(ok["hp"], 20)
+        engine.state.setdefault("port_effects", []).append(
+            {"city_id": big, "remaining_turns": 2, "name": "大港開炸"})
+        with self.assertRaisesRegex(ValueError, "港務癱瘓"):
+            engine.repair_navy("F", navy=deepcopy(fleet), target_hp=30, city_id=big)
+
+    def test_the_repair_gates_are_read_from_the_rules_file(self):
+        """規則只能有一份：關掉 harbor_only，後端就不該再擋。"""
+        engine = GameEngine(seed=3)
+        engine.state["players"]["F"]["factory_points"] = 500
+        engine.data["navy_system"]["repair"]["harbor_only"] = False
+        fleet = {"id": "F-N1", "gunBoats": [{"hp": 10, "maxHp": 30}],
+                 "cargoBoats": 0, "cargoBoatHp": []}
+        self.assertEqual(
+            engine.repair_navy("F", navy=fleet, target_hp=30, city_id=None)["hp"], 20)
+
+    def test_the_service_port_level_is_not_hardcoded_in_the_frontend(self):
+        self.assertNotIn("NAVY_SERVICE_PORT_LEVEL = 3", FRONTEND_SOURCE,
+                         "服務港等級又變成前端自己的常數了")
+        self.assertIn("navyRules()?.repair?.min_port_level", FRONTEND_SOURCE)
+
+    def test_land_retreat_is_read_from_the_rules_file(self):
+        """navy_rules.json 的 land_retreat_when_no_artillery 先前沒有任何讀取者。"""
+        from navy_system.navy import resolve_army_navy_contact
+        rules = json.loads((REPO_ROOT / "navy_system" / "data" / "navy_rules.json")
+                           .read_text(encoding="utf-8"))
+        outcomes = []
+        for flag in (True, False):
+            probe = deepcopy(rules)
+            probe["land_interaction"]["land_retreat_when_no_artillery"] = flag
+            navy = {"gunBoats": [{"hp": 30, "maxHp": 30}], "cargoBoats": []}
+            outcomes.append(resolve_army_navy_contact({"artillery": 1}, navy, probe)["landRetreat"])
+        self.assertEqual(outcomes, [True, False], "改資料要真的改行為")
+
+    def test_the_navy_rules_keep_no_second_copy_of_the_passable_cells(self):
+        rules = json.loads((REPO_ROOT / "navy_system" / "data" / "navy_rules.json")
+                           .read_text(encoding="utf-8"))
+        self.assertNotIn("allowed_tile_kinds", rules["move"],
+                         "可通行地格的判準在 navy.js 的 navyCanEnterCell，不要留副本")
+
+    def test_unimplemented_foreign_rules_are_labelled_as_such(self):
+        """那幾條「懲戒戰爭」條目沒有任何實作，不能混在生效中的規則裡。"""
+        powers = json.loads((REPO_ROOT / "foreign_powers" / "data" / "foreign_powers.json")
+                            .read_text(encoding="utf-8"))["global_rules"]
+        sources = "\n".join((REPO_ROOT / rel).read_text(encoding="utf-8") for rel in (
+            "backend/card_engine.py", "backend/server.py", "backend/foreign_punishment.py",
+            "backend/foreign_pressure.py", "frontend/app.js"))
+        for key in powers.get("not_implemented", {}):
+            if key == "note":
+                continue
+            self.assertNotIn(key, sources,
+                             f"{key} 已經有實作了，把它從 not_implemented 移出去")
+        for key in powers:
+            if key in ("not_implemented", "relation_scale"):
+                continue
+            self.assertNotIsInstance(powers[key], (int, float),
+                                     f"{key} 看起來是個生效中的數值，但沒有人讀它")
+
+    def test_the_combat_stats_have_exactly_one_source(self):
+        """每營 HP、戰力點與攻擊矩陣先前有三份：資料檔、combat.py、card_engine。
+
+        三份剛好相同，但沒有任何東西保證它們會一直相同——而且資料檔那份
+        根本沒有讀取者，改它不會有任何效果。
+        """
+        from comabt_system.combat import BASE_STATS, ATTACK_MATRIX
+        from backend.card_engine import UNIT_FORCE_POINTS
+        stats = json.loads((REPO_ROOT / "comabt_system" / "data" / "unit_stats.json")
+                           .read_text(encoding="utf-8"))
+        for unit, row in stats["units"].items():
+            self.assertEqual(BASE_STATS[unit]["hp"], float(row["hp"]), unit)
+            self.assertEqual(BASE_STATS[unit]["force_points"], float(row["force_points"]), unit)
+            self.assertEqual(UNIT_FORCE_POINTS[unit], int(row["force_points"]), unit)
+        self.assertEqual(ATTACK_MATRIX,
+                         {s: {t: float(v) for t, v in row.items()}
+                          for s, row in stats["attack_matrix"].items()})
+
+    def test_changing_the_data_file_really_moves_the_combat_numbers(self):
+        """讀不讀得到，靠改一次資料檔證明，不靠讀程式碼。"""
+        import importlib, shutil, tempfile
+        path = REPO_ROOT / "comabt_system" / "data" / "unit_stats.json"
+        original = path.read_bytes()
+        try:
+            probe = json.loads(original.decode("utf-8"))
+            probe["units"]["cavalry"]["force_points"] = 9
+            probe["attack_matrix"]["cavalry"]["artillery"] = 7.0
+            path.write_text(json.dumps(probe, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+            import comabt_system.combat as combat
+            reloaded = importlib.reload(combat)
+            self.assertEqual(reloaded.BASE_STATS["cavalry"]["force_points"], 9.0)
+            self.assertEqual(reloaded.ATTACK_MATRIX["cavalry"]["artillery"], 7.0)
+        finally:
+            path.write_bytes(original)
+            import comabt_system.combat as combat
+            importlib.reload(combat)
+        self.assertEqual(path.read_bytes(), original, "資料檔沒還原")
+
+    def test_changing_the_data_file_really_moves_the_force_points(self):
+        """突變測試逃掉過一次：把 UNIT_FORCE_POINTS 寫回同樣的字面值沒人紅。
+
+        比對數值抓不到「又變成寫死的副本」——只有改資料檔看它跟不跟得動才抓得到。
+        """
+        import importlib
+        path = REPO_ROOT / "comabt_system" / "data" / "unit_stats.json"
+        original = path.read_bytes()
+        try:
+            probe = json.loads(original.decode("utf-8"))
+            probe["units"]["cavalry"]["force_points"] = 9
+            path.write_text(json.dumps(probe, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+            import backend.card_engine as card_engine
+            reloaded = importlib.reload(card_engine)
+            self.assertEqual(reloaded.UNIT_FORCE_POINTS["cavalry"], 9)
+        finally:
+            path.write_bytes(original)
+            import backend.card_engine as card_engine
+            importlib.reload(card_engine)
+        self.assertEqual(path.read_bytes(), original, "資料檔沒還原")
+        from backend.card_engine import UNIT_FORCE_POINTS as restored
+        self.assertEqual(restored["cavalry"], 1)
+
+    def test_the_skill_catalog_has_no_hidden_rule(self):
+        """技能目錄只剩敘述性欄位；有規則性欄位就得有讀取者。"""
+        catalog = json.loads((REPO_ROOT / "general_tree" / "data" / "skill_catalog.json")
+                             .read_text(encoding="utf-8"))["skills"]
+        for name, entry in catalog.items():
+            self.assertEqual(set(entry) - {"name", "type", "natural_acquisition", "notes"},
+                             set(), f"{name} 多了沒人讀的欄位")
+
+    def test_the_abandoned_body_guard_level_field_is_gone(self):
+        """general.body_guard_level 在 47 位將領身上全是 null、沒有任何讀取者。
+
+        它是同一套沒實作過的 low/high 設計留下的；只有 general_tree.py 裡
+        一個沒人用的驗證分支在檢查它。
+        """
+        for path in (REPO_ROOT / "general_tree" / "data").glob("*.json"):
+            self.assertNotIn("body_guard_level", path.read_text(encoding="utf-8"), path.name)
+        module = (REPO_ROOT / "general_tree" / "general_tree.py").read_text(encoding="utf-8")
+        self.assertNotIn("body_guard_level", module)
+        self.assertNotIn("BODY_GUARD_LEVELS", module)
+
+    def test_the_body_guard_reduction_is_read_from_the_card(self):
+        """規則只能有一份：改卡片上的數字，暗殺成功率就要跟著動。"""
+        engine = GameEngine(seed=3)
+        for card in engine.data["function_cards"]["cards"]:
+            if card.get("mechanic") == "body_guard":
+                card["assassination_reduction"] = 0.15
+        payload = engine.state["players"]["F"]
+        payload["treasury"] = 500
+        payload["hand"].append("body_guard_squad")
+        engine.use_function("F", "body_guard_squad", target_general_id="wu_peifu",
+                            target_owner="F")
+        engine.state["turn"] += 1
+        outcome = engine._resolve_assassination(
+            "W", {"id": "probe", "name": "probe", "success_rate": 0.2},
+            "wu_peifu", "F", notify=False)
+        self.assertAlmostEqual(outcome["guard_reduction"], 0.15)
+        self.assertAlmostEqual(outcome["chance"], 0.05)
+
+
+class NpcEventCardsComeFirstTests(unittest.TestCase):
+    """NPC 事件卡（第 15 區塊）排在前面抽：NPC → NPC → NPC → 一般 → NPC → …
+
+    節奏寫在 event_cards.json 的 draw_rules.priority_group，引擎不寫死。
+    序號走的是「已經抽出去幾張」，所以某一次因為沒有合格的 NPC 卡而退回抽一般卡時，
+    後面的順序不會錯位。
+    """
+
+    ALIVE = {
+        "Y-1": "yan_xishan", "Y-2": "fu_zuoyi", "Y-3": "xu_yongchang",
+        "G-1": "feng_yuxiang", "G-2": "song_zheyuan", "G-3": "lu_zhonglin",
+        "G-4": "han_fuqu", "M-1": "ma_fuxiang", "M-2": "ma_hongkui", "M-3": "ma_qi",
+        "H-1": "tang_shengzhi", "H-2": "zhao_hengti", "H-3": "he_jian",
+        "C-1": "liu_xiang", "C-2": "liu_wenhui", "C-3": "yang_sen",
+        "D-1": "tang_jiyao", "D-2": "long_yun", "Q-1": "qian_local_militia",
+    }
+
+    def _tactical(self):
+        return {"armies": {army: {"generalId": general, "faction": army.split("-")[0],
+                                  "status": "active",
+                                  "units": {"infantry": 10, "cavalry": 3,
+                                            "machine_gun": 1, "artillery": 1}}
+                           for army, general in self.ALIVE.items()},
+                "generalOwners": {}, "generalTrees": {}, "jailedGenerals": []}
+
+    def _play(self, seed, draws):
+        """一路抽到 draws 張為止，回傳每一張是不是 NPC 卡。"""
+        engine = GameEngine(seed=seed)
+        engine.new_game()
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 400
+        out = []
+        for _ in range(draws * 6):
+            if len(out) >= draws:
+                break
+            engine.next_turn(active_player="F", tactical=self._tactical(), force=True)
+            view = engine.pending_event_view()
+            seen = set()
+            while view:
+                # 「每家表態」的卡會被 pending_event_view 回傳好幾次（一次一個回應者）。
+                # 這裡數的是抽了幾張，不是看了幾次。
+                key = (view["turn"], view["index"])
+                if key not in seen:
+                    seen.add(key)
+                    out.append(engine.is_priority_event(view["card"]["id"]))
+                options = [o["id"] for o in
+                           ((view["card"].get("resolution") or {}).get("options") or [])]
+                engine.respond_event(view["waiting_for"],
+                                     **({"choice": options[0]} if options else {}))
+                view = engine.pending_event_view()
+        return engine, out
+
+    def test_the_rhythm_is_three_npc_then_one_ordinary(self):
+        for seed in (1, 3, 5, 11, 42):
+            _, drawn = self._play(seed, 24)
+            self.assertEqual(len(drawn), 24, seed)
+            expected = [(i % 4) < 3 for i in range(24)]
+            self.assertEqual(drawn, expected,
+                             f"seed {seed} 的順序是 "
+                             f"{''.join('N' if x else chr(183) for x in drawn)}")
+
+    def test_the_first_three_draws_of_the_game_are_all_npc(self):
+        for seed in (2, 7, 13):
+            _, drawn = self._play(seed, 3)
+            self.assertEqual(drawn, [True, True, True], seed)
+
+    def test_no_npc_card_is_drawn_in_an_ordinary_slot_while_ordinary_cards_remain(self):
+        engine, drawn = self._play(3, 24)
+        for index, is_npc in enumerate(drawn):
+            if not engine._priority_slot(index):
+                self.assertFalse(is_npc, f"第 {index + 1} 張是一般格，卻抽到 NPC 卡")
+
+    def test_the_slot_pattern_comes_from_the_data_file(self):
+        """節奏是資料，不是寫死的：改成 2:1 就要照 2:1 走。"""
+        engine = GameEngine(seed=3)
+        rule = engine.data["event_cards"]["draw_rules"]["priority_group"]
+        self.assertEqual((int(rule["draws"]), int(rule["then_ordinary"])), (3, 1))
+        rule["draws"], rule["then_ordinary"] = 2, 1
+        self.assertEqual([engine._priority_slot(i) for i in range(6)],
+                         [True, True, False, True, True, False])
+        rule["draws"], rule["then_ordinary"] = 1, 2
+        self.assertEqual([engine._priority_slot(i) for i in range(6)],
+                         [True, False, False, True, False, False])
+
+    def test_turning_the_priority_group_off_restores_plain_random_draws(self):
+        engine = GameEngine(seed=3)
+        engine.data["event_cards"]["draw_rules"].pop("priority_group")
+        self.assertFalse(engine._priority_slot(0))
+        self.assertFalse(engine.is_priority_event("liu_xiang_denounces_zhili"))
+        pool = ["a", "b", "c"]
+        self.assertEqual(engine._pick_by_priority(pool, 0), pool, "關掉之後不該再篩")
+
+    def test_the_group_is_exactly_the_fifteenth_block(self):
+        cards = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        engine = GameEngine(seed=1)
+        marked = {c["id"] for c in cards if engine.is_priority_event(c["id"])}
+        expected = {c["id"] for c in cards if str(c.get("ref", "")).startswith("15.")}
+        self.assertEqual(marked, expected)
+        self.assertEqual(len(marked), 33, "第 15 區塊應該是 33 張")
+
+    def test_an_npc_slot_falls_back_rather_than_stalling_the_cycle(self):
+        """NPC 卡全抽完（或全部不合條件）時，NPC 格要退回抽一般卡，不能讓事件週期停擺。"""
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        engine.state["event_pool"] = [c for c in engine.state["event_pool"]
+                                      if not engine.is_priority_event(c)]
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 400
+        self.assertTrue(engine._priority_slot(0), "第一格本來是 NPC 格")
+        current = int(engine.state["turn"])
+        engine.state["turn"] = ((current // 3) + 1) * 3 - 1
+        engine.next_turn(active_player="F", tactical=self._tactical(), force=True)
+        view = engine.pending_event_view()
+        self.assertIsNotNone(view, "沒有 NPC 卡就該退回抽一般卡，不是不抽")
+        self.assertFalse(engine.is_priority_event(view["card"]["id"]))
+
+    def test_the_draw_index_survives_a_snapshot_round_trip(self):
+        """順序記在 state 上，跨存檔要接得回去，否則重連之後節奏會重來一遍。"""
+        engine, _ = self._play(3, 5)
+        self.assertEqual(engine.state["event_draw_index"], 5)
+        probe = GameEngine(seed=9)
+        probe.restore_snapshot(engine.snapshot())
+        self.assertEqual(probe.state["event_draw_index"], 5)
+
+    def test_a_deflected_draw_does_not_consume_a_slot(self):
+        """買辦壓下來的那一次是靜默重抽，不佔序號——否則躲掉的卡會把節奏帶偏。"""
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        before = engine.state["event_draw_index"]
+        engine.state["comprador_deflections"] = []
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 400
+        current = int(engine.state["turn"])
+        engine.state["turn"] = ((current // 3) + 1) * 3 - 1
+        engine.next_turn(active_player="F", tactical=self._tactical(), force=True)
+        after = engine.state["event_draw_index"]
+        drawn = len((engine.state.get("pending_events") or {}).get("cards") or [])
+        self.assertEqual(after - before, drawn, "序號只能跟著真的抽出去的張數走")
 
 
 if __name__ == "__main__":

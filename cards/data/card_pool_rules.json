@@ -6,18 +6,20 @@
       "draw": "optional paid purchase",
       "frequency": "each player may pay 5 cash to draw at turn start; limit 2 purchases per turn",
       "hand_rule": "maximum 6 cards; when a seventh card is drawn, discard one held card before receiving it",
-      "play_cost": "playing a function card has no additional cash cost after it is drawn"
+      "play_cost": "playing a function card has no additional cash cost after it is drawn",
+      "source": "數值以 backend/card_engine.py 的 FUNCTION_CARD_DRAW_COST / FUNCTION_CARD_DRAW_LIMIT / MAX_HAND_SIZE 為準；這裡是同一組數字的副本，backend/test_backend.py 會逐項比對，對不上就紅燈。",
+      "draw_cost": 5,
+      "purchase_limit_per_turn": 2,
+      "max_hand_size": 6
     }
   },
   "body_guard_state": {
-    "storage": "general.body_guard_level",
-    "valid_values": [
-      null,
-      "low",
-      "high"
-    ],
-    "low_defense_bonus_against_assassination": 3,
-    "high_defense_bonus_against_assassination": 6
+    "storage": "GameEngine.state['body_guards'][general_id]（將領樹上那個從未讀取過的 general.body_guard_level 欄位已移除）",
+    "source": "數值以 cards/data/function_cards.json 的 body_guard_squad.assassination_reduction 為準；這裡是副本，backend/test_backend.py 會比對。",
+    "assassination_reduction": 0.05,
+    "active_from": "使用的下一回合起生效；同一回合內已經發生的暗殺不受保護",
+    "limit": "每位人物全場只能編成一支，生效後保護至遊戲結束",
+    "note": "早期設計曾有 low/high 兩級與 +3／+6 的防護加值，那一版從未實作；相關欄位與 general_tree.set_body_guard_level 都已移除。"
   },
   "foreign_relation_rules": {
     "scale": "-10~10",

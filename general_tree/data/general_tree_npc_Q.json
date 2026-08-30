@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 20,
       "traits": [
         "local_supply_boss"

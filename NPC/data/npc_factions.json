@@ -28,14 +28,16 @@
     }
   ],
   "npc_rules": {
-    "growth": false,
+    "growth": true,
     "autonomous_action": false,
     "action_driver": "static map presence only until events or player conquest rules are added",
     "when_attacked": "passive combat only",
     "mobilization_when_attacked": false,
     "player_control_when_attacked": false,
-    "army_behavior": "initial NPC armies spawn at controlled major cities, do not move, do not recruit, and do not grow by themselves",
-    "recruitment_role": "players can occupy NPC land and recruit captured NPC generals to grow before fighting other players"
+    "army_behavior": "initial NPC armies spawn at controlled major cities and do not move or recruit by themselves; they DO grow on a fixed cadence (see growth_note) and can be moved, merged or handed over by NPC event cards",
+    "recruitment_role": "players can occupy NPC land and recruit captured NPC generals to grow before fighting other players",
+    "growth_note": "每 3 回合補 1 營步兵、每 5 回合補 1 營重裝（機槍或砲兵），由 GameEngine.npc_reinforcements 執行；週期寫在 NPC_GROWTH_INFANTRY_EVERY_TURNS / NPC_GROWTH_HEAVY_EVERY_TURNS，這裡只是說明。",
+    "source_of_truth": "initial_armies 的唯一真源是 frontend/map.js 的 FACTION_ARMIES；這份是可讀的副本，由 NpcRosterMirrorsTheMapTests 對死，改地圖沒同步這裡就會紅燈。"
   },
   "npc_factions": [
     {
@@ -55,16 +57,27 @@
           "general": "閻錫山",
           "spawn_city": "太原",
           "units": {
-            "infantry": 8,
+            "infantry": 11,
             "cavalry": 3,
-            "machine_gun": 1,
-            "artillery": 1
+            "machine_gun": 2,
+            "artillery": 2
           }
         },
         {
           "id": "Y-2",
           "general": "傅作義",
           "spawn_city": "大同",
+          "units": {
+            "infantry": 7,
+            "cavalry": 4,
+            "machine_gun": 2,
+            "artillery": 0
+          }
+        },
+        {
+          "id": "Y-3",
+          "general": "徐永昌",
+          "spawn_city": "太原",
           "units": {
             "infantry": 6,
             "cavalry": 4,
@@ -107,6 +120,28 @@
             "machine_gun": 1,
             "artillery": 0
           }
+        },
+        {
+          "id": "G-3",
+          "general": "韓復榘",
+          "spawn_city": "西安",
+          "units": {
+            "infantry": 8,
+            "cavalry": 4,
+            "machine_gun": 2,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "G-4",
+          "general": "鹿鍾麟",
+          "spawn_city": "西安",
+          "units": {
+            "infantry": 7,
+            "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 1
+          }
         }
       ]
     },
@@ -139,6 +174,17 @@
           "spawn_city": "西寧",
           "units": {
             "infantry": 6,
+            "cavalry": 4,
+            "machine_gun": 1,
+            "artillery": 0
+          }
+        },
+        {
+          "id": "M-3",
+          "general": "馬鴻逵",
+          "spawn_city": "西寧",
+          "units": {
+            "infantry": 5,
             "cavalry": 4,
             "machine_gun": 1,
             "artillery": 0
@@ -179,6 +225,17 @@
             "machine_gun": 1,
             "artillery": 0
           }
+        },
+        {
+          "id": "H-3",
+          "general": "趙恒惕",
+          "spawn_city": "岳陽",
+          "units": {
+            "infantry": 7,
+            "cavalry": 2,
+            "machine_gun": 1,
+            "artillery": 1
+          }
         }
       ]
     },
@@ -197,7 +254,7 @@
         {
           "id": "C-1",
           "general": "劉湘",
-          "spawn_city": "成都",
+          "spawn_city": "重慶",
           "units": {
             "infantry": 9,
             "cavalry": 3,
@@ -208,10 +265,21 @@
         {
           "id": "C-2",
           "general": "劉文輝",
-          "spawn_city": "重慶",
+          "spawn_city": "成都",
           "units": {
             "infantry": 8,
             "cavalry": 3,
+            "machine_gun": 1,
+            "artillery": 1
+          }
+        },
+        {
+          "id": "C-3",
+          "general": "楊森",
+          "spawn_city": "重慶",
+          "units": {
+            "infantry": 7,
+            "cavalry": 2,
             "machine_gun": 1,
             "artillery": 1
           }

@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 40,
       "traits": [
         "french_comprador",
@@ -38,7 +37,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 26,
       "traits": [
         "mountain_division"

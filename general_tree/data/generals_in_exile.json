@@ -12,7 +12,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 40,
       "traits": [
         "former_overlord"
@@ -42,7 +41,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 36,
       "traits": [
         "old_cantonese_army"
@@ -75,7 +73,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 32,
       "traits": [
         "qilu_veteran"
@@ -105,7 +102,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 35,
       "traits": [
         "zhili_veteran"
@@ -135,7 +131,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 36,
       "traits": [
         "riverine_warfare"
@@ -165,7 +160,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 32,
       "traits": [
         "anhui_veteran"

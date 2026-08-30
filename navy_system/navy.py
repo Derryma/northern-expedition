@@ -328,8 +328,12 @@ def resolve_army_navy_contact(army_units: Mapping[str, Any], navy: dict,
         "artilleryLost": artillery_lost,
         "artilleryAfter": artillery_after,
         # 還有砲兵就守得住那一格；先前用「損失百分比」判，導致一次交火就退，
-        # 陸海接觸永遠打不完。
-        "landRetreat": artillery_after <= 0,
+        # 陸海接觸永遠打不完。開關讀 navy_rules.json——那個欄位本來寫在資料檔裡
+        # 卻沒有任何讀取者，等於規則有兩份、改資料不會生效。
+        "landRetreat": (artillery_after <= 0
+                        if bool(_rule(rules, ("land_interaction",
+                                              "land_retreat_when_no_artillery"), True))
+                        else False),
         "navyRetreat": retreat_threshold_reached(navy, rules)
         or len(active_gun_boats(navy, rules)) == 0,
     }

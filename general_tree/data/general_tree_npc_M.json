@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 38,
       "traits": [
         "xining_garrison"
@@ -38,7 +37,6 @@
       "core_faction": false,
       "loyalty": 7,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 28,
       "traits": [
         "desert_guard"
@@ -63,7 +61,6 @@
       "core_faction": false,
       "loyalty": 7,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 26,
       "traits": [
         "valiant_horse"

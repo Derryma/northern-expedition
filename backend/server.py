@@ -331,6 +331,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             int(payload.get("hp", 0)),
             payload.get("navy"),
             payload.get("target_hp"),
+            payload.get("city_id"),
         )
 
     def _capture_city(self, payload: Dict[str, Any]) -> Dict[str, Any]:

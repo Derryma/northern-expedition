@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 75,
       "traits": [
         "wu_peifu_admired"
@@ -40,7 +39,6 @@
       "loyalty": 10,
       "absolute_loyalty": true,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 40,
       "traits": [
         "defensive_specialist"
@@ -67,7 +65,6 @@
       "core_faction": true,
       "loyalty": 7,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 35,
       "traits": [
         "wuchang_veteran"
@@ -92,7 +89,6 @@
       "core_faction": false,
       "loyalty": 5,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 34,
       "traits": [
         "central_plains_veteran"

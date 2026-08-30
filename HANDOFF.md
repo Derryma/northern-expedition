@@ -356,6 +356,18 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
   唯一可靠的判準是**跑一次真實情境，看那個數字有沒有變**。
   現在有兩組守門測試在防這一類：`OrphanedDataTests`（孤兒 mechanic／特質／技能）
   與 `SingleSourceOfTruthTests`（同一條規則兩份、只有測試在叫的公開方法）。
+* **量法錯了會讓對的程式看起來是錯的。** 「每家表態」的事件卡會被
+  `pending_event_view` 回傳好幾次（一次一個回應者）；把每次回傳都當成一次抽卡，
+  抽卡順序的報告就會出現一堆假的不符。量之前先想清楚一次到底代表什麼。
+* **沒人讀的資料檔會安靜地變成假的，而它看起來仍然像規則書。**
+  `NPC/data/npc_factions.json` 的起始部隊少了 7 支、川軍兩支的駐地是舊的；
+  `card_pool_rules.json` 的親衛隊那一節描述的是一個從未實作過的設計；
+  `foreign_powers.json` 有五條沒有實作的「懲戒戰爭」規則。
+  **掃空轉機制時不要只掃卡片資料檔**——第一輪就是這樣漏掉這四份的。
+* **同一個數字出現三次也不會有人發現。** 每營 HP／戰力點／攻擊矩陣曾經在
+  `unit_stats.json`、`combat.py`、`card_engine.py` 各一份，三份剛好相同。
+  驗這一類只能用「改資料檔看數字跟不跟得動」——**比對數值的測試抓不到**，
+  突變測試就是這樣逃掉一項的。
 * **測試綠燈不等於規則可達。** 用手工塞好的狀態測結算邏輯，證明的是
   「餵它這個輸入會算對」，不是「玩家有辦法走到這個輸入」。
   牽涉到回應佇列、抽卡資格、卡池組成的規則，一定要從 `next_turn` 開始跑完整條路。
@@ -409,9 +421,12 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
    ——別整份讀（很大）。用腳本把 ref 開頭是 15. 的卡連同
      effect / entry_condition / apply 印出來就好。
 
-這一輪（空轉機制稽核）新增的驗證腳本：
+空轉機制稽核新增的驗證腳本：
 * `scripts/checks/mutate_dead_mechanism_audit.py`（16 個突變體）
-* `scripts/checks/dead_mechanism_e2e.py`（真前端：宣戰鈕、暴動門檻、進度顯示）
+* `scripts/checks/mutate_second_audit.py`（11 個突變體，第二輪）
+* `scripts/checks/mutate_draw_order.py`（8 個突變體，NPC 卡優先抽）
+* `scripts/checks/dead_mechanism_e2e.py`（真前端：宣戰鈕、暴動門檻、進度顯示、
+  艦艇修理四關、三張黑幫暴動卡的標籤）
 
 四條底線，違反等於白做：
 * 絕不推 main，一律 feature branch + PR。
@@ -420,7 +435,7 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
 * 本質屬於後端的計算只能在後端，同一條規則不准前後端各寫一份。
 
 NPC 事件卡這條線**已經做完了**：33 張全部上線，apply.pending 清空，
-後端 1182 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
+後端 1223 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
 
 改任何東西之前先跑一次收尾流程（HANDOFF.md 第六節），確認現況真的是綠的；
 改完也照那份流程走一遍，尤其別跳過突變測試——這個專案裡它挖出過真漏洞，

@@ -10,7 +10,6 @@
       "core_faction": true,
       "loyalty": null,
       "loyalty_exempt": true,
-      "body_guard_level": null,
       "command_cap": 80,
       "traits": [
         "marshal_zhang"
@@ -42,7 +41,6 @@
       "loyalty": 10,
       "absolute_loyalty": true,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 38,
       "traits": [
         "young_marshal"
@@ -69,7 +67,6 @@
       "core_faction": true,
       "loyalty": 7,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 36,
       "traits": [
         "elite_artillery"
@@ -96,7 +93,6 @@
       "core_faction": false,
       "loyalty": 6,
       "loyalty_exempt": false,
-      "body_guard_level": null,
       "command_cap": 32,
       "traits": [
         "white_russian_mercenaries",

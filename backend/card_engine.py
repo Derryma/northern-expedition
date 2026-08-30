@@ -34,11 +34,12 @@ FUNCTION_CARD_DRAW_LIMIT = 2
 FOREIGN_RELATION_MIN, FOREIGN_RELATION_MAX = relation_bounds()
 WARLORD_CODES = ("F", "W", "S", "N", "Y", "G", "M", "H", "C", "D", "Q")
 UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
+# 戰力點的唯一真源是 comabt_system/data/unit_stats.json（戰鬥解算器也讀同一份）。
+# 先前這裡是第三份寫死的副本：資料檔一份、combat.py 一份、這裡一份，
+# 三份剛好相同，但沒有任何東西保證它們會一直相同。
 UNIT_FORCE_POINTS = {
-    "infantry": 1,
-    "cavalry": 1,
-    "machine_gun": 2,
-    "artillery": 4,
+    unit: int(stats["force_points"])
+    for unit, stats in load_game_data()["unit_stats"]["units"].items()
 }
 ARMY_FORCE_CAP = 100
 RECRUIT_COSTS = {
@@ -400,6 +401,9 @@ class GameEngine:
                            if not card.get("never_drawn") and not card.get("not_in_pool")
                            for _ in range(max(1, int(card.get("pool_copies", 1))))],
             "event_history": [],
+            # 已經抽出去的第幾張事件卡（不含被買辦壓下的重抽）。抽卡順序
+            # （NPC 優先那個 3:1 的節奏）就是照這個序號算的。
+            "event_draw_index": 0,
             "pending_events": None,
             # 事件卡造成的暫時性限制。
             # event_locks：被封鎖的事件卡。封鎖 ≠ 移除——卡片仍留在 event_pool 裡，
@@ -3478,8 +3482,34 @@ class GameEngine:
         return {"result": result, "navy": navy,
                 "carried": self.settle_navy_carried_army(navy)}
 
+    def _navy_repair_port(self, city_id: Optional[str]) -> Dict[str, Any]:
+        """艦艇能不能在這裡修。三道關全在後端，前端只是先擋一次給即時回饋。
+
+        先前這三條只寫在 app.js（`harbor_only` 這個欄位甚至沒有任何讀取者），
+        伺服器照單全收——直接打 /api/repair-navy 就能在任何地方免費修好。
+        """
+        rules = self.data["navy_system"].get("repair", {})
+        if not rules.get("harbor_only"):
+            return {}
+        if not city_id:
+            raise ValueError("艦艇只能在港口修理：請指明艦隊所在的城市")
+        city = self._city_by_id(str(city_id))
+        if not city or not city.get("port"):
+            raise ValueError("艦艇只能在港口修理。")
+        if any(effect.get("city_id") == str(city_id)
+               for effect in self.state.get("port_effects", [])
+               if int(effect.get("remaining_turns", 0)) > 0):
+            raise ValueError(f'{city.get("name", city_id)}港務癱瘓中，不能修理艦艇。')
+        floor = int(rules.get("min_port_level", 3))
+        level = int(self._with_level(city).get("level", 0))
+        if level < floor:
+            raise ValueError(f'{city.get("name", city_id)}是 {level} 級小港，'
+                             f'修理與編補艦隊要到 {floor} 級以上的港口。')
+        return {"city_id": str(city_id), "level": level}
+
     def repair_navy(self, player: str, hp: int = 0, navy: Optional[Dict[str, Any]] = None,
-                    target_hp: Optional[int] = None) -> Dict[str, Any]:
+                    target_hp: Optional[int] = None,
+                    city_id: Optional[str] = None) -> Dict[str, Any]:
         """修理艦隊並收工業點。
 
         送 ``navy`` + ``target_hp`` 時，補了幾點由後端從艦隊現況算出來，並把修好的
@@ -3488,6 +3518,7 @@ class GameEngine:
         """
         from navy_system.navy import restore_hp_to_floor
         player_state = self._player(player)
+        self._navy_repair_port(city_id)
         repaired = None
         if navy is not None:
             if target_hp is None:
@@ -4329,6 +4360,50 @@ class GameEngine:
                 return deepcopy(card)
         raise ValueError(f"unknown event card: {card_id}")
 
+    def _priority_group_rule(self) -> Dict[str, Any]:
+        """NPC 卡優先的抽卡節奏。節奏本身寫在資料檔，不寫死在這裡。"""
+        rule = (self._event_rules().get("priority_group") or {})
+        if not rule.get("ref_prefix"):
+            return {}
+        return rule
+
+    def is_priority_event(self, card_id: str) -> bool:
+        """這張卡屬不屬於優先抽的那一組（第 15 區塊的 NPC 行動卡）。"""
+        rule = self._priority_group_rule()
+        if not rule:
+            return False
+        ref = str((self._event_template(card_id) or {}).get("ref") or "")
+        return ref.startswith(str(rule["ref_prefix"]))
+
+    def _priority_slot(self, draw_index: int) -> bool:
+        """第 draw_index 張（從 0 起算）該不該優先抽 NPC 卡。
+
+        節奏是「draws 張優先 + then_ordinary 張一般」循環：預設 3 NPC → 1 一般。
+        序號照抽出的張數走，所以就算某一次因為沒有合格的 NPC 卡而退回抽一般卡，
+        之後的順序也不會錯位。
+        """
+        rule = self._priority_group_rule()
+        if not rule:
+            return False
+        priority = max(0, int(rule.get("draws", 0)))
+        ordinary = max(0, int(rule.get("then_ordinary", 0)))
+        period = priority + ordinary
+        if priority <= 0 or period <= 0:
+            return False
+        return (int(draw_index) % period) < priority
+
+    def _pick_by_priority(self, eligible: list, draw_index: int) -> list:
+        """把合格清單依這一格該抽的組別排序：想要的那一組排前面。
+
+        兩組都空不會發生（呼叫端已經確認 eligible 非空）；想要的那一組空了就
+        退回另一組，寧可抽一張一般卡，也不要讓事件週期停擺。
+        """
+        if not self._priority_group_rule():
+            return eligible
+        want_priority = self._priority_slot(draw_index)
+        wanted = [cid for cid in eligible if self.is_priority_event(cid) == want_priority]
+        return wanted or eligible
+
     def _start_event_cycle(self) -> bool:
         """回合數到了就抽事件卡；每則事件隨機指定一個適格玩家承受。"""
         rules = self._event_rules()
@@ -4367,6 +4442,11 @@ class GameEngine:
             ]
             if not eligible:
                 break
+            # NPC 卡優先：第 N 張該抽哪一組由 _priority_slot 決定，
+            # 序號是「已經抽出去幾張」，不是這一輪的第幾次嘗試——
+            # 被買辦壓下的重抽不佔序號，否則節奏會被躲掉的卡帶偏。
+            eligible = self._pick_by_priority(
+                eligible, int(self.state.get("event_draw_index", 0)))
             card_id = eligible[self.random.randrange(len(eligible))]
             card = self._event_template(card_id)
             qualified = self._event_eligible_players(card)
@@ -4407,6 +4487,7 @@ class GameEngine:
             if shot is not None:
                 entry["assassination"] = shot
             drawn.append(entry)
+            self.state["event_draw_index"] = int(self.state.get("event_draw_index", 0)) + 1
         self.state["pending_events"] = {"turn": int(self.state["turn"]), "cards": drawn, "index": 0}
         return True
 
