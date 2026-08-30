@@ -139,6 +139,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/capture-city": self._capture_city,
             "/api/recruit-captive-general": self._recruit_captive_general,
             "/api/attempt-defection": self._attempt_defection,
+            "/api/defection-quote": self._defection_quote,
+            "/api/loyalty-effect": self._loyalty_effect,
             "/api/shared-state": self._shared_state,
             "/api/restore-shared-state": self._restore_shared_state,
             "/api/combat": lambda payload: simulate_with_modifiers(payload, ENGINE),
@@ -343,14 +345,29 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         )
 
     def _attempt_defection(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 成本與成功率由後端從共享戰術快照算。前端只要指名對象；
+        # loyalty／force／resistance 這三個欄位還收，只是為了舊的呼叫端，
+        # 有 general_id 時一概忽略。
         return ENGINE.attempt_defection_with_force(
             str(payload["player"]),
-            int(payload["loyalty"]),
-            float(payload.get("force", 1)),
+            int(payload.get("loyalty", 0) or 0),
+            float(payload.get("force", 0) or 0),
             payload.get("traits"),
             float(payload.get("resistance", 0) or 0),
             payload.get("general_id"),
+            tactical=SHARED_TACTICAL_STATE,
         )
+
+    def _loyalty_effect(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 忠誠加減：挑誰、加多少、算成什麼樣的 override，全在後端。
+        return ENGINE.resolve_loyalty_effect(
+            str(payload["kind"]), str(payload["faction"]), payload.get("effect") or {},
+            tactical=SHARED_TACTICAL_STATE)
+
+    def _defection_quote(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # 面板上的「策反費用／成功率」只能有一個來源。
+        return ENGINE.defection_quote(str(payload["general_id"]),
+                                      tactical=SHARED_TACTICAL_STATE)
 
     def _deal(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.make_deal(

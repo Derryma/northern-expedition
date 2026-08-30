@@ -356,6 +356,25 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
   唯一可靠的判準是**跑一次真實情境，看那個數字有沒有變**。
   現在有兩組守門測試在防這一類：`OrphanedDataTests`（孤兒 mechanic／特質／技能）
   與 `SingleSourceOfTruthTests`（同一條規則兩份、只有測試在叫的公開方法）。
+* **前端把「加減」加在畫面顯示值上，是這個專案最貴的一種錯。** 忠誠加減先前
+  `override = 顯示值 + 幅度`，而 override 是後端 compute_loyalty 的**基礎值**輸入；
+  後端拿它再套一次相對實力與戰損，於是「+2」在弱軍身上實際變成 **+0**。
+  凡是「某個值 + 幅度」的規則，加的是哪一個量必須講清楚，而且只能在後端加。
+* **摘要寫不出來 ≠ 卡沒有效果。** 出牌摘要少一個描述分支，畫面就會說
+  「無效果，浪費一次出牌」——後端其實已經扣過錢、效果也生效了。
+  現在有測試逐一比對「後端回傳的每個欄位都有描述分支」，而且檢查的是**判斷式本身**
+  （只檢查字串會被 `if (false) {` 騙過去）。
+* **「只在還沒收到後端結果時當過渡值」＝第二套規則。** 忠誠、策反成本與成功率、
+  技能失效判準、每一個規則數字的「退路值」——這些全都掛著這種註解，
+  而且全都會在後端還沒答話時安靜地端出自己算的答案。
+  現在的規矩是：拿不到後端的值就顯示「—」，不猜、不自己算。
+  守門的是 `BackendIsTheOnlyEngineTests`（全檔搜字串：公式片段、表名、裸數字）
+  與 `scripts/checks/backend_drives_ui_e2e.py`（隨機調後端數字看畫面跟不跟得動）。
+* **驗這一類不要比對兩邊算出同一個值。** 那不是單一來源，那是兩份規則加一個看門的。
+  要驗就把後端的數字改成一個前端猜不到的怪值，看畫面跟不跟得動。
+* **e2e 之前先確認埠是空的。** 上一輪沒收掉的伺服器還佔著 8766 時，
+  新的綁不上就死了，而輪詢對著舊的立刻成功——整份量測都是對舊伺服器做的，
+  看起來像產品壞了。
 * **量法錯了會讓對的程式看起來是錯的。** 「每家表態」的事件卡會被
   `pending_event_view` 回傳好幾次（一次一個回應者）；把每次回傳都當成一次抽卡，
   抽卡順序的報告就會出現一堆假的不符。量之前先想清楚一次到底代表什麼。
@@ -425,8 +444,21 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
 * `scripts/checks/mutate_dead_mechanism_audit.py`（16 個突變體）
 * `scripts/checks/mutate_second_audit.py`（11 個突變體，第二輪）
 * `scripts/checks/mutate_draw_order.py`（8 個突變體，NPC 卡優先抽）
+* `scripts/checks/mutate_backend_only_engine.py`（8 個突變體，後端唯一計算引擎）
+* `scripts/checks/backend_drives_ui_e2e.py`（隨機調後端數字，驗畫面即時跟動；
+  搭配測試用啟動器 `_probe_server.py`）
+* `scripts/checks/mutate_loyalty_and_tags.py`（11 個突變體：忠誠加減、地格標籤、偵查、摘要）
+* `scripts/checks/loyalty_and_tags_e2e.py`（真前端：忠誠加減、崩鐵玩家摘要、
+  地格癱瘓標籤、情報局擋情報網）
 * `scripts/checks/dead_mechanism_e2e.py`（真前端：宣戰鈕、暴動門檻、進度顯示、
   艦艇修理四關、三張黑幫暴動卡的標籤）
+* `scripts/checks/blocking_and_npc_transfer_e2e.py`（真前端 29 關：鐵路與急行軍
+  被敵軍阻截、急行軍支援 2 格外的戰鬥、NPC 轉屬／招募／歸附重編番號與換將領樹、
+  吞併類的城市與地格真的易主）
+* `scripts/checks/mutate_blocking_and_npc_transfer.py`（14 個突變體。這一輪改的
+  幾乎全在前端，所以判定器不是單元測試而是上面那支 e2e——`mutate_safe.main()`
+  現在收 `runner=` 參數就是為了這個。讀原始碼的字串斷言擋不住 `if (false) {`，
+  跑瀏覽器的擋得住。）
 
 四條底線，違反等於白做：
 * 絕不推 main，一律 feature branch + PR。
@@ -435,7 +467,7 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
 * 本質屬於後端的計算只能在後端，同一條規則不准前後端各寫一份。
 
 NPC 事件卡這條線**已經做完了**：33 張全部上線，apply.pending 清空，
-後端 1223 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
+後端 1262 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
 
 改任何東西之前先跑一次收尾流程（HANDOFF.md 第六節），確認現況真的是綠的；
 改完也照那份流程走一遍，尤其別跳過突變測試——這個專案裡它挖出過真漏洞，
