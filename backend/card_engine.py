@@ -5551,7 +5551,7 @@ class GameEngine:
             # 只掛在一位玩家的佇列上：這件事是全場共通的，掛給每個人會被套用多次。
             # 內容是絕對編制，重複套用結果相同，但提示會重複，所以還是只掛一次。
             holder = sorted(self.state["players"])[0]
-            self._player(holder).setdefault("pending_frontend_effects", []).append({
+            self.queue_frontend_effect(holder, {
                 "kind": "npc_army_units", "label": label, "armies": patch})
         return [{"kind": kind, "armies": patch}]
 
@@ -5973,7 +5973,23 @@ class GameEngine:
                 inserted += 1
         return inserted
 
-    def consume_frontend_effects(self, player: str, kind: Optional[str] = None) -> Dict[str, Any]:
+    def queue_frontend_effect(self, player: str, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """把一筆交辦掛到某位玩家的待辦上，並蓋上唯一的流水號。
+
+        流水號是為了**逐筆銷帳**。先前只能整批銷：前端把整個佇列跑完之後
+        才回來銷一次，於是中間任何一筆丟例外，已經做完的那幾筆也不會被銷掉，
+        下一次排空時再做一遍——忠誠就加了兩次。
+
+        所有掛交辦的地方都要走這裡，不要自己 append（有測試守這一點）。
+        """
+        seq = int(self.state.get("frontend_effect_seq", 0)) + 1
+        self.state["frontend_effect_seq"] = seq
+        stamped = {"id": f"fe{seq}", **entry}
+        self._player(player).setdefault("pending_frontend_effects", []).append(stamped)
+        return stamped
+
+    def consume_frontend_effects(self, player: str, kind: Optional[str] = None,
+                                 ids: Optional[list] = None) -> Dict[str, Any]:
         """把某位玩家的前端待辦清單取出並清掉。
 
         部隊戰力、艦隊生命、駐軍位置都住在 app.js，後端只能把要做的事記在
@@ -5982,7 +5998,12 @@ class GameEngine:
         """
         profile = self._player(player)
         queue = list(profile.get("pending_frontend_effects") or [])
-        if kind is None:
+        if ids is not None:
+            # 逐筆銷帳：只清前端說「這幾筆我做完了」的，做不成的留著下次再試。
+            wanted = {str(item) for item in ids}
+            taken = [entry for entry in queue if str(entry.get("id")) in wanted]
+            left = [entry for entry in queue if str(entry.get("id")) not in wanted]
+        elif kind is None:
             taken, left = queue, []
         else:
             taken = [entry for entry in queue if entry.get("kind") == kind]
@@ -6460,7 +6481,7 @@ class GameEngine:
                     self._tactical.setdefault("generalOwners", {})[general_id] = winner
                 entry["armies"] = moved
                 holder = sorted(self.state["players"])[0]
-                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                self.queue_frontend_effect(holder, {
                     "kind": "npc_general_recruited", "label": label,
                     "general_id": general_id, "general": general_name,
                     "from_faction": home_faction, "owner": winner, "armies": moved})
@@ -6549,7 +6570,7 @@ class GameEngine:
                                      "within": int(relocate.get("within", 1))}
             if moved:
                 holder = sorted(self.state["players"])[0]
-                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                self.queue_frontend_effect(holder, {
                     "kind": "npc_general_transferred", "label": label,
                     "general": name, "general_id": general_id,
                     "from_faction": home_faction, "to_faction": to_faction,
@@ -6581,7 +6602,7 @@ class GameEngine:
                 self._retire_npc_faction(faction)
                 self._refresh_city_income()
                 holder = sorted(self.state["players"])[0]
-                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                self.queue_frontend_effect(holder, {
                     "kind": "npc_faction_absorbed", "label": label,
                     "faction": faction, "owner": winner,
                     "armies": armies, "cities": cities})
@@ -6644,7 +6665,7 @@ class GameEngine:
                 self._retire_npc_faction(source)
                 self._refresh_city_income()
                 holder = sorted(self.state["players"])[0]
-                self._player(holder).setdefault("pending_frontend_effects", []).append({
+                self.queue_frontend_effect(holder, {
                     "kind": "npc_faction_merged", "label": label,
                     "from_faction": source, "into_faction": winner_faction,
                     "into_general_id": winner_general, "into_army_id": target_id,
@@ -7005,7 +7026,7 @@ class GameEngine:
                     magnitude = int(radio.get("loyalty_magnitude", 1))
                     entry["amount"] = magnitude * (1 if int(entry["amount"]) > 0 else -1)
                     entry["amplified_by"] = "radio_station"
-                self._player(code).setdefault("pending_frontend_effects", []).append(entry)
+                self.queue_frontend_effect(code, entry)
                 applied.append({"kind": "frontend_effect", "player": code,
                                 "effect": effect["kind"], "amount": entry.get("amount")})
 
@@ -7703,7 +7724,7 @@ class GameEngine:
                 self._notify(code, "遭遇暗殺：得手，該人物身亡。"
                              if outcome.get("success") else "遭遇暗殺：未得手。")
                 if outcome.get("success"):
-                    self._player(code).setdefault("pending_frontend_effects", []).append({
+                    self.queue_frontend_effect(code, {
                         "kind": "general_death", "label": label,
                         "general_id": outcome["target_general_id"], "owner": code,
                         "marshal": True, "power": spec.get("power"),

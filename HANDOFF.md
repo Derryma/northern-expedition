@@ -460,6 +460,26 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
   現在收 `runner=` 參數就是為了這個。讀原始碼的字串斷言擋不住 `if (false) {`，
   跑瀏覽器的擋得住。）
 
+這一輪（卡的效果落到畫面上）新增的驗證：
+* `scripts/checks/card_effects_land_e2e.py`（真前端 10 關：**按真的按鈕**打忠誠卡、
+  跑城市等級事件卡、跑 NPC 吞併，檢查畫面數字真的動了、而且提示不是例外訊息）
+* `scripts/checks/mutate_card_effects_land.py`（7 個突變體。判定器同時跑
+  `EveryCalledFunctionExistsTests` 與上面那支 e2e——只跑其中一個會有突變體逃掉）
+* `backend/test_backend.py` 的 `EveryCalledFunctionExistsTests`——守「**叫了但沒人定義**」。
+  這是「寫了但沒人讀」的雙胞胎，而且更兇：ReferenceError 會把整段處理器打斷，
+  後面的重畫全部不跑，於是卡明明生效了、畫面卻停在原地。合併兩條開發線之後
+  一次就出現兩個（refreshBackendDerivedState、renderMapUnits）。
+
+前後端同步稽核（第十六批）新增的驗證：
+* `scripts/checks/mutate_sync_audit.py`（7 個突變體：交辦流水號、逐筆銷帳、
+  重複套用、版本推進、存檔目錄隔離、重畫函式）
+* `backend/test_backend.py` 的 `FrontendBackendSyncTests`——守四件事：
+  後端每條路由都要有人呼叫；交辦一定要蓋流水號並逐筆銷帳；伺服器改動共享
+  狀態時要推進版本；**驗證腳本不准寫進玩家的存檔目錄**（用 NE_GAME_DATA_DIR）。
+
+  最後一條是實跑的：設環境變數、reload 模組、確認路徑真的跟著換。
+  先前只斷言原始碼裡有那個字串——註解裡也有，所以永遠通過。
+
 四條底線，違反等於白做：
 * 絕不推 main，一律 feature branch + PR。
 * 絕不在使用者本機那份 repo 裡跑任何 git 指令。

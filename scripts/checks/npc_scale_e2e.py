@@ -11,7 +11,7 @@ import pathlib as _pathlib
 # 換一個容器、換一台機器都還跑得動。
 REPO = str(_pathlib.Path(__file__).resolve().parents[2])
 
-import asyncio, json, signal, subprocess, sys, time, urllib.request
+import asyncio, json, os, signal, subprocess, sys, tempfile, time, urllib.request
 sys.path.insert(0, REPO)
 from playwright.async_api import async_playwright
 
@@ -19,7 +19,10 @@ BASE = 'http://127.0.0.1:8766'
 
 
 def start_server():
-    proc = subprocess.Popen(['python3', '-m', 'backend.server'],
+    # 驗證一律用自己的存檔目錄：不然每次起伺服器都會接續玩家上一盤，
+    # 檢查會變成空轉，而且會把玩家的存檔覆蓋掉。
+    env = {**os.environ, 'NE_GAME_DATA_DIR': tempfile.mkdtemp(prefix='ne-check-')}
+    proc = subprocess.Popen(['python3', '-m', 'backend.server'], env=env,
                             cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         try:

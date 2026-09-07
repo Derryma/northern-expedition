@@ -8,7 +8,7 @@
 import pathlib as _pathlib
 REPO = str(_pathlib.Path(__file__).resolve().parents[2])
 
-import asyncio, json, random, signal, subprocess, sys, time, urllib.request
+import asyncio, json, random, signal, subprocess, sys, tempfile, time, urllib.request
 sys.path.insert(0, REPO)
 from playwright.async_api import async_playwright
 
@@ -61,6 +61,9 @@ def patched_env():
     """在伺服器啟動前把後端的規則數字換成隨機怪值。"""
     import os
     env = dict(os.environ)
+    # 驗證一律用自己的存檔目錄：不然每次起伺服器都會接續玩家上一盤，
+    # 檢查會變成空轉，而且會把玩家的存檔覆蓋掉。
+    env['NE_GAME_DATA_DIR'] = tempfile.mkdtemp(prefix='ne-check-')
     env["NE_UI_PROBE"] = json.dumps(PROBE, ensure_ascii=False)
     return env
 

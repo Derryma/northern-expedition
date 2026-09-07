@@ -3,7 +3,7 @@
 import pathlib as _pathlib
 REPO = str(_pathlib.Path(__file__).resolve().parents[2])
 
-import asyncio, json, subprocess, sys, time, urllib.request
+import asyncio, json, os, subprocess, sys, tempfile, time, urllib.request
 sys.path.insert(0, REPO)
 from playwright.async_api import async_playwright
 
@@ -18,9 +18,13 @@ def start_server():
     else:
         raise SystemExit(f"{BASE} 已經有東西在跑了，先關掉再量。")
     port = int(BASE.rsplit(':', 1)[1])
+    # 驗證一律用自己的存檔目錄：不然每次起伺服器都會接續玩家上一盤，
+    # 檢查會變成空轉，而且會把玩家的存檔覆蓋掉。
+    env = {**os.environ,
+           'NE_GAME_DATA_DIR': tempfile.mkdtemp(prefix='ne-check-')}
     proc = subprocess.Popen(
         ['python3', '-c', f'from backend.server import run; run(port={port})'],
-        cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         try:
             urllib.request.urlopen(BASE + '/', timeout=2).read(1)

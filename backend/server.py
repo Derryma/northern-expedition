@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import hashlib
+import os
+import pathlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import RLock
@@ -22,13 +25,27 @@ PORTRAIT_ROOT = REPO_ROOT / "PJ Boardgame" / "portraits"
 # 本作自有的肖像目錄。PJ Boardgame 資料夾只供參考、不得改動，所以新畫或新增的
 # 肖像一律放這裡，並且優先於 PJ 目錄被採用。
 LOCAL_PORTRAIT_ROOT = FRONTEND_ROOT / "assets" / "portraits"
-# 戰術狀態持久化：伺服器重啟後不會丟失部隊編制與地圖狀態
-GAME_DATA_DIR = REPO_ROOT / "game_data"
+# 戰術狀態持久化：伺服器重啟後不會丟失部隊編制與地圖狀態。
+#
+# 路徑可以用 NE_GAME_DATA_DIR 換掉，**驗證腳本一定要換**：
+#   * 不換的話每次起伺服器都會接續玩家上一盤的棋盤，e2e 就不可重現——
+#     曾經有一條檢查因此變成空轉（黔軍早就被吞併了，「事件前有黔軍地盤」不成立）。
+#   * 更糟的是跑測試會把玩家的存檔直接覆蓋掉。
+GAME_DATA_DIR = pathlib.Path(
+    os.environ.get("NE_GAME_DATA_DIR") or (REPO_ROOT / "game_data"))
 TACTICAL_STATE_FILE = GAME_DATA_DIR / "tactical_state.json"
 ENGINE = GameEngine()
 SHARED_LOCK = RLock()
 SHARED_TACTICAL_STATE: Optional[Dict[str, Any]] = None
 SHARED_REVISION = 0
+
+
+def _tactical_fingerprint() -> str:
+    """共享戰術狀態現在長什麼樣。用來判斷伺服器自己有沒有動過它。"""
+    if SHARED_TACTICAL_STATE is None:
+        return ""
+    blob = json.dumps(SHARED_TACTICAL_STATE, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.md5(blob.encode("utf-8")).hexdigest()
 
 
 def save_tactical_state() -> None:
@@ -65,9 +82,6 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/bootstrap":
             self._send_json(ENGINE.bootstrap())
-            return
-        if parsed.path == "/api/state":
-            self._send_json(ENGINE.snapshot())
             return
         if parsed.path == "/api/shared-state":
             with SHARED_LOCK:
@@ -181,11 +195,35 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             return
         try:
             payload = self._read_json()
-            self._send_json(routes[parsed.path](payload))
+            self._send_json(self._run_route(routes[parsed.path], payload))
         except SharedStateConflict as exc:
             self._send_json({"error": str(exc), "revision": SHARED_REVISION}, status=409)
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=400)
+
+    def _run_route(self, handler, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """跑一個 POST 路由，並且在**伺服器自己改動了共享戰術狀態**時把版本推進。
+
+        引擎會直接改 SHARED_TACTICAL_STATE：NPC 吞併換地格歸屬、部隊整批換旗、
+        將領轉屬都是。先前 SHARED_REVISION 只在「前端推上來」時才加，於是這些
+        改動的版本號原封不動——前端 pullSharedState() 看到版本沒變就不套用，
+        後端算對的東西一格都畫不到地圖上，接著還會被前端那份舊快照覆蓋回去。
+
+        判準是**內容真的變了**（比對前後的指紋），不是列一張「哪些路由會改」的
+        清單——那種清單遲早會漏掉新加的路由。
+        """
+        global SHARED_REVISION
+        before_revision = SHARED_REVISION
+        before = _tactical_fingerprint()
+        result = handler(payload)
+        # 路由自己管過版本（/api/shared-state、/api/restore-shared-state）就不重複加。
+        if SHARED_REVISION == before_revision and _tactical_fingerprint() != before:
+            with SHARED_LOCK:
+                SHARED_REVISION += 1
+                save_tactical_state()
+            if isinstance(result, dict) and "revision" not in result:
+                result["revision"] = SHARED_REVISION
+        return result
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")
@@ -294,6 +332,8 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         # 前端把 pending_frontend_effects 執行完之後回來銷帳。
         return ENGINE.consume_frontend_effects(
             str(payload["player"]), kind=payload.get("kind") or None,
+            # 逐筆銷帳：前端只銷它真的做完的那幾筆。
+            ids=payload.get("ids"),
         )
 
     def _discard_for_draw(self, payload: Dict[str, Any]) -> Dict[str, Any]:

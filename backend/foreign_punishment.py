@@ -331,7 +331,7 @@ class PunishmentBook:
             cumulative = self.cumulative_loss_for(code, province)
             if cumulative <= 0:
                 continue
-            self.engine._player(code).setdefault("pending_frontend_effects", []).append({
+            self.engine.queue_frontend_effect(code, {
                 "kind": "foreign_punishment_damage",
                 "punishment_kind": "power_war",
                 "punishment_id": war["winner_entry_id"],
@@ -390,8 +390,7 @@ class PunishmentBook:
             "city_ids": list(entry.get("city_ids") or []),
             **spec,
         }
-        self.engine._player(entry["owner"]).setdefault(
-            "pending_frontend_effects", []).append(effect)
+        self.engine.queue_frontend_effect(entry["owner"], effect)
         return spec
 
     # ── 每回合維護 ──────────────────────────────────────────────────────
