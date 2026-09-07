@@ -717,32 +717,67 @@ const PENDING_EFFECT_HANDLERS = {
   },
 };
 
+// 已經套用過的交辦流水號。銷帳失敗（網路斷一下）時佇列會留著同一筆，
+// 下一次排空看到它就只補銷帳、不再套用一次——同一份忠誠不會加兩次。
+const appliedFrontendEffectIds = new Set();
+
 async function consumePendingFrontendEffects() {
   const notes = [];
-  const drained = [];
+  const failures = [];
+  const done = {};          // 陣營 → 這次真的做完（或永遠做不完）的流水號
+  let didWork = false;
   for (const faction of TURN_PLAYERS) {
     const queue = state?.players?.[faction]?.pending_frontend_effects || [];
-    if (!queue.length) continue;
-    let handled = false;
+    let stumbled = false;
     for (const effect of queue) {
-      const handler = PENDING_EFFECT_HANDLERS[effect.kind];
-      if (!handler) {
-        console.warn(`[pending_frontend_effects] 沒有處理器的 kind：${effect.kind}`, effect);
+      const id = effect.id || null;
+      if (id && appliedFrontendEffectIds.has(id)) {
+        // 上次做完了但沒銷成，補銷就好。
+        (done[faction] ||= []).push(id);
         continue;
       }
-      // 有些處理器要跟後端要結果（忠誠加減的抽籤與算式都在後端），所以 await。
-      notes.push(...(await handler(faction, effect) || []));
-      handled = true;
+      const handler = PENDING_EFFECT_HANDLERS[effect.kind];
+      if (!handler) {
+        // 沒有處理器的永遠做不完，留著只會無限累積——喊出來，然後銷掉。
+        console.warn(`[pending_frontend_effects] 沒有處理器的 kind：${effect.kind}`, effect);
+        if (id) (done[faction] ||= []).push(id);
+        continue;
+      }
+      try {
+        // 有些處理器要跟後端要結果（忠誠加減的抽籤與算式都在後端），所以 await。
+        notes.push(...(await handler(faction, effect) || []));
+        if (id) {
+          appliedFrontendEffectIds.add(id);
+          (done[faction] ||= []).push(id);
+        }
+        didWork = true;
+      } catch (error) {
+        // 一筆做不成不該拖垮其他筆，更不該讓已經做完的沒被銷帳——
+        // 那會在下一次排空時把同一筆效果再套一次。
+        console.error(`[pending_frontend_effects] ${effect.kind} 執行失敗：${error.message}`, effect);
+        failures.push(`${effect.label || effect.kind}（${error.message}）`);
+        stumbled = true;
+      }
     }
-    if (handled) drained.push(faction);
+    // 舊存檔的交辦沒有流水號，只能照舊整批銷——但這一家有做不成的就先不銷，
+    // 否則會把還沒做成的那筆一起丟掉。
+    if (queue.length && !stumbled && queue.every((effect) => !effect.id)) {
+      done[faction] = null;
+      didWork = true;
+    }
   }
-  for (const faction of drained) {
-    // 不指定 kind：整個佇列清掉。沒有處理器的項目也一併清，免得無限累積；
-    // 上面的 console.warn 已經把它們喊出來了。
-    const result = await api('/api/ack-frontend-effects', { player: faction });
-    state = result.state;
+  for (const [faction, ids] of Object.entries(done)) {
+    if (ids && !ids.length) continue;
+    try {
+      const result = await api('/api/ack-frontend-effects',
+        ids ? { player: faction, ids } : { player: faction });
+      state = result.state;
+    } catch (error) {
+      // 銷不掉不代表沒做成；上面的 appliedFrontendEffectIds 會擋住重複套用。
+      console.error(`[pending_frontend_effects] ${faction} 銷帳失敗：${error.message}`);
+    }
   }
-  if (drained.length) {
+  if (didWork) {
     // 有些交辦會改地盤歸屬（NPC 吞併類）與將領樹（將領轉屬類）——
     // 只重畫部隊標記的話，換了主的城市與省份還是舊顏色。
     syncStrategicCitiesFromState();
@@ -751,6 +786,9 @@ async function consumePendingFrontendEffects() {
     generalTreeData = generalTrees[currentPlayer];
     renderGeneralsPanel();
     renderPendingActions();
+  }
+  if (failures.length) {
+    notes.push(`有 ${failures.length} 筆交辦沒做成，已保留待重試：${failures.join('；')}`);
   }
   return notes;
 }
@@ -1572,7 +1610,7 @@ async function pullSharedState() {
   return remote;
 }
 
-async function publishSharedState(force = false) {
+async function publishSharedState(force = false, retried = false) {
   const tactical = tacticalSnapshot();
   const signature = JSON.stringify(tactical);
   if (!force && signature === sharedSnapshotHash) return;
@@ -1595,8 +1633,13 @@ async function publishSharedState(force = false) {
     sharedEngineHash = JSON.stringify(state);
     if (outlookChanged && sharedReady) renderPendingActions();
   } catch (error) {
+    // 版本衝突有兩種：另一台裝置搶著寫，或**伺服器自己動過**共享狀態
+    // （NPC 吞併換地格、部隊整批換旗都會）。後者不是真的衝突——先把後端那份
+    // 收下來（pullSharedState 會套用它的 tactical），再用新的版本號重送一次。
+    // 先前這裡一律往外丟，於是事件結束後畫面就停在半路。
     await pullSharedState();
-    throw error;
+    if (retried) throw error;
+    return publishSharedState(true, true);
   }
 }
 
@@ -3167,6 +3210,34 @@ function calculateGeneralLoyalty(general, fieldArmy) {
   // 沒收到就去要一次；回來之後 refreshBackendDerivedState 會重畫。
   requestLoyaltyRefresh();
   return { value: null, pending: true, tooltip: "忠誠計算中：等待後端回報" };
+}
+
+// 後端算完的衍生資料（忠誠、艦隊展望、鐵路通行）重新取一次，然後重畫。
+//
+// 這個名字先前在六個地方被呼叫，卻**從來沒有被定義過**。於是每一處都丟
+// ReferenceError，把後面的重畫整段吃掉：牌其實打成功了、後端也算對了，
+// 畫面卻停在原地，看起來就是「點了之後沒有效果」。
+//
+// 它只負責顯示，所以**絕對不能往外丟例外**——重畫失敗不該把一個已經完成的
+// 動作變成錯誤。這正是上面那個 bug 真正的殺傷力來源。
+async function refreshBackendDerivedState() {
+  try {
+    const remote = await api("/api/shared-state");
+    state = remote.engine_state;
+    sharedEngineHash = JSON.stringify(state);
+    if (remote.loyalty) backendLoyalty = remote.loyalty;
+    if (remote.navy_outlook) backendNavyOutlook = remote.navy_outlook;
+    if (remote.railway_access) backendRailwayAccess = remote.railway_access;
+    // 伺服器自己動過共享狀態時版本會往前跳，這裡順手把它收下來。
+    if (remote.tactical && remote.revision !== sharedRevision) {
+      applyTacticalSnapshot(remote.tactical);
+      sharedRevision = remote.revision;
+      sharedSnapshotHash = JSON.stringify(remote.tactical);
+    }
+    if (sharedReady) renderSynchronizedState();
+  } catch (error) {
+    console.warn(`[refreshBackendDerivedState] 取後端衍生資料失敗：${error.message}`);
+  }
 }
 
 // 後端算完的忠誠還沒到手時去要一次。同一輪只發一個請求，
@@ -5784,7 +5855,10 @@ function selectBattle(battleId) {
   if (!battle && !navyBattle) {
     selectedBattleId = null;
     renderBattlePanel();
-    renderMapUnits();
+    // 先前這裡叫的是 renderMapUnits()——那個名字**從來沒有被定義過**，
+    // 於是點到一份已經看不到的戰報時整個處理器就丟例外。下面成功的那條路
+    // 用的就是 renderArmyMarkers。
+    renderArmyMarkers(currentPlayer);
     return;
   }
   selectedBattleId = battleId;
@@ -8594,7 +8668,19 @@ async function confirmBattleTactic(battle, side) {
     showNotice(`戰術已確認；請切換至${FACTIONS[waitingFaction].shortName}決定另一方戰術。`);
     return;
   }
-  if ((battle.rounds || 0) === 0 && battle.roundResolvedTurn !== state.turn) await resolveBattleRound(battle);
+  if ((battle.rounds || 0) === 0 && battle.roundResolvedTurn !== state.turn) {
+    try {
+      await resolveBattleRound(battle);
+    } catch (error) {
+      // 傷害是後端算的。要不到結果就把「已確認」收回去，讓玩家能再按一次——
+      // 先前這裡沒有攔截：兩邊都確認了、戰鬥卻不會結算，而且一句話都沒有。
+      battle.confirmed.A = false;
+      battle.confirmed.B = false;
+      battle.tacticRevision = { A: true, B: true };
+      showNotice(`戰鬥結算要不到後端回應，請再確認一次戰術：${error.message}`);
+      renderPendingActions();
+    }
+  }
 }
 
 function retreatFromBattle(battle, side) {
@@ -9238,7 +9324,20 @@ async function handleMapDestination(destination) {
     let navyContactResult = null;
     if (blockingNavy) {
       navyContacted = true;
-      navyContactResult = await applyArmyNavyContact(army, blockingNavy);
+      try {
+        navyContactResult = await applyArmyNavyContact(army, blockingNavy);
+      } catch (error) {
+        // 海戰的傷害由後端算。要不到結果就不能假裝打過了——把這一步移動整個
+        // 收回去，並且**說出來**。先前這裡沒有攔截：連線抖一下，部隊就停在
+        // 敵艦格上、沒開火、沒結算、也沒有任何訊息。
+        undoLastArmyOrder();
+        moveMode = false;
+        $("mapStage").classList.remove("move-mode");
+        showNotice(`與艦隊接觸的結算要不到後端回應，這一步已收回：${error.message}`);
+        initMap();
+        renderPendingActions();
+        return;
+      }
       if (navyContactResult.landRetreat) {
         moveArmyToCell(army, source);
       }

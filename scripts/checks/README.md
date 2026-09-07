@@ -19,7 +19,17 @@
 | `mutate_npc_force_scale.py` | 批次二 A 的 10 個突變體 |
 | `blocking_and_npc_transfer_e2e.py` | Playwright 開真前端 29 關：鐵路與急行軍被敵軍阻截、急行軍支援 2 格外的戰鬥、NPC 轉屬／招募／歸附重編番號與換將領樹、吞併類的城市與地格真的易主 |
 | `mutate_blocking_and_npc_transfer.py` | 上面那一輪的 14 個突變體。**判定器是 e2e 不是單元測試**——前端行為靠讀原始碼的字串斷言擋不住 `if (false) {` |
+| `card_effects_land_e2e.py` | 真前端 10 關：按真的按鈕打忠誠卡、跑城市等級事件卡、跑 NPC 吞併，檢查畫面真的跟著動 |
+| `mutate_card_effects_land.py` | 上面那一輪的 7 個突變體（判定器＝單元測試 + e2e 兩者一起跑） |
+| `mutate_sync_audit.py` | 前後端同步稽核那一輪的 7 個突變體 |
 | `fingerprint.py` | 算「整體指紋」，用來確認 clone 與使用者本機完全一致 |
+
+## 存檔目錄
+
+伺服器會把戰術狀態存到 `game_data/` 並在啟動時載回來。**驗證腳本一律用
+`NE_GAME_DATA_DIR` 指到自己的 tmp 目錄**，理由有兩個：不隔離的話每次起伺服器
+都會接續玩家上一盤棋，檢查會安靜地變成空轉；而且跑一次測試就把玩家的存檔蓋掉。
+`FrontendBackendSyncTests` 會守著這一點。
 
 ## 怎麼跑
 

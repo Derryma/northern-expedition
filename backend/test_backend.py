@@ -15881,7 +15881,7 @@ class FrontendEffectChannelTests(unittest.TestCase):
     def _queued_kinds(self) -> set:
         """後端會掛進 pending_frontend_effects 的 kind。
 
-        只認**真的 append 進佇列**的那個寫法，而且 kind 必須是字面量。
+        只認**真的掛進佇列**的那個寫法（queue_frontend_effect），而且 kind 必須是字面量。
         引擎裡還有一種 `"kind": "frontend_effect"` 出現在 `applied` 回報裡——
         那是給重播與測試看的記錄，不是交辦，抓進來會是假警報。
         用變數當 kind 的通用轉發（`frontend_effects`）由下一條測試從卡片資料那頭守。
@@ -15889,8 +15889,11 @@ class FrontendEffectChannelTests(unittest.TestCase):
         import re
         kinds = set()
         here = pathlib.Path(__file__).resolve().parent
+        # 掛交辦統一走 queue_frontend_effect(玩家, {...})；
+        # 舊的 setdefault(...).append({...}) 寫法也留著認，免得漏掉沒改到的地方。
         pattern = re.compile(
-            r'pending_frontend_effects", \[\]\)\.append\(\{\s*"kind": "([a-z_]+)"')
+            r'(?:queue_frontend_effect\([^,]+,\s*\{|'
+            r'pending_frontend_effects", \[\]\)\.append\(\{)\s*\n?\s*"kind": "([a-z_]+)"')
         for name in self.ENGINE_SOURCES:
             text = (here / name).read_text(encoding="utf-8")
             kinds |= set(pattern.findall(text))
@@ -17931,6 +17934,248 @@ class IntelAndPoliceCardsTests(unittest.TestCase):
                          'activeTimedEffects(observer, "intel_network")',
                          "factionHasPoliceProtection"):
             self.assertNotIn(fragment, FRONTEND_SOURCE, f"偵查規則又回到前端：{fragment}")
+
+
+def _strip_js_noise(source: str) -> str:
+    """把字串、樣板字面量與註解換成空白，只留下「真正會執行的程式碼」。
+
+    不這樣做的話 `rgba(...)`、`translate(...)` 這類寫在樣式字串裡的東西
+    會被當成函式呼叫，整個檢查就被雜訊淹掉。
+    """
+    out = []
+    i, n = 0, len(source)
+    while i < n:
+        ch = source[i]
+        nxt = source[i + 1] if i + 1 < n else ""
+        if ch == "/" and nxt == "/":
+            while i < n and source[i] != "\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (source[i] == "*" and source[i + 1] == "/"):
+                if source[i] == "\n":
+                    out.append("\n")
+                i += 1
+            i += 2
+            continue
+        if ch in "\"'`":
+            quote = ch
+            i += 1
+            while i < n and source[i] != quote:
+                if source[i] == "\\":
+                    i += 2
+                    continue
+                # 樣板字面量裡的 ${...} 是真的程式碼，留著
+                if quote == "`" and source[i] == "$" and i + 1 < n and source[i + 1] == "{":
+                    depth = 1
+                    i += 2
+                    out.append(" ")
+                    while i < n and depth:
+                        if source[i] == "{":
+                            depth += 1
+                        elif source[i] == "}":
+                            depth -= 1
+                            if not depth:
+                                break
+                        out.append(source[i])
+                        i += 1
+                    i += 1
+                    # 內插段之間要用分號隔開，否則 `${a}${(b)}` 會被讀成呼叫 a(
+                    out.append(" ; ")
+                    continue
+                if source[i] == "\n":
+                    out.append("\n")
+                i += 1
+            i += 1
+            out.append(" ")
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+class FrontendBackendSyncTests(unittest.TestCase):
+    """前後端之間的每條線都要有人走、有人接、而且只走一次。"""
+
+    @classmethod
+    def setUpClass(cls):
+        root = REPO_ROOT
+        cls.server = (root / "backend" / "server.py").read_text(encoding="utf-8")
+        cls.engine = (root / "backend" / "card_engine.py").read_text(encoding="utf-8")
+        cls.punish = (root / "backend" / "foreign_punishment.py").read_text(encoding="utf-8")
+        cls.app = FRONTEND_SOURCE
+        cls.checks = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((root / "scripts" / "checks").glob("*.py")))
+
+    def _routes(self):
+        post = set(re.findall(r'"(/api/[a-z\-]+)":\s*(?:self\.)?', self.server))
+        get = set(re.findall(r'parsed\.path == "(/api/[a-z\-]+)"', self.server))
+        return post | get
+
+    def test_no_route_that_nobody_ever_calls(self):
+        # 「寫了但沒人叫」的路由跟死機制是同一類：它會慢慢變成第二個資料入口，
+        # 而且沒有任何測試會發現它壞掉。前端或驗證腳本至少要有一個會走它。
+        callers = self.app + self.checks
+        orphans = sorted(r for r in self._routes() if r not in callers)
+        self.assertEqual(orphans, [],
+                         f"後端有路由沒有任何人呼叫：{orphans}")
+
+    def test_every_queued_frontend_effect_goes_through_one_door(self):
+        # 交辦一定要蓋流水號，否則只能整批銷帳——中間任何一筆失敗，
+        # 已經做完的那幾筆就會在下一次排空時再做一次。
+        for name, source in (("card_engine.py", self.engine),
+                             ("foreign_punishment.py", self.punish)):
+            direct = re.findall(r'setdefault\("pending_frontend_effects", \[\]\)\.append',
+                                source)
+            allowed = 1 if name == "card_engine.py" else 0   # 共用函式自己那一行
+            self.assertEqual(len(direct), allowed,
+                             f"{name} 有直接 append 交辦的地方，請改走 queue_frontend_effect()")
+        self.assertIn("def queue_frontend_effect", self.engine)
+
+    def test_effects_are_acked_one_by_one(self):
+        engine = GameEngine(seed=3)
+        engine.new_game()
+        player = sorted(engine.state["players"])[0]
+        a = engine.queue_frontend_effect(player, {"kind": "loyalty_all", "amount": 1})
+        b = engine.queue_frontend_effect(player, {"kind": "general_death", "general_id": "x"})
+        self.assertNotEqual(a["id"], b["id"], "交辦的流水號必須唯一")
+        engine.consume_frontend_effects(player, ids=[a["id"]])
+        left = engine._player(player)["pending_frontend_effects"]
+        self.assertEqual([e["id"] for e in left], [b["id"]],
+                         "逐筆銷帳應該只清掉點名的那一筆")
+        # 沒點名就照舊整批清（舊存檔沒有流水號時走這條）
+        engine.consume_frontend_effects(player)
+        self.assertEqual(engine._player(player)["pending_frontend_effects"], [])
+
+    def test_the_drain_never_aborts_on_one_failure(self):
+        block = self.app[self.app.index("async function consumePendingFrontendEffects"):]
+        block = block[:block.index("\n}\n")]
+        self.assertIn("try {", block, "排空迴圈必須逐筆攔截，一筆失敗不能拖垮其他筆")
+        self.assertIn("appliedFrontendEffectIds", block,
+                      "要記住已套用的流水號，銷帳失敗時才不會重複套用")
+        self.assertIn("ids", block, "銷帳要逐筆，不能整批")
+
+    def test_checks_never_write_into_the_players_save(self):
+        """驗證腳本一定要用自己的存檔目錄。
+
+        伺服器現在會把戰術狀態存到 game_data/ 並在啟動時載回來。驗證腳本
+        如果用同一個目錄，會有兩個後果：每次起伺服器都接續玩家上一盤棋，
+        於是檢查可能變成空轉（這真的發生過——「事件前畫面上有黔軍地盤」那條
+        因為存檔裡黔軍早就被吞併而不成立）；而且跑一次測試就把玩家的存檔蓋掉。
+        """
+        # 實跑，不是看字串：註解裡提到環境變數不算數，要真的讀得到。
+        import importlib
+        import os as _os
+        scratch = str(REPO_ROOT / "backend")   # 隨便一個一定存在、又不是 game_data 的路徑
+        previous = _os.environ.get("NE_GAME_DATA_DIR")
+        _os.environ["NE_GAME_DATA_DIR"] = scratch
+        try:
+            import backend.server as server_module
+            importlib.reload(server_module)
+            self.assertEqual(str(server_module.GAME_DATA_DIR), scratch,
+                             "NE_GAME_DATA_DIR 沒有真的被讀進去")
+        finally:
+            if previous is None:
+                _os.environ.pop("NE_GAME_DATA_DIR", None)
+            else:
+                _os.environ["NE_GAME_DATA_DIR"] = previous
+            importlib.reload(server_module)
+        offenders = []
+        for path in sorted((REPO_ROOT / "scripts" / "checks").glob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            starts_server = ("backend.server" in text
+                             or ("_probe_server.py" in text and "subprocess" in text))
+            if starts_server and "NE_GAME_DATA_DIR" not in text:
+                offenders.append(path.name)
+        self.assertEqual(offenders, [],
+                         f"這些驗證腳本會寫進玩家的存檔目錄：{offenders}")
+
+    def test_the_server_bumps_the_revision_when_it_changes_the_snapshot(self):
+        # 引擎會直接改 SHARED_TACTICAL_STATE；版本沒動的話前端不會套用。
+        self.assertIn("_tactical_fingerprint", self.server)
+        self.assertIn("def _run_route", self.server)
+        block = self.server[self.server.index("def _run_route"):]
+        block = block[:block.index("\n    def ", 10)]
+        self.assertIn("SHARED_REVISION += 1", block)
+
+
+class EveryCalledFunctionExistsTests(unittest.TestCase):
+    """前端呼叫的每個函式都要真的存在。
+
+    這是「寫了但沒人讀」的雙胞胎：**叫了但沒人定義**。它比前者更兇——
+    ReferenceError 會把整段處理器打斷，後面的重畫全部不跑，於是卡明明生效了、
+    後端也算對了，畫面卻停在原地，玩起來就是「點了之後沒有效果」。
+    合併兩條開發線之後出現過兩個：refreshBackendDerivedState 與 renderMapUnits。
+    """
+
+    # 瀏覽器與語言內建，以及語法關鍵字（`if (`、`for (` 也長得像呼叫）。
+    KNOWN = set("""
+        if for while switch catch return typeof new delete void await yield else do try finally
+        function class extends super this in of case throw async get set static
+        Object Array String Number Boolean Math JSON Date Map Set WeakMap WeakSet Promise Error
+        TypeError RangeError RegExp Symbol BigInt Intl Proxy Reflect
+        parseInt parseFloat isNaN isFinite encodeURIComponent decodeURIComponent encodeURI decodeURI
+        setTimeout setInterval clearTimeout clearInterval requestAnimationFrame cancelAnimationFrame
+        fetch alert confirm prompt console document window navigator location history
+        localStorage sessionStorage structuredClone queueMicrotask reportError
+        URL URLSearchParams Blob File FormData Headers Request Response AbortController
+        Image Audio Option CustomEvent Event MouseEvent KeyboardEvent PointerEvent DragEvent
+        IntersectionObserver ResizeObserver MutationObserver getComputedStyle matchMedia
+        atob btoa isSecureContext scrollTo scrollBy focus blur print
+    """.split())
+
+    @classmethod
+    def setUpClass(cls):
+        cls.code = _strip_js_noise(FRONTEND_SOURCE)
+
+    def _defined_names(self) -> set:
+        code = self.code
+        names = set()
+        names |= set(re.findall(r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", code, re.M))
+        names |= set(re.findall(r"^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=", code, re.M))
+        names |= set(re.findall(r"^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*;", code, re.M))
+        for block in re.findall(r"^\s*(?:const|let|var)\s*\{([^}]+)\}\s*=", code, re.M):
+            for part in block.split(","):
+                names.add(part.split(":")[-1].strip().lstrip("."))
+        for block in re.findall(r"^import\s*\{([^}]+)\}", code, re.M):
+            for part in block.split(","):
+                names.add(part.split(" as ")[-1].strip())
+        # 物件字面量裡的方法（PENDING_EFFECT_HANDLERS 那種）與指派給變數的函式
+        names |= set(re.findall(r"([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?\(", code))
+        names |= set(re.findall(r"([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()", code))
+        # getter / setter：`get railwayAccess() {` 是定義，不是呼叫
+        names |= set(re.findall(r"\b(?:get|set)\s+([A-Za-z_$][\w$]*)\s*\(", code))
+        # 函式參數（回呼裡會直接呼叫的那種）
+        for params in re.findall(r"\(([^()]*)\)\s*=>", code):
+            for part in params.split(","):
+                token = part.strip().split("=")[0].strip()
+                if re.fullmatch(r"[A-Za-z_$][\w$]*", token):
+                    names.add(token)
+        return names
+
+    def test_no_call_to_an_undefined_function(self):
+        defined = self._defined_names() | self.KNOWN
+        missing = {}
+        for match in re.finditer(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(", self.code):
+            name = match.group(1)
+            if name in defined:
+                continue
+            line = self.code.count("\n", 0, match.start()) + 1
+            missing.setdefault(name, []).append(line)
+        self.assertEqual(missing, {},
+                         "frontend/app.js 呼叫了不存在的函式（會丟 ReferenceError，"
+                         f"把後面的重畫整段吃掉）：{missing}")
+
+    def test_the_checker_would_catch_the_two_that_slipped_through(self):
+        # 檢查本身要能抓得到東西，否則它只是個永遠綠燈的擺設。
+        broken = self.code.replace("renderArmyMarkers(currentPlayer);",
+                                   "aFunctionThatDoesNotExist();", 1)
+        defined = self._defined_names() | self.KNOWN
+        hits = [m.group(1) for m in re.finditer(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(", broken)
+                if m.group(1) not in defined]
+        self.assertIn("aFunctionThatDoesNotExist", hits)
 
 
 class BlockingAndNpcTransferTests(unittest.TestCase):
