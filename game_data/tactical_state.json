@@ -94,9 +94,9 @@
     },
     "F-1": {
       "generalId": "zhang_zuolin",
-      "cellKey": "37,13",
-      "lon": 123.125,
-      "lat": 41.731884129989645,
+      "cellKey": "36,15",
+      "lon": 122.375,
+      "lat": 40.43284602431299,
       "units": {
         "infantry": 16,
         "cavalry": 6,
@@ -106,7 +106,7 @@
       "status": "active",
       "faction": "F",
       "embarkedOn": null,
-      "previousCellKey": null,
+      "previousCellKey": "37,13",
       "resolvedTurn": null,
       "specialOperation": null,
       "showRecruitment": false,
@@ -140,22 +140,22 @@
     },
     "F-3": {
       "generalId": "yang_yuting",
-      "cellKey": "28,16",
-      "lon": 116.375,
-      "lat": 39.566820620528546,
+      "cellKey": "26,18",
+      "lon": 114.875,
+      "lat": 37.834769812959664,
       "units": {
-        "infantry": 11,
-        "cavalry": 2,
-        "artillery": 2,
-        "machine_gun": 3
+        "infantry": 18,
+        "cavalry": 6,
+        "machine_gun": 4,
+        "artillery": 8
       },
       "status": "active",
       "faction": "F",
       "embarkedOn": null,
-      "previousCellKey": null,
+      "previousCellKey": "28,16",
       "resolvedTurn": null,
       "specialOperation": null,
-      "showRecruitment": false,
+      "showRecruitment": true,
       "npcGrowthEnded": false,
       "fieldHospitalPending": null,
       "forcedMarchUntilTurn": null,
@@ -368,16 +368,37 @@
       "forcedMarchUntilTurn": null,
       "forcedMarchReadyTurn": null
     },
+    "S-5": {
+      "generalId": "duan_qirui",
+      "cellKey": "29,24",
+      "lon": 117.125,
+      "lat": 32.20560468836082,
+      "units": {
+        "infantry": 6,
+        "cavalry": 1,
+        "artillery": 2,
+        "machine_gun": 1
+      },
+      "embarkedOn": null,
+      "previousCellKey": "30,24",
+      "resolvedTurn": null,
+      "specialOperation": null,
+      "showRecruitment": false,
+      "npcGrowthEnded": false,
+      "fieldHospitalPending": null,
+      "forcedMarchUntilTurn": null,
+      "forcedMarchReadyTurn": null
+    },
     "Y-1": {
       "generalId": "yan_xishan",
       "cellKey": "23,17",
       "lon": 112.625,
       "lat": 38.26778251485189,
       "units": {
-        "infantry": 11,
+        "infantry": 13,
         "cavalry": 3,
         "artillery": 2,
-        "machine_gun": 2
+        "machine_gun": 3
       },
       "status": "active",
       "faction": "Y",
@@ -397,7 +418,7 @@
       "lon": 113.375,
       "lat": 40.43284602431299,
       "units": {
-        "infantry": 7,
+        "infantry": 9,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 2
@@ -420,7 +441,7 @@
       "lon": 112.625,
       "lat": 37.401757111067454,
       "units": {
-        "infantry": 6,
+        "infantry": 8,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 1
@@ -443,10 +464,10 @@
       "lon": 108.875,
       "lat": 34.370668197821914,
       "units": {
-        "infantry": 10,
+        "infantry": 12,
         "cavalry": 5,
         "artillery": 1,
-        "machine_gun": 2
+        "machine_gun": 3
       },
       "status": "active",
       "faction": "G",
@@ -466,7 +487,7 @@
       "lon": 111.875,
       "lat": 41.29887142809742,
       "units": {
-        "infantry": 7,
+        "infantry": 9,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 1
@@ -489,7 +510,7 @@
       "lon": 108.875,
       "lat": 35.23669360160635,
       "units": {
-        "infantry": 8,
+        "infantry": 10,
         "cavalry": 4,
         "artillery": 1,
         "machine_gun": 2
@@ -512,7 +533,7 @@
       "lon": 108.875,
       "lat": 33.50464279403748,
       "units": {
-        "infantry": 7,
+        "infantry": 9,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 1
@@ -535,8 +556,8 @@
       "lon": 102.125,
       "lat": 36.535731707283006,
       "units": {
-        "infantry": 7,
-        "cavalry": 5,
+        "infantry": 9,
+        "cavalry": 6,
         "artillery": 0,
         "machine_gun": 1
       },
@@ -558,7 +579,7 @@
       "lon": 101.375,
       "lat": 36.102719005390796,
       "units": {
-        "infantry": 6,
+        "infantry": 8,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 1
@@ -581,7 +602,7 @@
       "lon": 102.125,
       "lat": 35.66970630349857,
       "units": {
-        "infantry": 5,
+        "infantry": 7,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 1
@@ -604,7 +625,7 @@
       "lon": 112.625,
       "lat": 27.875477669438627,
       "units": {
-        "infantry": 9,
+        "infantry": 11,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 2
@@ -627,7 +648,7 @@
       "lon": 112.625,
       "lat": 27.00945226565419,
       "units": {
-        "infantry": 7,
+        "infantry": 9,
         "cavalry": 3,
         "artillery": 0,
         "machine_gun": 1
@@ -650,7 +671,7 @@
       "lon": 113.375,
       "lat": 29.174515775115285,
       "units": {
-        "infantry": 7,
+        "infantry": 9,
         "cavalry": 2,
         "artillery": 1,
         "machine_gun": 1
@@ -673,7 +694,7 @@
       "lon": 105.875,
       "lat": 29.174515775115285,
       "units": {
-        "infantry": 9,
+        "infantry": 11,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 1
@@ -696,7 +717,7 @@
       "lon": 103.625,
       "lat": 30.473553880791943,
       "units": {
-        "infantry": 8,
+        "infantry": 10,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 1
@@ -719,7 +740,7 @@
       "lon": 107.375,
       "lat": 30.906566582684164,
       "units": {
-        "infantry": 7,
+        "infantry": 8,
         "cavalry": 2,
         "artillery": 1,
         "machine_gun": 1
@@ -742,10 +763,10 @@
       "lon": 102.875,
       "lat": 24.84438875619309,
       "units": {
-        "infantry": 8,
+        "infantry": 10,
         "cavalry": 4,
-        "artillery": 1,
-        "machine_gun": 1
+        "artillery": 2,
+        "machine_gun": 0
       },
       "status": "active",
       "faction": "D",
@@ -765,7 +786,7 @@
       "lon": 99.875,
       "lat": 25.71041415997753,
       "units": {
-        "infantry": 6,
+        "infantry": 8,
         "cavalry": 3,
         "artillery": 0,
         "machine_gun": 1
@@ -788,7 +809,7 @@
       "lon": 106.625,
       "lat": 27.00945226565419,
       "units": {
-        "infantry": 5,
+        "infantry": 7,
         "cavalry": 3,
         "artillery": 0,
         "machine_gun": 0
@@ -1893,8 +1914,8 @@
       "faction": "F"
     },
     "beijing": {
-      "cash": 4,
-      "factory": 4,
+      "cash": 5,
+      "factory": 6,
       "faction": "F"
     },
     "tianjin": {
@@ -1958,8 +1979,8 @@
       "faction": "W"
     },
     "nanjing": {
-      "cash": 4,
-      "factory": 4,
+      "cash": 0,
+      "factory": 0,
       "faction": "S"
     },
     "shanghai": {
@@ -1988,8 +2009,8 @@
       "faction": "S"
     },
     "ningbo": {
-      "cash": 3,
-      "factory": 3,
+      "cash": 4,
+      "factory": 5,
       "faction": "S"
     },
     "shaoxing": {
@@ -2013,8 +2034,8 @@
       "faction": "S"
     },
     "quanzhou": {
-      "cash": 2,
-      "factory": 2,
+      "cash": 3,
+      "factory": 4,
       "faction": "S"
     },
     "nanchang": {
@@ -2023,8 +2044,8 @@
       "faction": "S"
     },
     "jiujiang": {
-      "cash": 3,
-      "factory": 3,
+      "cash": 0,
+      "factory": 0,
       "faction": "S"
     },
     "ganzhou": {
@@ -2225,8 +2246,7 @@
         }
       ],
       "retreatMaxGunBoatHp": 60,
-      "carriedArmyId": null,
-      "resolvedTurn": null
+      "carriedArmyId": null
     },
     {
       "id": "W-NAVY-1",
@@ -2257,8 +2277,7 @@
         }
       ],
       "retreatMaxGunBoatHp": 60,
-      "carriedArmyId": null,
-      "resolvedTurn": null
+      "carriedArmyId": null
     },
     {
       "id": "S-NAVY-1",
@@ -2289,8 +2308,7 @@
         }
       ],
       "retreatMaxGunBoatHp": 60,
-      "carriedArmyId": null,
-      "resolvedTurn": null
+      "carriedArmyId": null
     },
     {
       "id": "N-NAVY-1",
@@ -2321,8 +2339,7 @@
         }
       ],
       "retreatMaxGunBoatHp": 60,
-      "carriedArmyId": null,
-      "resolvedTurn": null
+      "carriedArmyId": null
     }
   ],
   "navyBattleReports": [],
@@ -2517,10 +2534,10 @@
             "fortress_builder"
           ],
           "units": {
-            "infantry": 11,
-            "cavalry": 2,
-            "artillery": 2,
-            "machine_gun": 3
+            "infantry": 18,
+            "cavalry": 6,
+            "machine_gun": 4,
+            "artillery": 8
           },
           "parent_id": "zhang_zuolin",
           "subordinate_slots": 2,
@@ -2582,7 +2599,8 @@
           "subordinates": [
             "lu_xiangting",
             "zhou_yinren",
-            "meng_zhaoyue"
+            "meng_zhaoyue",
+            "duan_qirui"
           ],
           "status": "active"
         },
@@ -2664,6 +2682,36 @@
           "subordinate_slots": 2,
           "subordinates": [],
           "status": "active"
+        },
+        "duan_qirui": {
+          "id": "duan_qirui",
+          "name": "段祺瑞",
+          "role": "lieutenant_general",
+          "faction": "五省聯軍",
+          "core_faction": false,
+          "loyalty": 6,
+          "loyalty_exempt": false,
+          "command_cap": 40,
+          "traits": [
+            "former_overlord"
+          ],
+          "skills": [
+            "fortress_builder"
+          ],
+          "units": {
+            "infantry": 6,
+            "cavalry": 1,
+            "artillery": 2,
+            "machine_gun": 1
+          },
+          "parent_id": "sun_chuanfang",
+          "subordinate_slots": 2,
+          "subordinates": [],
+          "status": "active",
+          "recruit_value": 22,
+          "background": "前皖系領袖，1920 年兵敗下野，寓居天津。",
+          "ability": "前代梟雄：步兵與砲兵攻擊力 +12%。可建造要塞。",
+          "came_from_exile": true
         }
       }
     },
@@ -3341,9 +3389,13 @@
     "yang_sen": "C",
     "tang_jiyao": "D",
     "long_yun": "D",
-    "qian_local_militia": "Q"
+    "qian_local_militia": "Q",
+    "duan_qirui": "S"
   },
-  "loyaltyOverrides": {},
+  "loyaltyOverrides": {
+    "zhou_yinren": 7,
+    "meng_zhaoyue": 6
+  },
   "loyaltyBaselineArmyUnits": {
     "N-1": {
       "infantry": 15,
