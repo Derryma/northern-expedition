@@ -31,4 +31,6 @@ if probe:
     server.ENGINE.data["navy_system"]["move"]["factory_cost_per_gun_boat"] = \
         probe["navy_move_per_gun_boat"]
 
-server.run()
+# 埠由呼叫端指定（NE_PROBE_PORT）。寫死的話，呼叫端一改埠號就再也連不上，
+# 而且錯誤訊息是「伺服器起不來」，看起來像環境壞了。
+server.run(port=int(os.environ.get("NE_PROBE_PORT") or 8766))

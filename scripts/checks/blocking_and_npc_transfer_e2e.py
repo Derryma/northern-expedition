@@ -26,6 +26,10 @@ def start_server():
         ['python3', '-c', f'from backend.server import run; run(port={port})'],
         cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
+        # Popen 綁不上埠時子程序會立刻死掉，而輪詢仍可能連上**別人那一台**，
+        # 於是整份量測都是對著別的伺服器做的。先確認自己的那台真的活著。
+        if proc.poll() is not None:
+            raise SystemExit("伺服器啟動失敗（多半是埠被佔住）")
         try:
             urllib.request.urlopen(BASE + '/', timeout=2).read(1)
             return proc

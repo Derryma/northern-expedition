@@ -64,6 +64,8 @@ def patched_env():
     # 驗證一律用自己的存檔目錄：不然每次起伺服器都會接續玩家上一盤，
     # 檢查會變成空轉，而且會把玩家的存檔覆蓋掉。
     env['NE_GAME_DATA_DIR'] = tempfile.mkdtemp(prefix='ne-check-')
+    # 探針伺服器綁的埠必須就是下面輪詢的那一個。
+    env['NE_PROBE_PORT'] = BASE.rsplit(':', 1)[1]
     env["NE_UI_PROBE"] = json.dumps(PROBE, ensure_ascii=False)
     return env
 

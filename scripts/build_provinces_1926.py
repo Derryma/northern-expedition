@@ -140,6 +140,19 @@ ALXA_RING = [
     [104.0, 36.9], [102.5, 36.9], [100.5, 37.0], [98.4, 37.1], [96.2, 37.4],
 ]
 
+# 1926 年的青海：附圖上青海與甘肅分屬兩塊，但西寧一帶（西寧道）仍歸甘肅。
+# 這個環把西寧道從現代青海省裡切回甘肅，其餘界線（祁連山、與四川、西藏、新疆
+# 的交界）全部沿用來源檔的真實幾何，不另外描。
+# 環的西界沿日月山—青海湖東岸北上，北界沿大通河谷，南界沿黃河；東、北兩側都
+# 往資料範圍以外延伸，交會處由來源檔決定。
+# 涵蓋的縣治：西寧、湟源、大通、碾伯（樂都）、循化、巴燕（化隆）、貴德。
+XINING_DAO_RING = [
+    [100.95, 35.55], [100.98, 36.00], [101.02, 36.45], [101.08, 36.90],
+    [101.20, 37.25], [101.45, 37.55], [101.85, 37.75], [102.30, 37.85],
+    [104.50, 37.85], [104.50, 35.20], [102.40, 35.25], [101.90, 35.32],
+    [101.45, 35.42], [101.10, 35.48], [100.95, 35.55],
+]
+
 # 吉林轄今黑龍江省東南部（濱江、雙城、依蘭、三姓、寧安）；龍江、訥河、璦琿仍屬黑龍江。
 # 分界沿拉林河、松花江南岸至三姓，再折向東南沿完達山脈。
 JILIN_HLJ_RING = [
@@ -260,10 +273,13 @@ def build(modern: dict) -> list[dict]:
     )
     heilongjiang_1926 = unary_union([heilongjiang, heilongjiang_meng]).difference(jilin)
 
+    # 青海自甘肅分出，但西寧道留在甘肅（見 XINING_DAO_RING）。
+    xining_dao = ring_clip(modern["青海省"], XINING_DAO_RING)
+    qinghai = modern["青海省"].difference(xining_dao)
     gansu = unary_union([
         modern["甘肃省"],
         modern["宁夏回族自治区"],
-        modern["青海省"],
+        xining_dao,
         alxa,
     ]).difference(suiyuan)
 
@@ -295,6 +311,7 @@ def build(modern: dict) -> list[dict]:
         ("湖南", TYPE_PROVINCE, "長沙", modern["湖南省"]),
         ("陝西", TYPE_PROVINCE, "長安", modern["陕西省"]),
         ("甘肅", TYPE_PROVINCE, "皋蘭", gansu),
+        ("青海", TYPE_PROVINCE, "都蘭", qinghai),
         ("四川", TYPE_PROVINCE, "成都", sichuan_1926),
         ("廣東", TYPE_PROVINCE, "廣州", guangdong),
         ("廣西", TYPE_PROVINCE, "南寧", guangxi_1926),
@@ -358,18 +375,22 @@ def sync_strategic_map(features: list[dict]) -> list[str]:
         if holder != city["province"]:
             problems.append(f"{city['name']} claims {city['province']} but sits in {holder}")
 
-    def rows(items):
-        return [
-            "    " + json.dumps(x, ensure_ascii=False, separators=(",", ":")) + ("," if i < len(items) - 1 else "")
-            for i, x in enumerate(items)
-        ]
-
-    lines = ["{", '  "version": "%s",' % data["version"], '  "cities": ['] + rows(data["cities"]) + [
-        "  ],",
-        '  "provinces_geojson": "frontend/data/provinces_1926.geojson",',
-        '  "provinces": [',
-    ] + rows(index) + ["  ],", '  "railroads": ['] + rows(data["railroads"]) + ["  ]", "}", ""]
-    STRATEGIC_MAP.write_text("\n".join(lines), encoding="utf-8")
+    # 檔案原本就是 indent=2 的排版。這裡照原樣寫回去，只換省份索引那一段——
+    # 換一種排版會讓整個檔案變成一大片假差異，真正改了什麼反而看不出來。
+    STRATEGIC_MAP.write_text(
+        json.dumps(
+            {
+                "version": data["version"],
+                "cities": data["cities"],
+                "provinces_geojson": "frontend/data/provinces_1926.geojson",
+                "provinces": index,
+                "railroads": data["railroads"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+    )
     return problems
 
 

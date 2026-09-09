@@ -284,6 +284,65 @@ for (const cell of Object.values(cells)) {
   cell.fac = nearest?.fac || null;
 }
 
+// 省級歸屬保證。上面那些控制圈是手描的近似形狀，界線落在省內部時難免歪掉。
+// 凡是「某省全境（或省內某段）整片歸某陣營」這種規定，一律寫成下面這張宣告式的
+// 條款表，開局時拿真正的 1926 省界幾何（frontend/data/provinces_1926.geojson）
+// 逐格判定後覆蓋控制圈的結果。省界只有那一份檔案，這裡不再描第二條線。
+//
+//   keep     ——這些陣營的格子不動，其餘一律改判。
+//   replaces ——只改判原本屬於這些陣營的格子，其餘不動。
+//   maxLat   ——條款只涵蓋該緯度以南。
+export const PROVINCE_OWNERSHIP_CLAIMS = [
+  // 四川全境歸川軍。唯獨川東（巫山、奉節一帶）是吳佩孚沿長江上溯的走廊，仍是直系。
+  { province: '四川', faction: 'C', keep: ['W'] },
+  // 察哈爾長城以北的定居區（張家口、宣化、萬全、商都、康保、多倫）歸西北軍。
+  // 多倫以北是錫林郭勒草原，仍是奉系的牧地，所以停在 42.4°N。
+  { province: '察哈爾', faction: 'G', maxLat: 42.4 },
+  // 陝西南部與甘肅東南——西北軍與川軍接壤的那一段——歸西北軍，
+  // 川軍不再有越過秦嶺、伸進渭河以南的飛地。
+  { province: '陝西', faction: 'G', replaces: ['C'] },
+  { province: '甘肅', faction: 'G', replaces: ['C'] },
+];
+
+// 逐格的歸屬例外。省級條款講的是整片，這一張講的是個別地格，最後套用、
+// 不受任何條款與護欄影響。地格鍵寫死是有意的：格子網是固定的，寫死才看得懂；
+// 萬一網格哪天變了，守門測試會先紅（它是從大同實際落腳的那一格推算鄰格的，
+// 不是照抄下面這個字串）。
+export const CELL_OWNERSHIP_OVERRIDES = {
+  // 大同（24,15）右下方那一格。它在直隸境內、蔚縣與淶源一帶，
+  // 但緊貼大同，劃給晉系。
+  '25,15': 'Y',
+};
+
+// provinceOf(cell) 由呼叫端提供，因為省界檔是前端啟動後才抓下來的。
+// homeCells 是「城市腳下那一格 → 該城市的陣營」，由呼叫端從城市名冊算出來。
+//
+// 為什麼要護著那些格子：城市是挑「和自己同陣營、又離名義座標最近」的地格落腳的。
+// 一條省級歸屬保證只要把某座城市腳下那一格改成別家的顏色，那座城市就會被擠到
+// 隔壁格去——省界只差一點點，畫面上城市卻整個位移一格。大同就踩過這個坑：
+// 它是山西的城，但腳下那一格在省界檔裡屬於察哈爾。
+export function applyProvinceOwnershipClaims(provinceOf, homeCells = new Map()) {
+  for (const cell of Object.values(cells)) {
+    // 列強租借地不屬於任何中國勢力，也不列入任何省分。
+    if (!cell.land || cell.power) continue;
+    const province = provinceOf(cell);
+    if (!province) continue;
+    const resident = homeCells.get(cell.key);
+    for (const claim of PROVINCE_OWNERSHIP_CLAIMS) {
+      if (claim.province !== province) continue;
+      if (claim.maxLat !== undefined && cell.lat > claim.maxLat) continue;
+      if (claim.keep && claim.keep.includes(cell.fac)) continue;
+      if (claim.replaces && !claim.replaces.includes(cell.fac)) continue;
+      // 別家城市腳下的那一格不收。
+      if (resident && resident !== claim.faction) continue;
+      cell.fac = claim.faction;
+    }
+  }
+  for (const [key, faction] of Object.entries(CELL_OWNERSHIP_OVERRIDES)) {
+    if (cells[key]) cells[key].fac = faction;
+  }
+}
+
 // 列強在中國的租借地與屬地。這些地格不屬於任何中國勢力，
 // 中國各勢力（含 NPC）都不得進入或通過，也不列入任何省分。
 export const FOREIGN_CITIES = [
@@ -403,10 +462,12 @@ export const ARMY_POSITIONS = {
     { id: 'Y-2', generalId: 'fu_zuoyi', general: '傅作義', designator: '第二軍', startCityId: 'datong', lon: 113.3, lat: 40.1, units: { infantry: 7, cavalry: 4, artillery: 0, machine_gun: 2 } },
     { id: 'Y-3', generalId: 'xu_yongchang', general: '徐永昌', designator: '第三軍', startCityId: 'taiyuan', lon: 112.5, lat: 37.9, units: { infantry: 6, cavalry: 4, artillery: 0, machine_gun: 1 } },
   ],
+  // 西北軍四個軍分駐四座城，一城一軍：馮玉祥坐鎮綏遠的歸綏，宋哲元鎮察哈爾省會
+  // 張家口，韓復榘守關中東大門潼關，鹿鍾麟留守西安。
   G: [
-    { id: 'G-1', generalId: 'feng_yuxiang', general: '馮玉祥', designator: '第一軍', startCityId: 'xian', lon: 108.9, lat: 34.3, units: { infantry: 10, cavalry: 5, artillery: 1, machine_gun: 2 } },
-    { id: 'G-2', generalId: 'song_zheyuan', general: '宋哲元', designator: '第二軍', startCityId: 'guisui', lon: 111.7, lat: 40.8, units: { infantry: 7, cavalry: 4, artillery: 0, machine_gun: 1 } },
-    { id: 'G-3', generalId: 'han_fuqu', general: '韓復榘', designator: '第三軍', startCityId: 'xian', lon: 108.9, lat: 34.3, units: { infantry: 8, cavalry: 4, artillery: 1, machine_gun: 2 } },
+    { id: 'G-1', generalId: 'feng_yuxiang', general: '馮玉祥', designator: '第一軍', startCityId: 'guisui', lon: 111.7, lat: 40.8, units: { infantry: 10, cavalry: 5, artillery: 1, machine_gun: 2 } },
+    { id: 'G-2', generalId: 'song_zheyuan', general: '宋哲元', designator: '第二軍', startCityId: 'zhangjiakou', lon: 114.89, lat: 40.82, units: { infantry: 7, cavalry: 4, artillery: 0, machine_gun: 1 } },
+    { id: 'G-3', generalId: 'han_fuqu', general: '韓復榘', designator: '第三軍', startCityId: 'tongguan', lon: 110.2, lat: 34.5, units: { infantry: 8, cavalry: 4, artillery: 1, machine_gun: 2 } },
     { id: 'G-4', generalId: 'lu_zhonglin', general: '鹿鍾麟', designator: '第四軍', startCityId: 'xian', lon: 108.9, lat: 34.3, units: { infantry: 7, cavalry: 3, artillery: 1, machine_gun: 1 } },
   ],
   M: [

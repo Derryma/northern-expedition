@@ -368,27 +368,6 @@
       "forcedMarchUntilTurn": null,
       "forcedMarchReadyTurn": null
     },
-    "S-5": {
-      "generalId": "duan_qirui",
-      "cellKey": "29,24",
-      "lon": 117.125,
-      "lat": 32.20560468836082,
-      "units": {
-        "infantry": 6,
-        "cavalry": 1,
-        "artillery": 2,
-        "machine_gun": 1
-      },
-      "embarkedOn": null,
-      "previousCellKey": "30,24",
-      "resolvedTurn": null,
-      "specialOperation": null,
-      "showRecruitment": false,
-      "npcGrowthEnded": false,
-      "fieldHospitalPending": null,
-      "forcedMarchUntilTurn": null,
-      "forcedMarchReadyTurn": null
-    },
     "Y-1": {
       "generalId": "yan_xishan",
       "cellKey": "23,17",

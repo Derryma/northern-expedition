@@ -117,3 +117,186 @@ python3 scripts/checks/dead_mechanism_e2e.py
 
 **掃描時不要只掃卡片資料檔。** 第一輪就是這樣漏掉 NPC 名冊、海軍規則、
 戰鬥數值與列強全域規則的——而漏掉的那幾份恰好是 drift 最嚴重的。
+
+
+## 省界與省級歸屬（第十七批）
+
+```bash
+# 真前端逐格量：四川、陝西南部、甘肅東南、察哈爾、青海，加上西北軍四個軍的駐地
+python3 scripts/checks/province_ownership_e2e.py
+
+# 8 個突變體，約半分鐘（判定器裡的 e2e 跑得很快）
+python3 scripts/checks/mutate_province_ownership.py
+
+# 存證截圖（不判定，只出圖）：_shots/province_map_*.png
+python3 scripts/checks/province_map_screenshots.py
+```
+
+對應的單元測試是 `backend/test_backend.py` 的 `ProvinceBordersAndOwnershipTests`。
+
+這一輪的設計重點：**省界只有一份**。地圖上的省界、城市的省籍、
+「某省全境歸某陣營」這三件事全部從 `frontend/data/provinces_1926.geojson`
+推出來——前者由 `scripts/build_provinces_1926.py` 產生，後兩者分別由
+`scenario/data/strategic_map.json` 與 `frontend/map.js` 的
+`PROVINCE_OWNERSHIP_CLAIMS` 引用。**不要**為了讓某一省整片變色，
+去手改 `FACTION_TERRITORIES` 那些手描的控制圈：那會讓省界變成兩份，
+改一邊另一邊就歪。
+
+`province_ownership_e2e.py` 裡最值錢的一關是「條款以外全圖一格都沒動」——
+它拿 `factionAt()`（套用歸屬保證**之前**的歸屬）當基準逐格比，
+所以測試裡不必寫死「奉系應該有幾格」這種會過期的數字，
+而且任何一條條款不小心擴權，都會在別的省份被抓到。
+
+改地格歸屬的時候順手看一眼城市：城市是先篩同陣營的格子再取最近的，
+所以顏色一動，城市就可能跳一格（大同踩過：它是山西的城，腳下那一格卻在
+察哈爾境內）。三層防線分別是套用條款時的城市護欄、名冊上的 `cell_key` 釘選、
+以及 `CELL_OWNERSHIP_OVERRIDES` 逐格例外表，e2e 三層都有守。
+
+## 陣營吞併／歸屬轉移（第十八批）
+
+```bash
+# 21 張卡逐張打真的 HTTP，並且刻意在 next-turn 與 respond-event 中間換一份新快照
+python3 scripts/checks/faction_transfer_e2e.py
+
+# 8 個突變體，約兩分鐘
+python3 scripts/checks/mutate_faction_transfer.py
+```
+
+對應的單元測試是 `backend/test_backend.py` 的 `FactionTransferTacticalTests`。
+
+**這一輪修的缺陷值得記住，因為它的形狀會再出現。**
+所有吞併與歸屬轉移的卡都在 `respond_event()` 裡結算（卡片的 `apply` 要等每一家
+都回應完才跑），而 `self._tactical` 先前只有 `next_turn()` 會設。前端每推一次
+共享狀態，`SHARED_TACTICAL_STATE` 就換成一份新的 dict，引擎手上那個變成孤兒：
+黔軍的地格、部隊、城市確實都轉給了川軍——轉在一份再也沒有人看的字典上。
+`applied` 回報成功，地圖一格沒動，而且**時好時壞**，端看那一輪前端有沒有剛好
+在中間推過一次。
+
+所以：
+
+* 「伺服器現在手上那份戰術快照」只有 `backend/server.py` 的 `current_tactical()`
+  一個定義，`_run_route()` 在每個路由跑之前都重新綁一次。不要把它存起來重複用。
+* 拿不到快照時一律記 `*_skipped` 並附 `reason`，不准靜靜跳過——
+  `_transfer_all_faction_cells()` 現在回傳「轉了幾格」，`None` 和 `0` 意思不同。
+* `faction_transfer_e2e.py` 是照 `KEYS` 自己去卡池撈的，新增一張同類的卡會自動
+  被涵蓋；驗的也不只是「有東西變了」，而是**照機制該變的那幾個部分都變了**
+  （吞併沒轉地格、招募沒換旗，都會被單獨抓出來）。
+
+## 排空競態與腳本埠號（第十九批）
+
+```bash
+# 6 個突變體，約一分半
+python3 scripts/checks/mutate_drain_race.py
+
+# 隨機挑三張吞併／轉移卡在真前端實際觸發並截圖（不判定）
+python3 scripts/checks/faction_transfer_screenshots.py [種子] [張數]
+```
+
+對應的單元測試是 `DrainRaceTests` 與 `CheckScriptPortTests`。
+
+**寫新的檢查腳本時，這三件事別再犯：**
+
+1. **一支腳本一個埠。** 共用埠會製造假紅與假綠——前一支的伺服器還沒收乾淨，
+   後一支就可能整份量測都對著上一盤棋做。
+2. **啟動的埠要就是輪詢的埠。** 別用 `python3 -m backend.server`，
+   那綁的是預設的 8766。
+3. **檢查 `proc.poll()`。** 綁不上埠時子程序立刻死掉，而輪詢仍可能連上
+   別人那一台。要出聲，不要默默量錯的那一台。
+
+另外：**斷言字串時先把註解剝掉。** 這個專案已經踩過兩次——
+要守的旗標或函式名，在解釋它的註解裡也有一份，把程式碼那一行刪掉測試照樣綠。
+`DrainRaceTests._no_comments()` 就是為此而生。
+
+## NPC 那一半的世界（第二十批）
+
+```bash
+# 5 個突變體，約十分鐘（判定器是單元測試 + 真前端 e2e）
+python3 scripts/checks/mutate_npc_visible_state.py
+
+# 指定卡逐張跑並截圖（不判定，只存證）
+python3 scripts/checks/card_effect_screenshots.py 卡ref[,卡ref...] [輸出.json]
+```
+
+對應的單元測試是 `NpcVisibleStateTests`；真前端那三關在
+`card_effects_land_e2e.py` 裡（現在 18 關）。
+
+**這一輪的缺陷形狀：畫面只更新玩家自己那一半的世界。**
+
+* `syncStrategicCitiesFromState()` 先前只讀各玩家的 `city_economy`。
+  〈黔軍整頓茅台酒造〉把遵義升到 3 級，後端的 `city_level_overrides` 有寫，
+  畫面卻永遠停在 2 級——因為遵義不屬於任何玩家，沒有人的 `city_economy`
+  會提到它。現在等級的權威來源是後端覆寫表，覆寫解除時回到開局基準
+  （`baseCityLevels`），`city_economy` 只在沒有覆寫時當備援。
+* 鐵路停擺的**理由**先前只有後端知道，前端一律寫「搶修中」。
+  〈閻錫山封鎖窄軌鐵路〉是永久封鎖、無法搶修，看起來卻像修得好。
+  後端的 `railway_access()` 現在多回一份 `disabled_detail`
+  （`permanent` / `no_repair` / `until_general_leaves`），前端只負責翻成字。
+
+寫新測試時的判準：**挑一個不屬於任何玩家的目標**。
+`card_effects_land_e2e.py` 特地加了一關去斷言「遵義確實不在任何玩家的
+`city_economy` 裡」——沒有那一關，這關驗不到東西，會是假綠。
+
+## 後端知道、玩家看不到（第二十一批）
+
+```bash
+# 真前端 25 關，埠 8794
+python3 scripts/checks/world_visibility_e2e.py
+
+# 14 個突變體（判定器＝上面那支 e2e ＋ WorldVisibilityTests）
+python3 scripts/checks/mutate_world_visibility.py
+```
+
+對應的單元測試是 `WorldVisibilityTests`（13 項）。
+
+**三個缺陷，同一個家族：後端算出來了，玩家在畫面上看不到。**
+
+1. **`remaining_turns` 為 null＝無限期，不是過期。** 前端先前在八個地方各寫
+   一份 `Number(remaining_turns || 0) > 0`，於是每一種永久效果都被當成已經結束
+   ——〈閻錫山封鎖窄軌鐵路〉兩條線全停，「持續效果」清單一筆都不列。
+   現在後端在 `snapshot()` 裡替每一筆蓋 `active`，前端只讀 `effectActive()`。
+   **不要再在前端寫任何一條 `remaining_turns` 的判斷**，測試會擋。
+2. **擋得住就要說。** `blocked_cards`（被事件按住的功能卡）與
+   `blocked_actions`（被禁掉的訓練／造船／補兵）現在隨 snapshot 送出來，
+   前端把按鈕關掉並寫出擋住它的是什麼。判準仍然只在後端——前端不准自己
+   翻 `perk_suspensions` / `action_bans` 那兩張原始表。
+3. **無主城市。** 列強佔領解除時記成 `city_owners[id] = None`
+   （**不是** `pop`：引擎裡到處都是 `.get(id, city["faction"])`，鍵一不見
+   就把城市悄悄還給 1926 劇本的原主）。`ownerless_cities()` 由它算出來，
+   解除時開一筆 `cities_became_ownerless` 交辦讓畫面中立化。
+
+**下次怎麼做同一份稽核：** 把後端 `state` 的每一個鍵列出來，數它在引擎、
+測試、前端各出現幾次。
+
+* 只出現在寫入處 → 空轉（這次抓到 `npc_accounts`，已移除）。
+* 只出現在後端、但「玩家理當要看到」→ 就是這一類缺陷。
+* 前端零引用但**刻意**的：`comprador_deflections`、`assassination_log`
+  是查帳用的紀錄，不要順手刪。
+
+## 卡面 vs 實作 vs 畫面（第二十二批）
+
+```bash
+# 真前端 38 關（含佔領／演習、戰鬥加成、卡片改寫、銀行停貸）
+python3 scripts/checks/world_visibility_e2e.py
+
+# 25 個突變體
+python3 scripts/checks/mutate_world_visibility.py
+```
+
+單元測試：`EffectsReachThePlayerTests`、`OccupationVersusDrillStateTests`。
+
+**這一批的稽核方法，下次照做：**
+
+1. 把每張事件卡的 `apply`（含 `resolution.options[].apply`）套進一局乾淨的引擎，
+   比對前後的 `snapshot()`，列出它**真正改了哪些鍵**。
+2. 把那些鍵拿去 `frontend/app.js` 裡找（記得先剝註解）——沒人讀的就是
+   「後端算了、玩家看不到」。
+3. 逐一判斷：這件事玩家理當要看到嗎？看不到的話他會不會按下去才知道？
+
+207 張裡有 36 張的改動全部落在前端讀不到的鍵上。其中真的會咬到玩家的四類
+已經修掉（戰鬥加成、卡片數字改寫、單一銀行停貸、鐵路「沿線」範圍）；
+剩下的是 `event_locks` / `scheduled_event_effects` / `unlocks` 這種
+「改的是未來抽牌機率」的機制，當下沒有東西可以畫。
+
+**數字對不對也量過**：把 `effect` 文字裡的數字（含百分比轉成倍率）與 payload
+裡的數字對照，207＋90 張全掃。殘留的不一致只有三張鐵路交涉卡
+（12.58／12.59／12.60），已修；其餘都是文字寫百分比、資料存倍率之類的假警報。

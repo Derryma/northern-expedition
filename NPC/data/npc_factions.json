@@ -92,7 +92,7 @@
       "id": "feng",
       "name": "西北軍",
       "leader": "馮玉祥",
-      "core_region": "綏遠/甘肅/陝西邊緣",
+      "core_region": "綏遠/察哈爾/陝西/甘肅東部",
       "generals": [
         "馮玉祥",
         "宋哲元"
@@ -102,7 +102,7 @@
         {
           "id": "G-1",
           "general": "馮玉祥",
-          "spawn_city": "西安",
+          "spawn_city": "歸綏",
           "units": {
             "infantry": 10,
             "cavalry": 5,
@@ -113,7 +113,7 @@
         {
           "id": "G-2",
           "general": "宋哲元",
-          "spawn_city": "歸綏",
+          "spawn_city": "張家口",
           "units": {
             "infantry": 7,
             "cavalry": 4,
@@ -124,7 +124,7 @@
         {
           "id": "G-3",
           "general": "韓復榘",
-          "spawn_city": "西安",
+          "spawn_city": "潼關",
           "units": {
             "infantry": 8,
             "cavalry": 4,

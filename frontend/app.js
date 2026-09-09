@@ -1,6 +1,6 @@
 import { FLAG, factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
 import { RIVERS } from './map.js';
-import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES } from './map.js';
+import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES, PROVINCE_OWNERSHIP_CLAIMS, CELL_OWNERSHIP_OVERRIDES, applyProvinceOwnershipClaims, factionAt } from './map.js';
 import {
   NAVY_UNIT_META,
   activeGunBoats,
@@ -263,6 +263,55 @@ function withAlpha(hex, alpha) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+// 一筆限時效果現在還算不算數，由後端蓋在 `effect.active` 上
+// （`remaining_turns` 為 null 代表**永久**，不是過期）。
+//
+// 前端先前在八個地方各寫一份 `Number(effect.remaining_turns || 0) > 0`，
+// 於是每一種永久效果在畫面上一律被當成已經結束：〈閻錫山封鎖窄軌鐵路〉
+// 京漢與正太兩條線全停，「持續效果」清單卻一筆都不列。
+// 這位玩家現在被事件禁掉的行動（後端 blocked_actions：13.25 軍餉短缺、
+// 14.10 土匪劫道……）。後端本來就會在路由上擋下來，但畫面按鈕先前照樣亮著，
+// 玩家按了才收到例外訊息——「應該自動化的機制」不該長成這樣。
+function blockedAction(action, player = currentPlayer) {
+  return (state?.players?.[player]?.blocked_actions || {})[action] || null;
+}
+
+function blockedActionNote(action, player = currentPlayer) {
+  const entry = blockedAction(action, player);
+  if (!entry) return "";
+  const until = entry.until_turn === null || entry.until_turn === undefined
+    ? "" : `，需等到第 ${entry.until_turn} 回合`;
+  return `${entry.label}：本回合不可${entry.name}${until}`;
+}
+
+// 這張功能卡現在打不打得出去（後端 blocked_cards：列強 perk 被事件按住、
+// 研究院收編文物……）。同樣是後端算、前端只讀。
+// 這張卡的數字被事件卡改過哪些。後端算好（card_field_changes），
+// 前端只印——卡面上的 effect 文字是靜態的，改寫之後不會自己跟著變。
+function cardFieldChanges(cardId, player = currentPlayer) {
+  return (state?.players?.[player]?.card_field_changes || {})[cardId] || [];
+}
+
+function blockedCard(cardId, player = currentPlayer) {
+  return (state?.players?.[player]?.blocked_cards || {})[cardId] || null;
+}
+
+function blockedCardNote(cardId, player = currentPlayer) {
+  const entry = blockedCard(cardId, player);
+  if (!entry) return "";
+  const until = entry.until_turn === null || entry.until_turn === undefined
+    ? "（無期限）" : `，需等到第 ${entry.until_turn} 回合`;
+  return `${entry.label}${until}`;
+}
+
+function effectActive(effect) {
+  if (!effect) return false;
+  if (effect.active !== undefined) return Boolean(effect.active);
+  console.error("限時效果少了後端蓋的 active 欄位，一律當成已結束：",
+    effect.kind || effect.railway || effect.city_id || effect.id);
+  return false;
+}
+
 function foreignPunishments() {
   return state?.foreign_punishments || [];
 }
@@ -300,14 +349,12 @@ function bombedCities() {
   return out;
 }
 
-// 城市現在的狀態：轟炸中 / 重建中 / 沒事。後端也算一份同樣的東西
-// （PunishmentBook.city_status），兩邊必須說一樣的話。
+// 城市現在的狀態：轟炸中 / 重建中 / 沒事。這是後端 PunishmentBook.city_status
+// 算的，隨 snapshot 送來（state.city_punishment_status）。
+// 先前前端自己從 foreign_punishments 與 city_rebuilding 重算一份同樣的東西——
+// 兩份判斷遲早會對不上，而且不會有任何東西叫。
 function cityPunishmentStatus(cityId) {
-  const bombed = bombedCities()[cityId];
-  if (bombed) return { status: 'bombing', label: '轟炸中', power: bombed.power };
-  const remaining = (state?.city_rebuilding || {})[cityId];
-  if (remaining) return { status: 'rebuilding', label: '重建中', remaining_turns: remaining };
-  return null;
+  return (state?.city_punishment_status || {})[String(cityId)] || null;
 }
 
 function occupationForCell(cell) {
@@ -370,9 +417,36 @@ function punishmentLockForNavy(navy) {
   return entry.owner && entry.owner !== navyFaction(navy) ? null : entry;
 }
 
+// 佔領與演習是兩種狀態，畫面上不能講成同一件事：一個到期歸還、
+// 一個退出後土地變無主。哪一種由後端的 entry.mode 說了算，前端不自己推。
+function punishmentIsDrill(entry) {
+  return entry?.mode === 'drill';
+}
+
 function punishmentLockLabel(entry) {
   const power = POWER_LABELS[entry?.power] || entry?.power || '列強';
-  return entry?.kind === 'water_blockade' ? `${power}封鎖水域` : `${power}佔領區`;
+  if (entry?.kind === 'water_blockade') {
+    return punishmentIsDrill(entry) ? `${power}演習水域` : `${power}封鎖水域`;
+  }
+  return punishmentIsDrill(entry) ? `${power}演習區` : `${power}佔領區`;
+}
+
+// 這一筆結束的時候土地會怎樣。判準是後端在 entry.release_rule 上寫的，
+// 不是前端從 mode 猜的——兩者將來若脫鉤（例如新增一種懲戒），
+// 猜的那一份一定先錯。
+function punishmentReleaseNote(entry) {
+  if (!entry) return "";
+  const until = entry.until_turn === null || entry.until_turn === undefined
+    ? "" : `，至第 ${entry.until_turn} 回合`;
+  if (entry.release_rule === 'becomes_ownerless') {
+    return "關係修好的下一回合解除；解除後土地成為無主地，須重新佔領";
+  }
+  if (entry.release_rule === 'returns_to_owner') {
+    return punishmentIsDrill(entry)
+      ? `演習${until}，結束後原封不動歸還原屬勢力`
+      : "關係修好的下一回合解除，屆時原封歸還";
+  }
+  return "";
 }
 
 // 一次性戰力損失：照現有的 clampUnitsToForceCap 往下削，削到目標戰力為止。
@@ -580,6 +654,12 @@ function ultimatumGarrisons() {
 const PENDING_EFFECT_HANDLERS = {
   foreign_punishment_damage: (faction, effect) => applyForeignPunishmentDamage(faction, effect),
 
+  // 列強「地面部隊佔領」的懲戒解除：那幾省的城市變成**無主**，原屬勢力要
+  // 重新進城佔領。後端把 city_owners 上那一格記成 null，這裡把畫面跟上——
+  // 先前後端把城市從 city_owners 移除、記進一份沒人讀的 ownerless_cities，
+  // 於是城市悄悄回到 1926 劇本的原主，而地圖一格都沒動。
+  cities_became_ownerless: (faction, effect) => releaseCitiesToNoOne(effect.city_ids),
+
   // 全體可變忠誠將領加減忠誠。1.8 日本承認北京政府、10.8 復興儒學走這條，
   // 幅度可能已被〈成立官辦廣播電台〉放大（後端算好了，這裡照數字執行）。
   // 列強派來的刺客得手：真的把人從將領樹上抹掉（部屬少將忠誠一併歸零）。
@@ -721,11 +801,21 @@ const PENDING_EFFECT_HANDLERS = {
 // 下一次排空看到它就只補銷帳、不再套用一次——同一份忠誠不會加兩次。
 const appliedFrontendEffectIds = new Set();
 
+// 排空進行中。背景同步（synchronizeSharedGame，每 1.2 秒一次）不得插隊：
+// 排空中間全是 await——每一筆交辦都要跟後端要結果——而背景同步在那些空檔裡
+// 只要跑一次 pullSharedState()，applyTacticalSnapshot() 就會把「已經套用、
+// 但還沒推上去」的 loyaltyOverrides 用伺服器那份蓋掉。那一筆的流水號這時已經
+// 記進 appliedFrontendEffectIds 了，所以下一次排空只會補銷帳、不會重做——
+// 效果就此消失，畫面上看起來像那張卡沒有生效。
+let drainInFlight = false;
+
 async function consumePendingFrontendEffects() {
   const notes = [];
   const failures = [];
   const done = {};          // 陣營 → 這次真的做完（或永遠做不完）的流水號
   let didWork = false;
+  drainInFlight = true;
+  try {
   for (const faction of TURN_PLAYERS) {
     const queue = state?.players?.[faction]?.pending_frontend_effects || [];
     let stumbled = false;
@@ -790,7 +880,20 @@ async function consumePendingFrontendEffects() {
   if (failures.length) {
     notes.push(`有 ${failures.length} 筆交辦沒做成，已保留待重試：${failures.join('；')}`);
   }
+  // 排空剛套用的東西（忠誠覆寫、將領歸屬、地格改色）只存在於這一份前端狀態，
+  // 推上去之前任何一次 pull 都會把它蓋掉。呼叫端多半也會再發佈一次，
+  // 這裡先發佈是為了讓「排空一結束就已經是共享事實」這件事不依賴呼叫端。
+  if (didWork) {
+    try {
+      await publishSharedState(true);
+    } catch (error) {
+      console.error(`[pending_frontend_effects] 排空後發佈失敗：${error.message}`);
+    }
+  }
   return notes;
+  } finally {
+    drainInFlight = false;
+  }
 }
 
 const FOREIGN_CITY_OUTLINE = '#b02222';
@@ -1554,25 +1657,45 @@ function applyTacticalSnapshot(snapshot) {
   generalTreeData = generalTrees[currentPlayer];
 }
 
+// 城市的基準等級（scenario 檔上的原值）。bootstrap 那些城市物件會被就地改寫，
+// 所以要先留一份底稿——事件卡的等級覆寫解除時才回得去。
+const baseCityLevels = new Map();
+
 function syncStrategicCitiesFromState() {
   if (!bootstrap?.strategic_map?.cities || !state) return;
   const economyByCity = new Map();
   for (const payload of Object.values(state.players || {})) {
     for (const city of payload.city_economy || []) economyByCity.set(city.id, city);
   }
+  // 城市等級的權威是後端的 city_level_overrides，存的是**絕對等級**。
+  // 玩家城市的 city_economy.level 也是從它算出來的，兩者一致。
+  //
+  // 先前這裡只讀 city_economy，於是 **NPC 手上的城市永遠同步不到**——
+  // 那張表只有四家玩家的城。〈黔軍整頓茅台酒造〉把遵義升到 3 級、
+  // 〈閻錫山督辦山西教育〉把山西全省升一級，後端都寫進去了，畫面一動也不動。
+  const levelOverrides = state.city_level_overrides || {};
+  const ownerless = new Set(state.ownerless_cities || []);
   for (const city of bootstrap.strategic_map.cities) {
+    if (!baseCityLevels.has(city.id)) baseCityLevels.set(city.id, city.level);
     const economy = economyByCity.get(city.id);
     if (economy) {
       city.cash = economy.cash;
       city.factory = economy.factory;
-      // 城市升級事件卡會改變城市等級，後端透過 city_economy 傳遞更新後的等級
-      // （從 _strategic_map_snapshot 計算而來），前端必須同步，否則升級卡沒有效果
-      if (economy.level !== undefined) {
-        city.level = economy.level;
-      }
     }
+    const override = levelOverrides[city.id];
+    if (override !== undefined) city.level = Number(override);
+    else if (economy && economy.level !== undefined) city.level = economy.level;
+    else city.level = baseCityLevels.get(city.id);
+    // 無主：列強懲戒解除後的城市不屬於任何人，畫面要跟著中立化。
+    // 權威是後端的 ownerless_cities，所以每次同步都重讀一次，
+    // 而不是只靠那一筆 cities_became_ownerless 交辦——換一台瀏覽器進來
+    // 也要看到同一份世界。
+    if (ownerless.has(city.id)) city.faction = null;
     const cell = cells[city.cellKey];
-    if (cell) cell.city = city;
+    if (cell) {
+      cell.city = city;
+      if (ownerless.has(city.id)) cell.fac = null;
+    }
   }
 }
 
@@ -1644,7 +1767,8 @@ async function publishSharedState(force = false, retried = false) {
 }
 
 async function synchronizeSharedGame() {
-  if (!sharedReady || sharedSyncInFlight) return;
+  // 排空中途不同步：見 drainInFlight 的說明。
+  if (!sharedReady || sharedSyncInFlight || drainInFlight) return;
   sharedSyncInFlight = true;
   try {
     const signature = JSON.stringify(tacticalSnapshot());
@@ -1754,9 +1878,23 @@ function indexScenarioCells() {
       && !cell.power                       // 列強租借地不能拿來擺中國城市
       && (!cell.river || cell.railBridge)
     );
-    const sameFaction = candidates.filter((cell) => cell.fac === placementFaction);
+    // 釘選的地格。城市平常是挑「同陣營又最近」的格子落腳，可是格子網很粗，
+    // 地格歸屬一動，最近的同色格就可能換一個——城市於是在畫面上跳一格。
+    // 名冊上寫了 cell_key 的城市直接放上去，不參與這場搶格子。
+    let cell = null;
+    if (city.cell_key) {
+      cell = candidates.find((candidate) => candidate.key === city.cell_key) || null;
+      if (!cell) {
+        throw new Error(`City ${city.name} pins cell ${city.cell_key}, which is unusable`);
+      }
+      if (cell.fac !== placementFaction) {
+        throw new Error(
+          `City ${city.name} pins cell ${city.cell_key}, owned by ${cell.fac} not ${placementFaction}`);
+      }
+    }
+    const sameFaction = candidates.filter((candidate) => candidate.fac === placementFaction);
     const pool = sameFaction.length ? sameFaction : candidates;
-    const cell = pool.reduce((nearest, candidate) => {
+    cell = cell || pool.reduce((nearest, candidate) => {
       const distance = (candidate.lon - city.lon) ** 2 + (candidate.lat - city.lat) ** 2;
       return !nearest || distance < nearest.distance ? { cell: candidate, distance } : nearest;
     }, null)?.cell;
@@ -1887,8 +2025,22 @@ function provinceAt(lon, lat) {
   return null;
 }
 
+// 每座城市名義座標最近的那一格，連同該城市的陣營。省級歸屬保證拿它當護欄：
+// 收走別家城市腳下那一格，城市就會被擠到隔壁去。
+function cityHomeCells() {
+  const homes = new Map();
+  for (const city of bootstrap.strategic_map?.cities || []) {
+    const home = cellAt(city.lon, city.lat);
+    if (home) homes.set(home.key, city.scenario_faction || city.faction);
+  }
+  return homes;
+}
+
 function indexProvinceCells() {
   for (const cell of Object.values(cells)) cell.province = provinceAt(cell.lon, cell.lat);
+  // 省界拿到手之後才輪得到省級歸屬保證，而且必須趕在部隊入城之前——
+  // startingCellAt() 只肯把部隊放在自家顏色的格子上。
+  applyProvinceOwnershipClaims((cell) => cell.province, cityHomeCells());
 }
 
 function applyMapTransform() {
@@ -2230,7 +2382,7 @@ function strategicProvinceForCell(cell) {
 
 function activeTimedEffects(player, kind = null) {
   return (state.players[player]?.timed_effects || [])
-    .filter((effect) => Number(effect.remaining_turns || 0) > 0 && (!kind || effect.kind === kind));
+    .filter((effect) => effectActive(effect) && (!kind || effect.kind === kind));
 }
 
 function provinceForArmy(army) {
@@ -2254,7 +2406,7 @@ function armyRevealedByIntel(army, observer = currentPlayer) {
 }
 
 function activeEffectsMarkup(payload = state.players[currentPlayer]) {
-  const effects = (payload?.timed_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
+  const effects = (payload?.timed_effects || []).filter(effectActive);
   const cityEffects = (state.city_output_effects || []).filter((effect) =>
     effect.kind === "qing_gang_riot"
     && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
@@ -2263,9 +2415,11 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
     effect.kind === "red_army_uprising"
     && (effect.initiator === currentPlayer || effect.target_owner === currentPlayer)
   );
-  const railways = (state.railway_effects || []).filter((effect) => Number(effect.remaining_turns || 0) > 0);
+  // 停擺的線照後端的判定拿（railway_access.disabled），不從 railway_effects
+  // 自己篩：永久停擺的 remaining_turns 是 null，任何「> 0」的篩子都漏掉它。
+  const railways = [...disabledRailways()];
   const ports = (state.port_effects || []).filter((effect) =>
-    Number(effect.remaining_turns || 0) > 0
+    effectActive(effect)
     && (effect.initiator === currentPlayer || effect.owner === currentPlayer)
   );
   const economyFlags = Boolean(payload?.loan_penalties?.length || payload?.soong_patronage
@@ -2296,7 +2450,7 @@ function activeEffectsMarkup(payload = state.players[currentPlayer]) {
       const names = (effect.cities || []).map((city) => city.name).join("、");
       return `<span>${effect.name || "紅軍起義"}(${role})：${names}，需駐 ${effect.required_battalions || 5} 營</span>`;
     }).join("")}
-    ${railways.map((effect) => `<span>${effect.railway} 搶修中，剩餘 ${effect.remaining_turns} 回合</span>`).join("")}
+    ${railways.map((name) => `<span>${railwayStatusLabel(name)}</span>`).join("")}
     ${ports.map((effect) => {
       const role = effect.initiator === currentPlayer ? "發動" : "受害";
       return `<span>${effect.name || "大港開炸"}(${role})：${effect.city_name}港務癱瘓，剩餘 ${effect.remaining_turns} 回合</span>`;
@@ -3079,6 +3233,23 @@ function applyBackendCityTransfers(cityIds, faction) {
   return names;
 }
 
+// 把幾座城市改成無主：城市與腳下那一格都不再屬於任何勢力。
+// 判定是後端做的（state.ownerless_cities），這裡只負責畫。
+function releaseCitiesToNoOne(cityIds) {
+  const names = [];
+  for (const cityId of cityIds || []) {
+    const city = (bootstrap.strategic_map?.cities || []).find((item) => item.id === cityId);
+    if (!city) continue;
+    if (city.faction) transferCityEconomy(city, city.faction, null);
+    city.faction = null;
+    const cell = cells[city.cellKey];
+    if (cell) cell.fac = null;
+    names.push(city.name);
+  }
+  if (names.length) syncStrategicCitiesFromState();
+  return names;
+}
+
 function detachGeneralFromTree(tree, generalId) {
   for (const general of Object.values(tree?.generals || {})) {
     if (general.subordinates?.includes(generalId)) {
@@ -3321,7 +3492,14 @@ function renderRecruitmentPanel() {
   const costs = profile.resolved_recruit_costs || bootstrap.recruit_costs || {};
   const navyCosts = profile.resolved_navy_costs || bootstrap.navy_recruit_costs || {};
 
+  const trainBlock = blockedActionNote("train_unit");
+  const navyBlock = blockedActionNote("train_navy_unit");
   return `
+    ${trainBlock || navyBlock
+      ? `<div class="panel-note action-blocked-note">${[trainBlock, navyBlock]
+          .filter(Boolean).filter((text, index, all) => all.indexOf(text) === index)
+          .join("<br>")}</div>`
+      : ""}
     <div class="recruitment-grid">
       ${Object.entries(UNIT_META).map(([type, unit]) => {
         const cash = Number(costs[type]?.cash ?? 0);
@@ -3335,7 +3513,7 @@ function renderRecruitmentPanel() {
             <div class="unit-stats">預備 ${reserve} · 現金 $${cash} · 工廠 ${factory}</div>
           </div>
           <div class="unit-cost">
-            <button class="train-unit-btn" data-train-unit="${type}">訓練 +1</button>
+            <button class="train-unit-btn" data-train-unit="${type}"${trainBlock ? ` disabled title="${trainBlock}"` : ""}>訓練 +1</button>
           </div>
         </div>
       `}).join('')}
@@ -3353,7 +3531,7 @@ function renderRecruitmentPanel() {
             <div class="unit-stats">預備 ${reserve} · 現金 $${cost.cash ?? 0} · 工廠 ${cost.factory ?? 0}</div>
           </div>
           <div class="unit-cost">
-            <button class="train-unit-btn" data-train-navy-unit="${type}">建造 +1</button>
+            <button class="train-unit-btn" data-train-navy-unit="${type}"${navyBlock ? ` disabled title="${navyBlock}"` : ""}>建造 +1</button>
           </div>
         </div>
       `}).join('')}
@@ -3444,12 +3622,17 @@ function renderLoanOfferRow(row) {
   return `
     <tr class="${blocked ? "loan-blocked" : ""}">
       <td class="loan-bank-cell">${powerFlagMarkup(row.power, "flag-chip bank-flag")}<span><b>${row.name}</b><br>${relation}</span></td>
-      <td>${TIER_LABEL[row.tier] || row.tier_label || "—"}</td>
+      <td>${row.bank_ban ? row.bank_ban.label : (TIER_LABEL[row.tier] || row.tier_label || "—")}</td>
       <td class="num">${row.available} / ${row.limit}</td>
       <td class="num">${rate}</td>
       <td class="num">${term}</td>
       <td>${blocked
-        ? `<span class="loan-blocked-note">${row.loan_ban_remaining_turns ? `公債封鎖 ${row.loan_ban_remaining_turns} 回合` : row.tier === "blocked" ? "關係交惡" : row.tier_label || "不承作"}</span>`
+        ? `<span class="loan-blocked-note">${
+            // 事件卡對單一銀行下的停貸令（大英總罷工、昭和金融恐慌、洋行倒閉）。
+            // 判準與理由都由後端算好放在 row.bank_ban 上，這裡只印。
+            row.bank_ban ? `${row.bank_ban.label}（剩 ${row.bank_ban.remaining_turns} 回合）`
+              : row.loan_ban_remaining_turns ? `公債封鎖 ${row.loan_ban_remaining_turns} 回合`
+              : row.tier === "blocked" ? "關係交惡" : row.tier_label || "不承作"}</span>`
         : `<button class="loan-borrow-btn" data-borrow-bank="${row.bank}" data-max="${row.available}">借款</button>`}</td>
     </tr>
   `;
@@ -3752,20 +3935,28 @@ function renderCardsPanel() {
     return `${purchase}${activeEffectsMarkup(payload)}<div class="empty-state">目前無手牌</div>`;
   }
 
-  const cardsHtml = cards.map((card) => `
-    <div class="card-item-full">
+  const cardsHtml = cards.map((card) => {
+    // 被事件按住的卡：後端會擋，畫面也要擋，而且要寫出是被什麼按住的。
+    const blocked = blockedCardNote(card.id);
+    return `
+    <div class="card-item-full${blocked ? " card-blocked" : ""}">
       <div class="card-header-row">
         <div class="card-name">${card.name}</div>
         ${pendingCard
           ? `<button class="card-use-btn discard" data-discard="${card.id}">棄置</button>`
-          : `<button class="card-use-btn" data-use="${card.id}" data-player="${currentPlayer}">打出</button>`}
+          : `<button class="card-use-btn" data-use="${card.id}" data-player="${currentPlayer}"${
+              blocked ? ` disabled title="${blocked}"` : ""}>打出</button>`}
       </div>
       <div class="card-category">${card.category || "function"}</div>
+      ${blocked ? `<div class="card-blocked-note">${blocked}</div>` : ''}
+      ${cardFieldChanges(card.id).length
+        ? `<div class="card-rewritten-note">事件改寫：${
+            cardFieldChanges(card.id).map((item) => item.text).join("；")}</div>` : ''}
       ${card.story ? `<div class="card-story">${card.story}</div>` : ''}
       ${card.effect ? `<div class="card-effect">${card.effect}</div>` : ''}
       ${functionCardTargetMarkup(card)}
     </div>
-  `).join("");
+  `}).join("");
 
   return `
     ${purchase}
@@ -4061,7 +4252,7 @@ function subordinateSlotTargets() {
 function gangRiotShielded(owner, province, mechanic) {
   return (state?.players?.[owner]?.timed_effects || []).some((effect) =>
     effect.kind === "gang_riot_shield"
-    && Number(effect.remaining_turns || 0) > 0
+    && effectActive(effect)
     && effect.province === province
     && (effect.blocked_mechanics || []).includes(mechanic));
 }
@@ -4250,10 +4441,12 @@ async function boot() {
     fetch("/data/provinces_1926.geojson").then((response) => response.json()),
   ]);
   indexCards();
+  // 省份索引要排在最前面：它同時負責套用省級歸屬保證，而下面替部隊
+  // 尋找起始城市的那一步，會依地格歸屬決定落點。
+  indexProvinceCells();
   indexScenarioCells();
   snapArmiesToStartCities();
   initializeNavies();
-  indexProvinceCells();
   await loadAllGeneralTrees();
   initializeGeneralRuntime();
   synchronizeFieldArmies();
@@ -4743,7 +4936,7 @@ function initMap() {
         // 演習有期限、懲戒沒有——邊框用虛線與實線分開。
         ctx.strokeStyle = withAlpha(color, 1);
         ctx.lineWidth = 1.2;
-        ctx.setLineDash(occupation.drill ? [4, 3] : []);
+        ctx.setLineDash(punishmentIsDrill(occupation) ? [4, 3] : []);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
@@ -4852,7 +5045,7 @@ function drawOccupationBanners(ctx, occupationCentroids) {
     const color = POWER_TERRITORY_COLORS[entry.power] || '#b02222';
     const power = POWER_LABELS[entry.power] || entry.power;
     // 三種說法要分得開：演習有期限、封鎖是水域、佔領是土地易主。
-    const label = entry.drill ? `${power}演習`
+    const label = punishmentIsDrill(entry) ? `${power}演習`
       : entry.kind === 'water_blockade' ? `${power}封鎖` : `${power}佔領`;
 
     ctx.save();
@@ -5007,7 +5200,8 @@ function renderArmyMarkers(faction) {
     // Tooltip on hover
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
     title.textContent = armyTooltipText(army, faction)
-      + (lock ? `\n${punishmentLockLabel(lock)}：被鎖在原地，無法移動` : '');
+      + (lock ? `\n${punishmentLockLabel(lock)}：被鎖在原地，無法移動`
+          + (punishmentReleaseNote(lock) ? `（${punishmentReleaseNote(lock)}）` : '') : '');
     g.appendChild(title);
 
     const focusArmy = () => {
@@ -5108,7 +5302,8 @@ function renderNavyMarkers(svgOverlay, observer) {
 
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
     title.textContent = navyTooltipText(navy)
-      + (navyLock ? `\n${punishmentLockLabel(navyLock)}：被鎖在原地，無法移動` : "");
+      + (navyLock ? `\n${punishmentLockLabel(navyLock)}：被鎖在原地，無法移動`
+          + (punishmentReleaseNote(navyLock) ? `（${punishmentReleaseNote(navyLock)}）` : "") : "");
     g.appendChild(title);
 
     const focus = () => {
@@ -6013,6 +6208,28 @@ function renderNavyBattlePanel(root, report) {
   `;
 }
 
+// 這一場實際吃到哪些加成。後端在 /api/combat 的 applied_modifiers 上逐項貼好
+// 中文說明（技能／光環／限時效果／要塞／NPC 事件），前端只負責印出來。
+//
+// 先前 battle.appliedModifiers 只被**寫入**、沒有任何人讀：所有加成都在暗地裡
+// 改數字，玩家看不到自己為什麼贏或輸——連〈傅作義加固城防〉那種明寫在卡面上的
+// 加成也一樣不見。
+function appliedModifiersMarkup(battle, sideOrder) {
+  const applied = battle?.appliedModifiers || {};
+  if (!Object.keys(applied).length) return "";
+  const rows = [];
+  for (const side of sideOrder) {
+    for (const army of battleArmies(battle, side)) {
+      const list = (applied[army.id] || []).map((item) => item.label).filter(Boolean);
+      if (!list.length) continue;
+      rows.push(`<span><b>${army.designator || army.name || army.id}</b>${
+        [...new Set(list)].join("、")}</span>`);
+    }
+  }
+  if (!rows.length) return "";
+  return `<div class="battle-modifiers"><em>戰鬥加成</em>${rows.join("")}</div>`;
+}
+
 function renderBattlePanel() {
   const root = $("battlePanel");
   const reports = [...activeBattles, ...battleReports]
@@ -6064,6 +6281,7 @@ function renderBattlePanel() {
       ${sideOrder.map((side) => `<span>${battleSideLabel(battle, side)}：${tacticOptionLabel(battle.tactics[side])}</span>`).join("")}
       ${active ? `<strong>預估：${retreatEstimate(battle, sideOrder)}</strong>` : ""}
     </div>
+    ${appliedModifiersMarkup(battle, sideOrder)}
     ${pursuitReportMarkup(battle.result)}
     ${active && currentSide ? `
       <label class="battle-tactic">戰術
@@ -6117,7 +6335,19 @@ function disruptionTagText(entry) {
 // 地格資訊上的鐵路狀態：搶修中、或列強線關係不到都要標出來，
 // 否則玩家會以為點得動卻走不了三格。
 function railwayStatusLabel(name) {
-  if (disabledRailways().has(name)) return `${name}（搶修中）`;
+  if (disabledRailways().has(name)) {
+    // 修得好還是修不好，是後端算的（railway_access.disabled_detail）。
+    // 一律寫「搶修中」會讓永久封鎖看起來像個會自己好的暫時狀況。
+    const detail = (backendRailwayAccess?.disabled_detail || {})[name];
+    if (detail?.no_repair) {
+      const gate = detail.until_general_leaves
+        ? `，至${generalById(detail.until_general_leaves)?.name || detail.until_general_leaves}離場為止`
+        : "";
+      return `${name}（全線停擺，無法搶修${gate}）`;
+    }
+    const turns = detail?.remaining_turns;
+    return `${name}（搶修中${turns ? `，剩餘 ${turns} 回合` : ""}）`;
+  }
   if (bannedRailways().has(name)) return `${name}（路權遭封鎖，僅可通行）`;
   if (lockedForeignRailways().has(name)) {
     const power = foreignRailwayPower(name);
@@ -6191,6 +6421,15 @@ function renderTileInfo() {
       <span class="tile-concession-power">${flagMarkup(key, "flag-chip concession-flag")}${POWER_NAME[key] || key}</span>
     `).join(""));
   }
+  // 列強的地面部隊在這一格上：佔領還是演習，以及結束時土地怎麼處理，
+  // 都要當場說清楚——兩者對玩家是完全不同的處境。
+  const occupation = occupationForCell(cell);
+  const occupationRow = occupation
+    ? `<div class="tile-occupation${punishmentIsDrill(occupation) ? " tile-occupation-drill" : ""}">`
+      + `<b>${punishmentLockLabel(occupation)}</b>`
+      + `<small>${occupation.label || ""}${punishmentReleaseNote(occupation)
+          ? `${occupation.label ? "：" : ""}${punishmentReleaseNote(occupation)}` : ""}</small></div>`
+    : "";
   const concessionRow = tags.length ? `<div class="tile-concession">${tags.join("")}</div>` : "";
   const naviesHere = allNavies().filter((navy) => navy.cellKey === cell.key);
   const navyRow = naviesHere.length
@@ -6213,6 +6452,7 @@ function renderTileInfo() {
       <span>鐵路<strong>${railText}</strong></span>
       <span>產出<strong>$${city?.cash || 0} · 工廠 ${city?.factory || 0}</strong></span>
     </div>
+    ${occupationRow}
     ${concessionRow}
     ${navyRow}
     ${quellButtonMarkup(quellableUnrestForCity(city?.id))}`;
@@ -6437,8 +6677,10 @@ function renderArmyDetail() {
     ${canReinforce && army.showRecruitment ? `
       <div class="army-reinforcement">
         <b>${city.name}預備隊</b>
+        ${blockedActionNote("reinforce_army")
+          ? `<small class="action-blocked-note">${blockedActionNote("reinforce_army")}</small>` : ""}
         ${Object.entries(UNIT_META).map(([type, unit]) => `
-          <button data-reinforce-unit="${type}" title="${reinforcementWouldExceedCap(units, type) ? `再補一營會超過 ${armyForceCap()} 戰力上限` : ""}" ${profile.unit_reserves?.[type] && !reinforcementWouldExceedCap(units, type) ? "" : "disabled"}>
+          <button data-reinforce-unit="${type}" title="${blockedActionNote("reinforce_army") || (reinforcementWouldExceedCap(units, type) ? `再補一營會超過 ${armyForceCap()} 戰力上限` : "")}" ${profile.unit_reserves?.[type] && !reinforcementWouldExceedCap(units, type) && !blockedAction("reinforce_army") ? "" : "disabled"}>
             ${unitSymbol(type)}<span>${unit.name}</span><strong>${profile.unit_reserves?.[type] ?? 0}</strong>
           </button>
         `).join("")}
@@ -6542,7 +6784,7 @@ function navyHealthMarkup(navy) {
 // 大港開炸炸掉的港口：停靠、通行、修理、登陸、載運、編補全部停擺，直到搶修完成。
 function paralysedPorts() {
   return new Set((state?.port_effects || [])
-    .filter((effect) => Number(effect.remaining_turns || 0) > 0)
+    .filter(effectActive)
     .map((effect) => String(effect.city_id)));
 }
 
@@ -6555,7 +6797,7 @@ function navyLockedInPort(navy) {
   const city = cells[navy?.cellKey]?.city;
   if (!portParalysed(city)) return null;
   return (state?.port_effects || []).find((effect) =>
-    String(effect.city_id) === String(city.id) && Number(effect.remaining_turns || 0) > 0) || null;
+    String(effect.city_id) === String(city.id) && effectActive(effect)) || null;
 }
 
 function navyLockedNote(navy) {
@@ -6566,7 +6808,7 @@ function navyLockedNote(navy) {
 
 function portParalysedNote(city) {
   const effect = (state?.port_effects || [])
-    .find((item) => String(item.city_id) === String(city?.id) && Number(item.remaining_turns || 0) > 0);
+    .find((item) => String(item.city_id) === String(city?.id) && effectActive(item));
   if (!effect) return "";
   return `${city.name}港務遭破壞，搶修中，還有 ${effect.remaining_turns} 回合；期間不能停靠、通行、修理、登陸、載運與編補。`;
 }
@@ -6612,8 +6854,10 @@ function navyReserveButtonsMarkup(navy, city, faction) {
   return `
     <div class="army-reinforcement navy-reinforcement">
       <b>${city.name}海軍預備隊</b>
+      ${blockedActionNote("reinforce_navy", faction)
+        ? `<small class="action-blocked-note">${blockedActionNote("reinforce_navy", faction)}</small>` : ""}
       ${Object.entries(NAVY_UNIT_META).map(([type, unit]) => `
-        <button data-reinforce-navy-unit="${type}" ${Number(reserves[type] || 0) > 0 ? "" : "disabled"}>
+        <button data-reinforce-navy-unit="${type}" title="${blockedActionNote("reinforce_navy", faction)}" ${Number(reserves[type] || 0) > 0 && !blockedAction("reinforce_navy", faction) ? "" : "disabled"}>
           <span>${unit.name}</span><strong>${reserves[type] ?? 0}</strong>
         </button>
       `).join("")}
@@ -7543,9 +7787,7 @@ function foreignRailwayPower(name) {
 
 function disabledRailways() {
   return new Set(backendRailwayAccess?.disabled
-    || (state?.railway_effects || [])
-      .filter((effect) => Number(effect.remaining_turns || 0) > 0)
-      .map((effect) => effect.railway));
+    || (state?.railway_effects || []).filter(effectActive).map((effect) => effect.railway));
 }
 
 function lockedForeignRailways(faction = currentPlayer) {
@@ -7698,7 +7940,7 @@ function blockedTransitReason(source, destination, army) {
 function railwayMoveLimit(player = currentPlayer) {
   const active = state.players[player]?.timed_effects || [];
   return active.reduce((limit, effect) => {
-    if (effect.kind !== "rail_movement" || Number(effect.remaining_turns || 0) <= 0) return limit;
+    if (effect.kind !== "rail_movement" || !effectActive(effect)) return limit;
     return Math.max(limit, Number(effect.tiles || limit));
   }, 3);
 }
@@ -9294,7 +9536,10 @@ async function handleMapDestination(destination) {
     const enemy = allArmies().find((other) =>
       factionForArmy(other) !== currentPlayer && other.cellKey === destination.key
     );
-    if (destination.fac !== currentPlayer) {
+    // 無主之地（destination.fac 為 null）任何一家都可以直接進去佔領——
+    // 列強「地面部隊佔領」的懲戒解除之後那幾座城就是這個狀態。
+    // 先前這裡會走進「和平不得越境」那一支，訊息還印成「目前與 null 和平」。
+    if (destination.fac && destination.fac !== currentPlayer) {
       if (!factionsAtWar(currentPlayer, destination.fac)) {
         showNotice(`目前與${FACTIONS[destination.fac]?.shortName || destination.fac}和平，不能進入其領土。`);
         return;
@@ -9811,6 +10056,26 @@ $("debugForceTurnBtn").addEventListener("click", () => {
 
 // 除錯掛勾：把戰鬥加成的組裝過程開放給自動化檢查用（和「強制下一回合」按鈕同性質）。
 window.__neDebug = {
+  effectActive,
+  cityControlledBy,
+  appliedModifiersMarkup,
+  cardFieldChanges,
+  renderLoansMarkup,
+  renderTileInfo,
+  punishmentLockLabel,
+  punishmentReleaseNote,
+  punishmentIsDrill,
+  occupationForCell,
+  activeEffectsMarkup,
+  blockedAction,
+  blockedActionNote,
+  blockedCard,
+  blockedCardNote,
+  cityPunishmentStatus,
+  renderCardsPanel,
+  renderRecruitmentPanel,
+  releaseCitiesToNoOne,
+  railwayStatusLabel,
   combatArmyPayload,
   calculateGeneralLoyalty,
   generalTrees,
@@ -9829,6 +10094,14 @@ window.__neDebug = {
   functionActionMessage,
   provinceRevealedTo,
   cells,
+  provinceAt,
+  factionAt,
+  cityHomeCells,
+  // 排空冪等的關鍵狀態：哪些流水號已經套用過。查間歇性重複套用時要看得到它。
+  getAppliedFrontendEffectIds: () => [...appliedFrontendEffectIds],
+  PROVINCE_OWNERSHIP_CLAIMS,
+  CELL_OWNERSHIP_OVERRIDES,
+  ARMY_POSITIONS,
   selectTile,
   selectArmy,
   selectNavy,

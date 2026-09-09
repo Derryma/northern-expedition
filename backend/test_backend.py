@@ -4998,7 +4998,7 @@ class ForeignActionBatchOneTests(unittest.TestCase):
         entry = engine.punishments.open(
             card_id="bohai_fleet_special_drill", power="jp", kind="water_blockade",
             owner="F", waters=["渤海"], drill_turns=3, label="演習")
-        self.assertTrue(entry["drill"])
+        self.assertEqual(entry["mode"], "drill")
         self.assertEqual(entry["damage"], {}, "演習不造成任何傷害")
         self.assertIn("渤海", engine.punishments.blockaded_waters())
         for _ in range(3):
@@ -5728,9 +5728,18 @@ class ForeignActionBatchThreeTests(unittest.TestCase):
                                     {code: "accept" for code in engine.state["players"]})
         grant = next(e for e in applied if e["kind"] == "grant" and e["player"] == "F")
         self.assertEqual(grant["cash"], 10)
+        # 卡面寫的是「南滿鐵路**沿線**每座城市」，不是奉天、吉林兩省全部。
+        # 先前實作用的是 provinces，範圍比卡面大得多。
+        stations = set(engine.cities_along_railways(["南滿鐵路"]))
+        self.assertTrue(stations, "沿線一座城都挑不到，這條測試就空轉了")
+        self.assertTrue(set(north) - stations,
+                        "兩省的城全在沿線上的話，這條測試分不出新舊行為")
         for row in engine.state["players"]["F"]["city_economy"]:
-            if row["id"] in north:
+            if row["id"] in stations:
                 self.assertEqual(row["cash"], max(0, before[row["id"]] - 1), row["name"])
+            elif row["id"] in north:
+                self.assertEqual(row["cash"], before[row["id"]],
+                                 f'{row["name"]} 不在南滿線上，不該被扣')
 
     def test_japanese_factories_trade_cash_for_industry_forever(self):
         engine = GameEngine(seed=3)
@@ -8386,7 +8395,7 @@ class ForeignPunishmentTests(unittest.TestCase):
         _, result = self._fire(engine, "kwantung_army_special_drill")
         entry = next(e["punishment"] for e in result["applied"]
                      if e["kind"] == "foreign_punishment")
-        self.assertTrue(entry["drill"])
+        self.assertEqual(entry["mode"], "drill")
         self.assertIsNotNone(entry["until_turn"])
         self.assertEqual(entry["damage"], {})
         self.assertFalse([e for e in engine.state["players"]["F"]["pending_frontend_effects"]
@@ -13231,8 +13240,13 @@ class DrillVersusPunishmentTests(unittest.TestCase):
     def test_a_drill_is_marked_as_one_and_a_punishment_is_not(self):
         drill = self._draw(self._hostile(), self.DRILL)
         punishment = self._draw(self._hostile(), self.PUNISHMENT)
-        self.assertTrue(drill and drill[0]["drill"])
-        self.assertTrue(punishment and not punishment[0]["drill"])
+        self.assertTrue(drill and drill[0]["mode"] == "drill")
+        self.assertTrue(punishment and punishment[0]["mode"] == "punishment")
+        # 兩種狀態的差別不只在名字：解除時土地的下場不同。
+        # 這兩張都是水域封鎖，水面沒有「土地易主」可言，所以兩邊都歸還；
+        # 「解除後變無主」是**地面佔領的懲戒**才有的事，另一條測試守它。
+        self.assertEqual(drill[0]["release_rule"], "returns_to_owner")
+        self.assertEqual(punishment[0]["release_rule"], "returns_to_owner")
 
     def test_a_drill_carries_no_damage_and_a_punishment_does(self):
         drill = self._draw(self._hostile(), self.DRILL)
@@ -14318,9 +14332,15 @@ class NpcConditionGateTests(unittest.TestCase):
                               f"{card['ref']}：{name} 不在 {rule['still_with']}")
 
     def test_the_server_hands_the_snapshot_to_the_draw(self):
-        """伺服器要把共享戰術狀態交給 next_turn，否則後端永遠判不出 NPC 條件。"""
+        """伺服器要把共享戰術狀態交給 next_turn，否則後端永遠判不出 NPC 條件。
+
+        「現在這一份是哪一份」由 current_tactical() 一處決定（見
+        FactionTransferTacticalTests），所以這裡盯的是 next_turn 有沒有拿它，
+        而不是某個全域變數的名字。
+        """
         server = (pathlib.Path(__file__).resolve().parent / "server.py").read_text(encoding="utf-8")
-        self.assertIn("tactical=SHARED_TACTICAL_STATE", server)
+        body = re.search(r"def _next_turn\(.*?\n    def ", server, re.S).group(0)
+        self.assertIn("tactical=current_tactical()", body)
 
 
 class NpcUnitDeltaTests(unittest.TestCase):
@@ -15230,10 +15250,14 @@ class NpcCombatModifierTests(unittest.TestCase):
                             "armies": [{"id": "N-1", "general_id": "chiang_kaishek",
                                         "traits": [], "defending": True}]}},
         })
-        self.assertIn({"stat": "hp", "multiplier": 1.08, "source_effect": "傅作義加固城防"},
-                      built["Y-2"])
-        self.assertNotIn({"stat": "hp", "multiplier": 1.08, "source_effect": "傅作義加固城防"},
-                         built["Y-1"])
+        def carries(modifiers):
+            return any(m.get("stat") == "hp" and m.get("multiplier") == 1.08
+                       and m.get("source_effect") == "傅作義加固城防" for m in modifiers)
+        self.assertTrue(carries(built["Y-2"]))
+        self.assertFalse(carries(built["Y-1"]))
+        # 而且每一項都要帶得走一句給玩家看的說明——後端貼，前端只印。
+        self.assertEqual([m for m in built["Y-2"] if not m.get("label")], [],
+                         "有修正項沒有說明文字，畫面上就會是一個沒有出處的數字")
         self.assertEqual(built["N-1"], [])
 
 
@@ -15645,15 +15669,25 @@ class NpcStructuralChangeTests(unittest.TestCase):
                          "只有馬福祥改投，其他馬家軍不動")
 
     def test_the_relocation_is_handed_to_the_frontend_with_a_target(self):
-        """後端沒有座標，所以它只說「搬到張家口周邊一格」，格子由前端挑。"""
+        """後端沒有座標，只說「搬到某城周邊一格」，格子由前端挑。
+
+        目標城市從卡片資料讀，不在這裡再寫一次城名——這條測試守的是「卡片宣告
+        的目標有原封不動傳到前端」這段管路，不是哪一座城。城名本身由
+        ProvinceBordersAndOwnershipTests.test_ma_fuxiang_card_points_at_one_city_everywhere
+        釘住（效果文字、進入條件、移防目標、報導四處必須一致）。
+        """
+        card = next(c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+                    if c["id"] == "northwest_allies_ma_clique")
+        wanted = dict(card["apply"]["npc_army_relocate"])
+        wanted.pop("general", None)
         engine = self._engine()
         entry = self._fire(engine, "northwest_allies_ma_clique", "npc_general_transfer")
-        self.assertEqual(entry["relocate"], {"near_city": "zhangjiakou", "within": 1})
+        self.assertEqual(entry["relocate"], wanted)
         queued = [e for code in engine.state["players"]
                   for e in engine.state["players"][code]["pending_frontend_effects"]
                   if e["kind"] == "npc_general_transferred"]
         self.assertEqual(len(queued), 1)
-        self.assertEqual(queued[0]["relocate"]["near_city"], "zhangjiakou")
+        self.assertEqual(queued[0]["relocate"]["near_city"], wanted["near_city"])
 
     def test_transferring_to_his_own_faction_raises(self):
         engine = self._engine()
@@ -18085,8 +18119,10 @@ class FrontendBackendSyncTests(unittest.TestCase):
         offenders = []
         for path in sorted((REPO_ROOT / "scripts" / "checks").glob("*.py")):
             text = path.read_text(encoding="utf-8")
-            starts_server = ("backend.server" in text
-                             or ("_probe_server.py" in text and "subprocess" in text))
+            # 判準是「這支腳本自己生一個伺服器程序」，不是「文字裡出現
+            # backend.server」——突變測試的目標字串裡就有那串字，但它自己
+            # 不起伺服器，是交給被它呼叫的 e2e 去起（那幾支各自隔離）。
+            starts_server = "subprocess.Popen" in text
             if starts_server and "NE_GAME_DATA_DIR" not in text:
                 offenders.append(path.name)
         self.assertEqual(offenders, [],
@@ -18283,6 +18319,973 @@ class BlockingAndNpcTransferTests(unittest.TestCase):
         self.assertNotIn("Q-1", engine._living_npc_armies(engine._tactical))
         for city_id in entry["cities"]:
             self.assertEqual(engine.state["city_owners"][city_id], "C")
+
+
+def _point_in_ring(lon, lat, ring):
+    """射線法。和前端 map.js 的 pointInPolygon 同一套判定，免得兩邊結論不同。"""
+    inside = False
+    count = len(ring)
+    j = count - 1
+    for i in range(count):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if (yi > lat) != (yj > lat) and lon < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _province_at(features, lon, lat):
+    """只看外環，和前端 provinceAt() 一致。"""
+    for feature in features:
+        geometry = feature["geometry"]
+        polygons = ([geometry["coordinates"]] if geometry["type"] == "Polygon"
+                    else geometry["coordinates"])
+        for polygon in polygons:
+            if polygon and _point_in_ring(lon, lat, polygon[0]):
+                return feature["properties"]["name"]
+    return None
+
+
+class ProvinceBordersAndOwnershipTests(unittest.TestCase):
+    """省界只有一份，省級歸屬也只宣告一次。
+
+    這一批守的是四件事：
+      * 青海已經從甘肅切出來，而西寧道（西寧、貴德一帶）仍留在甘肅；
+      * 每座城市都坐落在它自己宣稱的省分裡；
+      * 「某省全境歸某陣營」寫在 map.js 的宣告表裡，不是散在手畫多邊形中；
+      * 這張表在部隊入城之前就套用完畢，否則部隊會找不到自家顏色的落點。
+    逐格的歸屬結果由 scripts/checks/province_ownership_e2e.py 在真前端上驗。
+    """
+
+    @staticmethod
+    def _geojson():
+        from backend.data_store import REPO_ROOT
+        return json.loads(
+            (REPO_ROOT / "frontend/data/provinces_1926.geojson").read_text(encoding="utf-8")
+        )["features"]
+
+    @staticmethod
+    def _map_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/map.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    def test_qinghai_is_its_own_province(self):
+        names = [f["properties"]["name"] for f in self._geojson()]
+        self.assertIn("青海", names)
+        self.assertIn("甘肅", names)
+        self.assertEqual(len(names), len(set(names)), "省份重複")
+
+    def test_xining_stays_in_gansu(self):
+        """附圖上西寧道屬甘肅。甘青邊界不准把西寧畫走。"""
+        features = self._geojson()
+        self.assertEqual(_province_at(features, 101.77, 36.62), "甘肅", "西寧")
+        self.assertEqual(_province_at(features, 101.43, 36.04), "甘肅", "貴德")
+        self.assertEqual(_province_at(features, 102.40, 36.48), "甘肅", "樂都")
+        # 青海湖、柴達木、果洛在青海這一側。
+        self.assertEqual(_province_at(features, 100.20, 36.90), "青海", "青海湖")
+        self.assertEqual(_province_at(features, 97.40, 37.40), "青海", "柴達木")
+        self.assertEqual(_province_at(features, 100.20, 34.00), "青海", "果洛")
+
+    def test_every_city_sits_in_the_province_it_claims(self):
+        features = self._geojson()
+        cities = load_game_data()["strategic_map"]["cities"]
+        self.assertGreater(len(cities), 60)
+        for city in cities:
+            self.assertEqual(
+                _province_at(features, city["lon"], city["lat"]),
+                city["province"],
+                city["name"],
+            )
+
+    def test_province_ownership_claims_are_declared_in_one_table(self):
+        source = self._map_js()
+        block = re.search(r"export const PROVINCE_OWNERSHIP_CLAIMS = \[(.*?)\n\];",
+                          source, re.S)
+        self.assertIsNotNone(block, "找不到省級歸屬宣告表")
+        claims = re.findall(r"province: '([^']+)', faction: '([^']+)'", block.group(1))
+        self.assertIn(("四川", "C"), claims, "四川全境歸川軍")
+        self.assertIn(("察哈爾", "G"), claims, "察哈爾定居區歸西北軍")
+        self.assertIn(("陝西", "G"), claims, "陝西南部歸西北軍")
+        self.assertIn(("甘肅", "G"), claims, "甘肅東南歸西北軍")
+        # 川東留給直系、草原留給奉系，都是條款的一部分，不能被刪掉。
+        self.assertIn("keep: ['W']", block.group(1), "川東 4 格仍屬直系")
+        self.assertIn("maxLat:", block.group(1), "察哈爾只收長城以北的定居區")
+
+    def test_claims_run_before_armies_take_the_field(self):
+        source = self._app_js()
+        index_body = re.search(r"function indexProvinceCells\(\) \{(.*?)\n\}",
+                               source, re.S).group(1)
+        self.assertIn("applyProvinceOwnershipClaims", index_body,
+                      "省份索引沒有順手套用歸屬保證")
+        boot = re.search(r"async function boot\(\) \{(.*?)\n\}", source, re.S).group(1)
+        self.assertLess(
+            boot.index("indexProvinceCells()"),
+            boot.index("snapArmiesToStartCities()"),
+            "歸屬保證必須趕在部隊入城之前套用，否則部隊會落在別人的地盤上",
+        )
+
+    def test_claims_cannot_evict_a_city_from_its_own_tile(self):
+        """城市挑「同陣營又最近」的地格落腳，收走它腳下那一格就會把它擠開。"""
+        source = self._app_js()
+        index_body = re.search(r"function indexProvinceCells\(\) \{(.*?)\n\}",
+                               source, re.S).group(1)
+        self.assertIn("cityHomeCells()", index_body,
+                      "套用歸屬保證時沒有把城市腳下的格子當護欄")
+        home_body = re.search(r"function cityHomeCells\(\) \{(.*?)\n\}",
+                              source, re.S).group(1)
+        self.assertIn("strategic_map", home_body, "護欄沒有讀城市名冊")
+        guard = re.search(r"export function applyProvinceOwnershipClaims\((.*?)\n\}",
+                          self._map_js(), re.S).group(1)
+        self.assertIn("resident", guard, "條款套用時沒有檢查那一格上有沒有別家的城市")
+
+    def test_pinned_cities_are_declared_and_honoured(self):
+        """釘選的城市不參與搶格子。地格歸屬一動就跳一格的城市，靠這個釘住。"""
+        cities = {c["id"]: c for c in load_game_data()["strategic_map"]["cities"]}
+        self.assertEqual(cities["zhangjiakou"].get("cell_key"), "25,13", "張家口")
+        self.assertEqual(cities["datong"].get("cell_key"), "24,15", "大同")
+        self.assertEqual(cities["luzhou"].get("cell_key"), "13,27", "瀘州")
+        source = self._app_js()
+        body = re.search(r"function indexScenarioCells\(\) \{(.*?)\n\}", source, re.S).group(1)
+        self.assertIn("city.cell_key", body, "城市指派沒有讀釘選的地格")
+        # 釘到不能用的格子要當場炸掉，不能默默改放別的地方。
+        self.assertIn("pins cell", body, "釘選失敗時沒有丟例外")
+
+    def test_cell_ownership_overrides_are_a_short_explicit_list(self):
+        """逐格例外表是繞過所有條款與護欄的後門，內容要盯死。"""
+        block = re.search(r"export const CELL_OWNERSHIP_OVERRIDES = \{(.*?)\n\};",
+                          self._map_js(), re.S)
+        self.assertIsNotNone(block, "找不到逐格例外表")
+        entries = re.findall(r"'([\d,]+)': '([A-Z])'", block.group(1))
+        # 大同（24,15）右下那一格，在直隸境內，劃給晉系。
+        self.assertEqual(entries, [("25,15", "Y")])
+
+    def test_ma_fuxiang_card_points_at_one_city_everywhere(self):
+        """15.5 這張卡有四處提到同一座城：效果文字、進入條件、移防目標、報導。
+
+        改了一處忘了另一處，卡片就會「條件看甲城、部隊搬到乙城」——
+        而且照樣結算成功，沒有任何測試會紅。
+        """
+        cards = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        card = next(c for c in cards if c["id"] == "northwest_allies_ma_clique")
+        cities = {c["id"]: c for c in load_game_data()["strategic_map"]["cities"]}
+        gate = next(rule for rule in card["entry_condition"]["npc_requires"]
+                    if rule.get("city"))
+        target = card["apply"]["npc_army_relocate"]["near_city"]
+        self.assertEqual(gate["city"], target, "進入條件看的城和移防目標不是同一座")
+        self.assertIn(target, cities)
+        name = cities[target]["name"]
+        self.assertIn(name, card["effect"], "效果文字寫的城和移防目標對不上")
+        blob = json.dumps(card["newspaper"], ensure_ascii=False)
+        self.assertIn(name, blob, "報導裡沒提到移防的目的地")
+        # 那座城必須真的是條款要求的那一家的，否則這張卡永遠進不了卡池。
+        self.assertEqual(cities[target]["faction"], gate["held_by_faction"], target)
+        # 換旗的目的地陣營與駐防城的持有者要一致——馬福祥投的是誰，就搬到誰的地盤。
+        self.assertEqual(card["apply"]["npc_general_transfer"]["to_faction"],
+                         gate["held_by_faction"])
+
+    def test_northwest_army_garrisons(self):
+        """馮玉祥駐歸綏、宋哲元駐張家口、韓復榘駐潼關、鹿鍾麟駐西安。"""
+        source = self._map_js()
+        block = re.search(r"export const ARMY_POSITIONS = \{(.*?)\n\};", source, re.S).group(1)
+        garrisons = dict(re.findall(
+            r"generalId: '([^']+)'[^\n]*?startCityId: '([^']+)'", block))
+        self.assertEqual(garrisons.get("feng_yuxiang"), "guisui")
+        self.assertEqual(garrisons.get("song_zheyuan"), "zhangjiakou")
+        self.assertEqual(garrisons.get("han_fuqu"), "tongguan")
+        self.assertEqual(garrisons.get("lu_zhonglin"), "xian")
+        # 這四座城必須真的存在，而且開局就在西北軍手上，否則部隊放不下去。
+        cities = {c["id"]: c for c in load_game_data()["strategic_map"]["cities"]}
+        for city_id in ("guisui", "zhangjiakou", "tongguan", "xian"):
+            self.assertIn(city_id, cities)
+            self.assertEqual(cities[city_id]["faction"], "G", city_id)
+
+
+class FactionTransferTacticalTests(unittest.TestCase):
+    """吞併與歸屬轉移的卡，必須改到**伺服器現在手上**那份戰術快照。
+
+    這一批守的是一個曾經真的在跑的缺陷：這些卡全部在 respond_event() 裡結算
+    （卡片的 apply 要等每一家都回應完才跑），而 self._tactical 先前只有
+    next_turn() 會設。前端每推一次共享狀態，伺服器就換上一份新的 dict，
+    引擎手上那個變成孤兒——黔軍的地格、部隊、城市確實都轉給了川軍，
+    轉在一份再也沒有人看的字典上。applied 回報成功，地圖一格沒動。
+
+    逐張卡的實地驗證在 scripts/checks/faction_transfer_e2e.py（打真的 HTTP，
+    而且刻意在中間換一份新快照上去）。這裡守的是引擎與伺服器的接縫。
+    """
+
+    @staticmethod
+    def _tactical():
+        return {
+            "armies": {
+                "Q-1": {"id": "Q-1", "faction": "Q", "generalId": "zhou_xicheng",
+                        "cellKey": "20,30", "status": "active",
+                        "units": {"infantry": 8, "cavalry": 2, "artillery": 0,
+                                  "machine_gun": 1}},
+                "C-1": {"id": "C-1", "faction": "C", "generalId": "liu_xiang",
+                        "cellKey": "14,28", "status": "active",
+                        "units": {"infantry": 9, "cavalry": 3, "artillery": 1,
+                                  "machine_gun": 1}},
+            },
+            "cellFactions": {"20,30": "Q", "20,31": "Q", "21,30": "Q", "14,28": "C"},
+            "generalOwners": {"zhou_xicheng": "Q", "liu_xiang": "C"},
+            "generalTrees": {}, "jailedGenerals": [],
+        }
+
+    def _annex(self, engine, live):
+        """把〈劉湘吞併黔軍〉抽出來、回應到結算完。live 是每次回應時傳進去的快照。"""
+        applied = []
+        guard = 0
+        while guard < 20:
+            guard += 1
+            view = engine.pending_event_view()
+            if not view:
+                break
+            options = ((view["card"].get("resolution") or {}).get("options") or [])
+            applied += engine.respond_event(
+                view["waiting_for"],
+                choice=options[0]["id"] if options else None,
+                tactical=live,
+            ).get("applied") or []
+        return applied
+
+    def _draw(self, engine, tactical, card_id="liu_xiang_annexes_qian"):
+        engine.state["event_pool"] = [card_id]
+        turn = int(engine.state["turn"])
+        engine.state["turn"] = (turn // 3 + 1) * 3 - 1
+        return engine.next_turn(None, force=True, tactical=tactical)
+
+    def test_annexation_lands_in_the_snapshot_handed_to_respond_event(self):
+        """前端在中途換過一份新快照，效果要落在**新的**那一份上。"""
+        engine = GameEngine(seed=11)
+        first = self._tactical()
+        self._draw(engine, first)
+        # 前端推了一份新的上來：內容一樣，但是不同的物件。
+        live = deepcopy(first)
+        applied = self._annex(engine, live)
+
+        kinds = [a.get("kind") for a in applied]
+        self.assertIn("npc_faction_merge", kinds, "這張卡根本沒結算")
+        self.assertNotIn("npc_faction_merge_skipped", kinds)
+        # 現在這一份要真的被改到。
+        self.assertEqual([v for v in live["cellFactions"].values() if v == "Q"], [],
+                         "黔軍的地格沒有轉手——效果寫進孤兒了")
+        self.assertIn(live["armies"]["Q-1"]["status"], GameEngine.DEAD_ARMY_STATUSES)
+        self.assertEqual(GameEngine._force_of(live["armies"]["Q-1"]["units"]), 0)
+
+    def test_cell_transfer_reports_how_many_moved(self):
+        """轉了幾格要如實回報：None 代表根本沒辦成，和 0 的意思不一樣。"""
+        engine = GameEngine(seed=11)
+        engine._tactical = None
+        self.assertIsNone(engine._transfer_all_faction_cells("Q", "C"))
+        engine._tactical = self._tactical()
+        self.assertEqual(engine._transfer_all_faction_cells("Q", "C"), 3)
+        self.assertEqual(engine._transfer_all_faction_cells("Q", "C"), 0, "沒得轉就是 0")
+
+    def test_transfer_without_a_snapshot_says_so_instead_of_pretending(self):
+        """拿不到戰術快照時要出聲。先前是搬了 0 支部隊卻回報轉屬成功。"""
+        engine = GameEngine(seed=7)
+        engine._tactical = None
+        card = next(c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+                    if c["id"] == "northwest_allies_ma_clique")
+        applied = engine._apply_event_payload(card["apply"],
+                                              players=list(engine.state["players"]),
+                                              card=card)
+        kinds = [a.get("kind") for a in applied]
+        self.assertIn("npc_general_transfer_skipped", kinds)
+        self.assertNotIn("npc_general_transfer", kinds)
+        entry = next(a for a in applied if a["kind"] == "npc_general_transfer_skipped")
+        self.assertEqual(entry["reason"], "no_tactical")
+
+    def test_every_transfer_card_is_covered_by_the_e2e(self):
+        """新增一張吞併／轉移類的卡時，逐張驗證的那支腳本要跟著涵蓋到。"""
+        from backend.data_store import REPO_ROOT
+        keys = ("npc_faction_merge", "npc_faction_absorb", "npc_general_transfer",
+                "contested_npc_recruit", "npc_unit_delta", "npc_force_scale")
+        cards = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        involved = [c["id"] for c in cards
+                    if any(f'"{k}"' in json.dumps(c, ensure_ascii=False) for k in keys)]
+        self.assertGreaterEqual(len(involved), 21, "涉及轉移的卡變少了？先確認不是漏掉")
+        script = (REPO_ROOT / "scripts/checks/faction_transfer_e2e.py").read_text(encoding="utf-8")
+        # 腳本是照 KEYS 自己去卡池撈的，所以只要 KEYS 一致，新卡就會自動被涵蓋。
+        for key in keys:
+            self.assertIn(f"'{key}'", script, f"{key} 沒有列進 e2e 的 KEYS")
+
+    def test_server_binds_the_current_snapshot_on_every_route(self):
+        """「現在這一份」只有一個定義，而且每個路由跑之前都重新綁一次。"""
+        from backend.data_store import REPO_ROOT
+        source = (REPO_ROOT / "backend/server.py").read_text(encoding="utf-8")
+        self.assertIn("def current_tactical()", source)
+        body = re.search(r"def _run_route\(.*?\n    def ", source, re.S).group(0)
+        self.assertIn("ENGINE._tactical = current_tactical()", body,
+                      "路由跑之前沒有把引擎手上那份綁成現在這一份")
+        self.assertLess(body.index("ENGINE._tactical = current_tactical()"),
+                        body.index("result = handler(payload)"),
+                        "綁定必須在跑路由之前")
+        # 只能有一個地方決定「現在這一份是哪一份」，否則遲早各走各的。
+        self.assertEqual(
+            source.count("SHARED_TACTICAL_STATE if isinstance(SHARED_TACTICAL_STATE, dict)"), 1,
+            "「現在這一份」被寫了不只一次")
+        self.assertNotIn("tactical=SHARED_TACTICAL_STATE", source,
+                         "有路由繞過 current_tactical() 直接抓全域變數")
+
+
+class DrainRaceTests(unittest.TestCase):
+    """交辦排空不得和背景同步交錯。
+
+    排空中間全是 await（每一筆交辦都要跟後端要結果），而
+    `synchronizeSharedGame` 每 1.2 秒跑一次。它只要在那些空檔裡跑一次
+    `pullSharedState()`，`applyTacticalSnapshot()` 就會把「已經套用、
+    但還沒推上去」的 loyaltyOverrides 用伺服器那份蓋掉——而那一筆的流水號
+    這時已經記進 appliedFrontendEffectIds，下一次排空只會補銷帳、不會重做。
+    效果就此永久消失，畫面上看起來像那張卡沒生效。
+
+    症狀是間歇性的（六次裡兩次），所以只靠跑 e2e 抓不牢，這裡用結構斷言釘死。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _no_comments(text):
+        """把 // 註解拿掉。
+
+        這一步不是潔癖：這幾條斷言講的旗標名稱，在解釋它的註解裡也會出現一次，
+        不剝註解的話，把程式碼那一行刪掉測試照樣綠。這個專案已經踩過一次。
+        """
+        return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+    def test_background_sync_stands_down_while_draining(self):
+        source = self._app_js()
+        body = self._no_comments(
+            re.search(r"async function synchronizeSharedGame\(\) \{(.*?)\n\}",
+                      source, re.S).group(1))
+        self.assertIn("drainInFlight", body, "背景同步沒有避開排空（註解不算）")
+
+    def test_drain_raises_and_always_lowers_the_flag(self):
+        source = self._app_js()
+        body = self._no_comments(
+            re.search(r"async function consumePendingFrontendEffects\(\) \{(.*?)\n\}\n",
+                      source, re.S).group(1))
+        self.assertIn("drainInFlight = true", body, "排空沒有舉旗")
+        self.assertIn("finally", body, "旗子沒有放在 finally 裡，丟例外就永遠降不下來")
+        self.assertIn("drainInFlight = false", body)
+        # 降旗必須在 finally 裡，不能只寫在正常結束的路徑上。
+        self.assertLess(body.index("finally"), body.index("drainInFlight = false"),
+                        "降旗不在 finally 之後")
+
+    def test_drain_publishes_what_it_applied(self):
+        """排空剛套用的東西只存在於前端，推上去之前任何一次 pull 都會蓋掉它。"""
+        source = self._app_js()
+        body = self._no_comments(
+            re.search(r"async function consumePendingFrontendEffects\(\) \{(.*?)\n\}\n",
+                      source, re.S).group(1))
+        # 要的是真的呼叫並等它回來，不是只出現這個名字——
+        # `void publishSharedState;` 也含有這個字串。
+        self.assertIn("await publishSharedState(", body,
+                      "排空之後沒有把成果推上共享狀態")
+
+
+class CheckScriptPortTests(unittest.TestCase):
+    """每支驗證腳本各用一個埠。
+
+    先前 card_effects_land_e2e 與 faction_transfer_e2e 都綁 8791。兩支接連跑時，
+    前一支的伺服器還沒收乾淨，後一支的 Popen 就綁不上——而它的輪詢會連上**舊的**
+    那一台，於是整份量測都是對著上一盤棋做的。這種假紅／假綠最難查。
+    """
+
+    def test_every_check_script_owns_its_port(self):
+        from backend.data_store import REPO_ROOT
+        ports = {}
+        for path in sorted((REPO_ROOT / "scripts/checks").glob("*_e2e.py")):
+            source = path.read_text(encoding="utf-8")
+            found = sorted({int(x) for x in re.findall(r"127\.0\.0\.1:(\d{4})", source)})
+            for port in found:
+                ports.setdefault(port, []).append(path.name)
+        clashes = {port: names for port, names in ports.items() if len(names) > 1}
+        self.assertEqual(clashes, {}, f"這些埠被多支腳本共用：{clashes}")
+        self.assertGreaterEqual(len(ports), 5, "沒掃到幾支腳本？先確認 glob 沒寫壞")
+
+    def test_the_server_is_launched_on_the_port_the_script_polls(self):
+        """啟動指令綁的埠必須就是腳本輪詢的那個。
+
+        先前有七支是用 `python3 -m backend.server` 起的——那會綁預設的 8766，
+        而腳本自己輪詢的是另一個埠。埠一改號就再也連不上，而且錯誤訊息是
+        「伺服器起不來」，看起來像環境壞了。
+        """
+        from backend.data_store import REPO_ROOT
+        wrong = []
+        for path in sorted((REPO_ROOT / "scripts/checks").glob("*_e2e.py")):
+            source = path.read_text(encoding="utf-8")
+            if "subprocess.Popen" not in source:
+                continue
+            polled = {int(x) for x in re.findall(r"127\.0\.0\.1:(\d{4})", source)}
+            literal = {int(x) for x in re.findall(r"run\(port=(\d{4})\)", source)}
+            # 埠也可以用變數帶進去（run(port={port}) 或 NE_PROBE_PORT），
+            # 那些都是從 BASE 推出來的，不會對不上。
+            derived = "run(port={port})" in source or "NE_PROBE_PORT" in source
+            if literal:
+                if literal != polled:
+                    wrong.append((path.name, sorted(polled), sorted(literal)))
+            elif not derived:
+                wrong.append((path.name, sorted(polled), "啟動時沒有指定埠"))
+        self.assertEqual(wrong, [], f"啟動的埠和輪詢的埠對不上：{wrong}")
+
+    def test_start_server_notices_a_failed_bind(self):
+        """Popen 失敗時要出聲，不能靠輪詢連上別人那一台就當成功。"""
+        from backend.data_store import REPO_ROOT
+        missing = []
+        for path in sorted((REPO_ROOT / "scripts/checks").glob("*_e2e.py")):
+            source = path.read_text(encoding="utf-8")
+            if "subprocess.Popen" not in source:
+                continue
+            if "proc.poll()" not in source:
+                missing.append(path.name)
+        self.assertEqual(missing, [], f"這些腳本沒檢查伺服器是不是真的起來了：{missing}")
+
+
+class NpcVisibleStateTests(unittest.TestCase):
+    """後端算好、但畫面上屬於 NPC 的那一半，也要跟著動。
+
+    這一批守的是兩個一起被抓到的缺陷，形狀相同：**後端寫了，前端只看玩家那一半。**
+
+      * 城市等級：前端只讀 `players[*].city_economy`，那張表沒有 NPC 的城，
+        於是〈黔軍整頓茅台酒造〉升遵義、〈閻錫山督辦山西教育〉升山西全省，
+        後端都寫進 `city_level_overrides` 了，畫面一動也不動。
+      * 鐵路停擺的理由：前端一律寫「搶修中」，可是
+        〈閻錫山封鎖窄軌鐵路〉是永久且修不好的。等得到與等不到，
+        對玩家是兩回事。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    def test_city_levels_come_from_the_override_table(self):
+        """等級的權威是 city_level_overrides，不是只給玩家看的 city_economy。"""
+        body = re.search(r"function syncStrategicCitiesFromState\(\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = "\n".join(re.sub(r"//.*$", "", line) for line in body.split("\n"))
+        self.assertIn("city_level_overrides", stripped,
+                      "城市等級沒有讀後端的覆寫表，NPC 手上的城會同步不到")
+
+    def test_npc_held_cities_really_are_outside_city_economy(self):
+        """上面那條測試要有意義，前提是 NPC 的城真的不在 city_economy 裡。"""
+        engine = GameEngine(seed=5)
+        listed = {city["id"]
+                  for code in engine.state["players"]
+                  for city in engine._city_economy_for(code)}
+        cities = {c["id"]: c for c in load_game_data()["strategic_map"]["cities"]}
+        npc_cities = [cid for cid, c in cities.items()
+                      if c["faction"] not in engine.state["players"]]
+        self.assertGreater(len(npc_cities), 10, "NPC 一座城都沒有？先確認資料")
+        self.assertNotIn("zunyi", listed, "遵義竟然在玩家的 city_economy 裡，這條驗證就空轉了")
+        # 而且不只遵義：NPC 的城一座都不會出現在那張表上。
+        self.assertEqual(sorted(set(npc_cities) & listed), [])
+
+    def test_the_backend_says_why_a_railway_is_down(self):
+        """修得好還是修不好，由後端說；前端只排版。"""
+        engine = GameEngine(seed=5)
+        card = next(c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+                    if c["id"] == "yan_xishan_blocks_narrow_gauge")
+        engine._apply_event_payload(card["apply"],
+                                    players=list(engine.state["players"]), card=card)
+        detail = engine.railway_access()["disabled_detail"]
+        self.assertIn("正太鐵路", detail)
+        self.assertIn("京漢鐵路", detail)
+        for name in ("正太鐵路", "京漢鐵路"):
+            self.assertTrue(detail[name]["no_repair"], name)
+            self.assertTrue(detail[name]["permanent"], name)
+            self.assertEqual(detail[name]["until_general_leaves"], "閻錫山", name)
+
+    def test_the_label_tells_repairable_from_permanent(self):
+        """畫面上的字必須分得出「等得到」與「等不到」。"""
+        body = re.search(r"function railwayStatusLabel\(name\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = "\n".join(re.sub(r"//.*$", "", line) for line in body.split("\n"))
+        self.assertIn("no_repair", stripped, "沒有分辨修不修得好")
+        self.assertIn("搶修中", stripped)
+        self.assertIn("無法搶修", stripped)
+
+
+class WorldVisibilityTests(unittest.TestCase):
+    """第二十一批：後端知道、玩家看不到的那些事。
+
+    三個形狀不同、成因相同的缺陷：
+
+      * **永久＝過期**：後端把 `remaining_turns` 為 None 當成無限期，
+        前端在八個地方各寫一份 `Number(remaining_turns || 0) > 0`，
+        於是每一種永久效果在畫面上都被當成已經結束。
+      * **擋得住卻不說**：被事件按住的功能卡、被禁掉的行動，
+        後端都會在路由上擋下來，但按鈕照樣亮著，玩家按了才知道。
+      * **變無主卻沒人知道**：列強佔領解除時後端把城市從 `city_owners`
+        移除，於是回退值把它悄悄還給 1926 劇本的原主，而那份
+        `ownerless_cities` 名單全專案沒有人讀。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _no_comments(text):
+        """斷言字串前先把註解剝掉——要守的名字在解釋它的註解裡也有一份。"""
+        return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+    # ── 永久效果 ────────────────────────────────────────────────────
+    def test_a_permanent_effect_is_stamped_active(self):
+        """remaining_turns 為 None 是無限期，後端要蓋 active=True。"""
+        engine = GameEngine(seed=5)
+        card = next(c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+                    if c["id"] == "yan_xishan_blocks_narrow_gauge")
+        engine._apply_event_payload(card["apply"],
+                                    players=list(engine.state["players"]), card=card)
+        rows = engine.snapshot()["railway_effects"]
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertIsNone(row["remaining_turns"], "這張卡就是沒有回合上限的")
+            self.assertTrue(row["active"], "永久停擺被蓋成不算數了")
+
+    def test_a_spent_effect_is_stamped_inactive(self):
+        """反過來也要對：真的到期的那筆不能還被蓋成生效。"""
+        engine = GameEngine(seed=5)
+        engine.state["port_effects"] = [
+            {"city_id": "a", "remaining_turns": 2},
+            {"city_id": "b", "remaining_turns": 0},
+        ]
+        stamped = {row["city_id"]: row["active"] for row in engine.snapshot()["port_effects"]}
+        self.assertEqual(stamped, {"a": True, "b": False})
+
+    def test_the_frontend_reads_the_stamp_instead_of_recomputing(self):
+        """前端不准再自己寫「remaining_turns > 0」那條判準。"""
+        stripped = self._no_comments(self._app_js())
+        self.assertNotIn("Number(effect.remaining_turns || 0) > 0", stripped,
+                         "又有人在前端自己判限時效果了——永久效果會被當成過期")
+        self.assertNotIn("Number(item.remaining_turns || 0) > 0", stripped)
+        self.assertIn("function effectActive(effect)", stripped)
+
+    def test_the_active_effects_list_shows_a_permanent_block(self):
+        """「持續效果」清單要照後端認定的停擺線來列，不從原始列自己篩。"""
+        body = re.search(r"function activeEffectsMarkup\(payload = state\.players\[currentPlayer\]\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("disabledRailways()", stripped,
+                      "還在從 railway_effects 自己篩，永久停擺會整筆消失")
+        self.assertIn("railwayStatusLabel(", stripped,
+                      "沒有用後端給的理由，永久封鎖又會被寫成「搶修中」")
+
+    # ── 擋得住就要說 ────────────────────────────────────────────────
+    def test_the_backend_publishes_which_cards_are_blocked(self):
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        engine.state["players"][player]["hand"].append("uk_vickers_contract")
+        engine.state.setdefault("perk_suspensions", []).append({
+            "cards": ["uk_vickers_contract"], "until_turn": int(engine.state["turn"]) + 3,
+            "label": "大英總罷工：英國 perk 暫停", "source_card": "british_general_strike"})
+        blocked = engine.snapshot()["players"][player]["blocked_cards"]
+        self.assertIn("uk_vickers_contract", blocked)
+        self.assertEqual(blocked["uk_vickers_contract"]["label"], "大英總罷工：英國 perk 暫停")
+        # 而且真的打不出去——畫面說的與後端做的是同一件事。
+        card = next(c for c in engine.data["function_cards"]["cards"]
+                    if c["id"] == "uk_vickers_contract")
+        with self.assertRaises(ValueError):
+            engine._validate_card_use(player, card)
+
+    def test_the_backend_publishes_which_actions_are_banned(self):
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        engine.state.setdefault("action_bans", []).append({
+            "actions": ["train_unit", "reinforce_army"],
+            "until_turn": int(engine.state["turn"]) + 1,
+            "label": "軍餉短缺", "players": [player]})
+        blocked = engine.snapshot()["players"][player]["blocked_actions"]
+        self.assertEqual(sorted(blocked), ["reinforce_army", "train_unit"])
+        self.assertEqual(blocked["train_unit"]["name"], "訓練部隊")
+        # 沒被點名的玩家不受影響。
+        other = sorted(engine.state["players"])[1]
+        self.assertEqual(engine.snapshot()["players"][other]["blocked_actions"], {})
+
+    def test_the_buttons_read_those_two_lists(self):
+        """按鈕要真的關掉，而不是等玩家按下去才收到例外訊息。"""
+        stripped = self._no_comments(self._app_js())
+        self.assertIn("blocked_actions", stripped)
+        self.assertIn("blocked_cards", stripped)
+        hand = re.search(r"const cardsHtml = cards\.map\(\(card\) => \{(.*?)\n  \}\)\.join",
+                         self._app_js(), re.S).group(1)
+        hand = self._no_comments(hand)
+        self.assertIn("blockedCardNote(card.id)", hand)
+        self.assertIn("disabled", hand, "被封鎖的卡還是按得下去")
+        recruit = re.search(r"function renderRecruitmentPanel\(\) \{(.*?)\n\}",
+                            self._app_js(), re.S).group(1)
+        recruit = self._no_comments(recruit)
+        self.assertIn('blockedActionNote("train_unit")', recruit)
+        self.assertIn('blockedActionNote("train_navy_unit")', recruit)
+
+    # ── 無主城市 ────────────────────────────────────────────────────
+    def test_a_released_occupation_leaves_the_cities_ownerless(self):
+        """列強佔領解除：城市變無主，不是悄悄回到 1926 劇本的原主。"""
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        province = next(city["province"] for city in engine.data["strategic_map"]["cities"]
+                        if engine.state["city_owners"].get(city["id"]) == player
+                        and city.get("province"))
+        cities = [city["id"] for city in engine.data["strategic_map"]["cities"]
+                  if city.get("province") == province]
+        engine.punishments._release({"kind": "ground_occupation", "id": "probe",
+                                     "owner": player, "power": "uk",
+                                     "provinces": [province]})
+        engine._refresh_city_income()
+        for city_id in cities:
+            self.assertIsNone(engine.state["city_owners"][city_id],
+                              f"{city_id} 沒有變成無主")
+        self.assertEqual(sorted(set(engine.ownerless_cities()) & set(cities)),
+                         sorted(cities))
+        # 沒有任何一家收得到這些城的錢。
+        earning = {city["id"]
+                   for code in engine.state["players"]
+                   for city in engine._city_economy_for(code)}
+        self.assertEqual(sorted(set(cities) & earning), [])
+
+    def test_the_release_hands_the_repaint_to_the_frontend(self):
+        """後端算完沒人畫，等於沒發生——解除時一定要開一筆交辦。"""
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        province = next(city["province"] for city in engine.data["strategic_map"]["cities"]
+                        if engine.state["city_owners"].get(city["id"]) == player
+                        and city.get("province"))
+        before = len(engine._player(player).get("pending_frontend_effects") or [])
+        engine.punishments._release({"kind": "ground_occupation", "id": "probe",
+                                     "owner": player, "power": "uk",
+                                     "provinces": [province]})
+        queued = engine._player(player)["pending_frontend_effects"][before:]
+        kinds = [item["kind"] for item in queued]
+        self.assertIn("cities_became_ownerless", kinds)
+        effect = next(item for item in queued if item["kind"] == "cities_became_ownerless")
+        self.assertTrue(effect["city_ids"])
+
+    def test_capturing_an_ownerless_city_gives_it_an_owner_again(self):
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        city_id = next(iter(engine.state["city_owners"]))
+        engine.state["city_owners"][city_id] = None
+        self.assertIn(city_id, engine.ownerless_cities())
+        engine.capture_city(city_id, player)
+        self.assertEqual(engine.state["city_owners"][city_id], player)
+        self.assertNotIn(city_id, engine.ownerless_cities())
+
+    def test_the_frontend_paints_ownerless_cities(self):
+        stripped = self._no_comments(self._app_js())
+        self.assertIn("cities_became_ownerless", stripped, "交辦沒人收")
+        self.assertIn("ownerless_cities", stripped,
+                      "換一台瀏覽器進來就看不到無主城市了")
+        move = re.search(r"if \(destination\.fac && destination\.fac !== currentPlayer\) \{",
+                         stripped)
+        self.assertIsNotNone(move, "無主之地又進不去了（而且訊息會印成「與 null 和平」）")
+
+    # ── 兩份判斷不准並存 ────────────────────────────────────────────
+    def test_city_punishment_status_comes_from_the_backend(self):
+        engine = GameEngine(seed=5)
+        self.assertIn("city_punishment_status", engine.snapshot())
+        body = re.search(r"function cityPunishmentStatus\(cityId\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("city_punishment_status", stripped)
+        self.assertNotIn("bombedCities()", stripped,
+                         "前端又自己重算一份轟炸／重建狀態了")
+
+    def test_no_state_is_stored_that_nobody_ever_reads(self):
+        """存了沒人讀的狀態就是空轉。npc_accounts 曾經整份躺在存檔裡沒人碰。"""
+        from backend.data_store import REPO_ROOT
+        sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((REPO_ROOT / "backend").glob("*.py"))
+            if path.name != "test_backend.py")
+        sources += (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+        for key in ("npc_accounts",):
+            self.assertNotIn(key, sources,
+                             f"{key} 是死狀態，不要再放回去")
+        engine = GameEngine(seed=5)
+        self.assertNotIn("npc_accounts", engine.state)
+        # 無主名單只能是**算出來的**：改 city_owners，下一份 snapshot 就要跟著變。
+        # （engine.state 本身是上一份 snapshot，所以它裡面出現這個鍵是正常的；
+        #   要守的是「沒有人另外維護第二份清單」。）
+        city_id = next(iter(engine.state["city_owners"]))
+        engine.state["city_owners"][city_id] = None
+        self.assertIn(city_id, engine.snapshot()["ownerless_cities"])
+        engine.state["city_owners"][city_id] = sorted(engine.state["players"])[0]
+        self.assertNotIn(city_id, engine.snapshot()["ownerless_cities"])
+
+
+from backend.foreign_punishment import waters_for_city as _waters_for_city
+
+
+class OccupationVersusDrillStateTests(unittest.TestCase):
+    """佔領與演習是**兩種狀態**，撤走之後土地的下場也不同。
+
+    先前兩者共用 `kind: "ground_occupation"` 加一個 `drill` 布林，於是：
+
+      * 演習也算進「先來後到」的爭奪，一場日方演習就能把蘇聯的佔領擋在門外，
+        重疊時還會照日蘇開戰的規則**打一仗**、連帶把戰損算在玩家頭上——
+        可是卡面白紙黑字寫著「演習不是懲戒：不造成任何傷害」。
+      * 畫面上兩者的說明一模一樣，玩家看不出這塊地會歸還還是會變無主。
+    """
+
+    GROUND_PUNISHMENT = "kwantung_army_occupies_manchuria"   # 12.1 日本佔滿洲三省
+    GROUND_DRILL = "kwantung_army_special_drill"             # 12.4 關東軍特別演習
+    SOVIET_PUNISHMENT = "soviet_far_east_army_invades"       # 12.8 蘇聯遠東軍
+
+    def _engine(self, seed=11):
+        engine = GameEngine(seed=seed)
+        for payload in engine.state["players"].values():
+            for power in payload.get("foreign_relations", {}):
+                payload["foreign_relations"][power] = -6
+        return engine
+
+    def _open(self, engine, *, kind="ground_occupation", power="jp",
+              provinces=("奉天", "吉林"), drill_turns=None, owner=None):
+        owner = owner or sorted(engine.state["players"])[0]
+        return engine.punishments.open(
+            card_id="probe", power=power, kind=kind, owner=owner,
+            provinces=list(provinces), drill_turns=drill_turns, label="probe")
+
+    def test_the_two_are_different_states_with_different_release_rules(self):
+        engine = self._engine()
+        punishment = self._open(engine)
+        drill = self._open(engine, provinces=["熱河"], drill_turns=3)
+        self.assertEqual(punishment["mode"], "punishment")
+        self.assertEqual(drill["mode"], "drill")
+        self.assertEqual(punishment["release_rule"], "becomes_ownerless")
+        self.assertEqual(drill["release_rule"], "returns_to_owner")
+        self.assertIsNone(punishment["until_turn"], "懲戒沒有固定期限")
+        self.assertIsNotNone(drill["until_turn"], "演習有固定期限")
+
+    def test_a_drill_gives_the_land_back_untouched(self):
+        """卡面：「結束後土地與城市原封不動歸還原屬勢力」。"""
+        engine = self._engine()
+        owner = sorted(engine.state["players"])[0]
+        province = next(city["province"] for city in engine.data["strategic_map"]["cities"]
+                        if engine.state["city_owners"].get(city["id"]) == owner
+                        and city.get("province"))
+        cities = [city["id"] for city in engine.data["strategic_map"]["cities"]
+                  if city.get("province") == province]
+        entry = self._open(engine, provinces=[province], drill_turns=3, owner=owner)
+        engine.punishments._release(entry)
+        for city_id in cities:
+            self.assertEqual(engine.state["city_owners"][city_id], owner,
+                             f"{city_id} 在演習結束後沒有原封歸還")
+        self.assertEqual(engine.ownerless_cities(), [])
+
+    def test_a_ground_punishment_leaves_the_land_ownerless(self):
+        """卡面：「退出後土地成為無主地，原屬勢力須重新佔領」。"""
+        engine = self._engine()
+        owner = sorted(engine.state["players"])[0]
+        province = next(city["province"] for city in engine.data["strategic_map"]["cities"]
+                        if engine.state["city_owners"].get(city["id"]) == owner
+                        and city.get("province"))
+        cities = [city["id"] for city in engine.data["strategic_map"]["cities"]
+                  if city.get("province") == province]
+        entry = self._open(engine, provinces=[province], owner=owner)
+        engine.punishments._release(entry)
+        for city_id in cities:
+            self.assertIsNone(engine.state["city_owners"][city_id], city_id)
+
+    def test_a_drill_never_blocks_a_real_occupation(self):
+        """演習不參與先來後到——它是另一層，不該把真的懲戒擋在門外。"""
+        engine = self._engine()
+        drill = self._open(engine, power="jp", provinces=["奉天", "吉林"], drill_turns=3)
+        self.assertEqual(sorted(drill["provinces"]), ["吉林", "奉天"])
+        punishment = self._open(engine, power="su", provinces=["吉林", "黑龍江"])
+        self.assertEqual(sorted(punishment["provinces"]), ["吉林", "黑龍江"],
+                         "真的佔領被一場演習擋掉了")
+        self.assertEqual(punishment.get("skipped_provinces"), [])
+        self.assertEqual(punishment.get("wars"), [],
+                         "一場演習竟然挑起了日蘇戰爭")
+
+    def test_a_real_occupation_still_blocks_another_power(self):
+        """先來後到本身沒有壞掉：兩筆真的佔領還是照規則爭。"""
+        engine = self._engine()
+        self._open(engine, power="uk", provinces=["江蘇", "浙江"])
+        second = self._open(engine, power="fr", provinces=["浙江", "雲南"])
+        self.assertEqual(second["provinces"], ["雲南"])
+        self.assertEqual(second["skipped_provinces"], ["浙江"])
+
+    def test_two_real_occupations_of_japan_and_russia_still_fight(self):
+        engine = self._engine()
+        self._open(engine, power="jp", provinces=["吉林"])
+        second = self._open(engine, power="su", provinces=["吉林"])
+        self.assertTrue(second.get("wars"), "日蘇重疊該打一仗的規則被弄丟了")
+
+    def test_a_ground_drill_still_zeroes_income_but_a_naval_one_does_not(self):
+        """卡面：陸軍演習「期間金錢與工廠收入歸零」；海軍演習「生產照常」。"""
+        engine = self._engine()
+        owner = sorted(engine.state["players"])[0]
+        city = next(c for c in engine.data["strategic_map"]["cities"]
+                    if engine.state["city_owners"].get(c["id"]) == owner
+                    and c.get("province"))
+        self._open(engine, provinces=[city["province"]], drill_turns=3, owner=owner)
+        self.assertTrue(engine.punishments.city_output_is_zero(city["id"], owner),
+                        "陸軍演習期間收入沒有歸零")
+        engine2 = self._engine()
+        port = next(c for c in engine2.data["strategic_map"]["cities"]
+                    if c.get("port") and engine2.state["city_owners"].get(c["id"]) == owner)
+        engine2.punishments.open(card_id="probe", power="jp", kind="water_blockade",
+                                 owner=owner, waters=list(_waters_for_city(port)),
+                                 drill_turns=3, label="probe")
+        self.assertFalse(engine2.punishments.city_output_is_zero(port["id"], owner),
+                         "海軍演習不該讓城市停產")
+
+    def test_the_frontend_tells_them_apart(self):
+        from backend.data_store import REPO_ROOT
+        app = (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+        stripped = "\n".join(re.sub(r"//.*$", "", line) for line in app.split("\n"))
+        self.assertNotIn("occupation.drill", stripped,
+                         "前端還在讀舊的 drill 布林")
+        self.assertNotIn("entry.drill", stripped)
+        self.assertIn("function punishmentIsDrill(entry)", stripped)
+        self.assertIn("release_rule", stripped,
+                      "畫面沒有說土地會歸還還是會變無主")
+        self.assertIn("演習區", stripped)
+        self.assertIn("佔領區", stripped)
+
+
+class EffectsReachThePlayerTests(unittest.TestCase):
+    """第二十二批：卡面寫了、後端也算了，但玩家在畫面上看不到的那些效果。
+
+    這一批的稽核方法是**實跑**：把每張事件卡的 payload 套進一局乾淨的引擎，
+    比對前後的 snapshot，看它到底改了哪些鍵，再問前端有沒有讀那個鍵。
+    207 張裡有 36 張的改動全部落在前端讀不到的地方，這裡守其中最有感的幾條。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _no_comments(text):
+        return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+    # ── 戰鬥加成：算了一整套，畫面一個字都沒有 ──────────────────────
+    def test_every_combat_modifier_carries_a_sentence(self):
+        """`applied_modifiers` 先前只被寫入、沒有人讀，因為它根本沒有說明文字。"""
+        from backend.combat_modifiers import CombatModifierBuilder
+        engine = GameEngine(seed=3)
+        built = CombatModifierBuilder(engine).build({
+            "province": "江蘇", "fortress": True,
+            "sides": {"A": {"faction": "N",
+                            "armies": [{"id": "N-1", "general_id": "chiang_kaishek",
+                                        "traits": ["advantage_is_ours"], "defending": True}]},
+                      "B": {"faction": "F",
+                            "armies": [{"id": "F-1", "general_id": "zhang_zuolin",
+                                        "traits": []}]}},
+        })
+        self.assertTrue(built["N-1"], "這一場該有加成才驗得到東西")
+        for modifier in built["N-1"]:
+            self.assertTrue(modifier.get("label"), modifier)
+            self.assertIn("：", modifier["label"], modifier)
+
+    def test_the_battle_panel_prints_them(self):
+        stripped = self._no_comments(self._app_js())
+        # 要守的是**呼叫點**，不是那個名字——函式自己的宣告行裡也有一份，
+        # 只斷言名字的話，把戰鬥面板裡那一行刪掉測試照樣綠。
+        # （這個專案已經在 drainInFlight、publishSharedState 上踩過兩次。）
+        panel = re.search(r"function renderBattlePanel\(\) \{(.*?)\n\}\n",
+                          self._app_js(), re.S).group(1)
+        self.assertIn("${appliedModifiersMarkup(battle, sideOrder)}",
+                      self._no_comments(panel),
+                      "戰鬥面板沒有呼叫它——加成又變成算了沒人看")
+        body = re.search(r"function appliedModifiersMarkup\(battle, sideOrder\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        self.assertIn("appliedModifiers", self._no_comments(body))
+        self.assertIn("item.label", self._no_comments(body),
+                      "沒有印後端貼的說明，等於前端又要自己推一次規則")
+
+    # ── 事件卡改寫功能卡數字：手上那張卡還印著舊數字 ──────────────
+    def test_the_backend_publishes_rewritten_card_numbers(self):
+        engine = GameEngine(seed=3)
+        player = sorted(engine.state["players"])[0]
+        engine.state["players"][player]["hand"] = ["artifact_smuggling"]
+        engine.state.setdefault("function_card_overrides", []).append(
+            {"card_id": "artifact_smuggling",
+             "fields": {"payout_min": 30, "payout_max": 60}, "until_turn": None})
+        changes = engine.snapshot()["players"][player]["card_field_changes"]
+        self.assertIn("artifact_smuggling", changes)
+        texts = [c["text"] for c in changes["artifact_smuggling"]]
+        self.assertIn("收益下限 $20 → $30", texts)
+        self.assertIn("收益上限 $40 → $60", texts)
+
+    def test_no_rewrite_means_no_noise(self):
+        engine = GameEngine(seed=3)
+        player = sorted(engine.state["players"])[0]
+        self.assertEqual(engine.snapshot()["players"][player]["card_field_changes"], {})
+
+    def test_the_hand_prints_the_rewrite(self):
+        stripped = self._no_comments(self._app_js())
+        self.assertIn("card_field_changes", stripped)
+        self.assertIn("cardFieldChanges(card.id)", stripped,
+                      "手牌沒有印改寫，玩家看到的還是原本那組數字")
+
+    # ── 單一銀行被事件停貸：面板照樣印「可借」 ──────────────────────
+    def test_a_banned_bank_shows_as_banned(self):
+        engine = GameEngine(seed=3)
+        player = sorted(engine.state["players"])[0]
+        engine.state.setdefault("bank_bans", []).append(
+            {"bank": "hsbc", "until_turn": int(engine.state["turn"]) + 3,
+             "label": "大英總罷工：匯豐停止新放款"})
+        row = next(o for o in engine.loan_offers(player)["offers"] if o["bank"] == "hsbc")
+        self.assertFalse(row["can_borrow"])
+        self.assertEqual(row["available"], 0)
+        self.assertEqual(row["bank_ban"]["label"], "大英總罷工：匯豐停止新放款")
+        # 後端也真的擋得住——畫面說的與後端做的是同一件事。
+        with self.assertRaises(ValueError):
+            engine.take_loan(player, "hsbc", 5)
+        # 沒被停的銀行不受影響。
+        other = next(o for o in engine.loan_offers(player)["offers"]
+                     if o["bank"] and o["bank"] != "hsbc")
+        self.assertIsNone(other.get("bank_ban"))
+
+    def test_the_loan_panel_prints_the_ban(self):
+        stripped = self._no_comments(self._app_js())
+        self.assertIn("row.bank_ban", stripped,
+                      "借款面板沒有印單一銀行的停貸令")
+
+    # ── 鐵路「沿線」不是「整個省」 ──────────────────────────────────
+    def test_railway_talks_only_touch_the_line(self):
+        engine = GameEngine(seed=3)
+        cards = {c.get("ref"): c for c in
+                 json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]}
+        for ref, railway in (("12.58", "南滿鐵路"), ("12.59", "中東鐵路"),
+                             ("12.60", "滇越鐵路")):
+            card = cards[ref]
+            accept = next(o for o in card["resolution"]["options"] if o["id"] == "accept")
+            select = accept["apply"]["city_output"]["select"]
+            self.assertEqual(select, {"railways": [railway]},
+                             f"{ref} 的代價範圍不是卡面寫的「沿線每座城市」")
+            picked = set(engine._select_cities(select, list(engine.state["players"])))
+            self.assertTrue(picked, f"{ref} 沿線一座城都挑不到")
+            self.assertEqual(picked, set(engine.cities_along_railways([railway])))
+
+    def test_the_station_list_is_not_a_whole_province(self):
+        engine = GameEngine(seed=3)
+        stations = set(engine.cities_along_railways(["南滿鐵路"]))
+        province = {c["id"] for c in engine.data["strategic_map"]["cities"]
+                    if c.get("province") in ("奉天", "吉林")}
+        self.assertTrue(stations < province,
+                        "沿線名單等於整個省的話，這次修的東西就沒有意義")
+
+    def test_an_unknown_railway_is_refused_loudly(self):
+        engine = GameEngine(seed=3)
+        with self.assertRaises(ValueError):
+            engine.cities_along_railways(["不存在的鐵路"])
 
 
 if __name__ == "__main__":

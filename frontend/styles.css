@@ -3233,3 +3233,88 @@ button, select, input, textarea {
 .unrest-row button:disabled { opacity: 0.45; cursor: not-allowed; }
 .unrest-actions { margin-top: 6px; text-align: right; }
 .unrest-actions button { background: transparent; opacity: 0.75; }
+
+/* 被事件按住的功能卡與被禁掉的行動：畫面要當場說清楚，
+   而不是等玩家按下去才從後端收到例外訊息。 */
+.card-item-full.card-blocked {
+  opacity: 0.62;
+}
+
+.card-item-full .card-blocked-note,
+.action-blocked-note {
+  display: block;
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8c2f2f;
+}
+
+.card-item-full .card-blocked-note {
+  padding: 4px 8px;
+  border-left: 3px solid #8c2f2f;
+  background: rgba(140, 47, 47, 0.08);
+  border-radius: 4px;
+}
+
+/* 列強地面部隊：佔領（實線）與演習（虛線）在地格資訊上也要分得開。 */
+.tile-occupation {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 3px solid #b02222;
+  background: rgba(176, 34, 34, 0.08);
+  border-radius: 4px;
+}
+
+.tile-occupation.tile-occupation-drill {
+  border-left-style: dashed;
+  border-left-color: #8a6d2f;
+  background: rgba(138, 109, 47, 0.08);
+}
+
+.tile-occupation b {
+  display: block;
+  font-size: 12px;
+}
+
+.tile-occupation small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* 這一場實際吃到哪些戰鬥加成。後端算、後端貼字，前端只排版。 */
+.battle-modifiers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(31, 28, 23, 0.05);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.battle-modifiers em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.battle-modifiers b {
+  margin-right: 6px;
+}
+
+/* 事件卡改寫過的功能卡數字：卡面文字是靜態的，改寫要另外標出來。 */
+.card-item-full .card-rewritten-note {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  border-left: 3px solid #6d5a2f;
+  background: rgba(109, 90, 47, 0.08);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6d5a2f;
+}
