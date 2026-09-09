@@ -292,6 +292,12 @@ function cardFieldChanges(cardId, player = currentPlayer) {
   return (state?.players?.[player]?.card_field_changes || {})[cardId] || [];
 }
 
+// 這位勢力對這張卡免疫嗎（復興儒學那種綁省份的免疫）。
+// 判定在後端的 province_card_immunity()，這裡只讀結果。
+function immuneTarget(cardId, owner) {
+  return (state?.immune_targets || {})[cardId]?.[owner] || null;
+}
+
 function blockedCard(cardId, player = currentPlayer) {
   return (state?.players?.[player]?.blocked_cards || {})[cardId] || null;
 }
@@ -449,11 +455,18 @@ function punishmentReleaseNote(entry) {
   return "";
 }
 
-// 一次性戰力損失：照現有的 clampUnitsToForceCap 往下削，削到目標戰力為止。
-function scaleArmyForce(army, multiplier) {
+// 一次性戰力損失。**怎麼裁是規則，規則在後端**（/api/cut-force）。
+//
+// 先前這裡用 clampUnitsToForceCap「從最貴的兵種裁到不超過目標為止」，
+// 跟後端的 _cut_down_to_force（每一步只裁「裁下去還不會低於 target」的最貴兵種）
+// 答案不一樣：37 點打 −40%，後端 22、前端 21；砲兵多的部隊差更多——
+// 那正是後端那支函式的註解一開始就在警告的事（13 點打九折應該剩 11，
+// 先砍砲兵會掉到 9，「−10%」變成「−31%」）。
+async function scaleArmyForce(army, multiplier) {
   const before = forcePoints(armyUnits(army));
   if (before <= 0) return 0;
-  army.units = clampUnitsToForceCap(armyUnits(army), Math.max(0, Math.floor(before * multiplier)));
+  const result = await api("/api/cut-force", { units: armyUnits(army), multiplier });
+  army.units = clampUnitsToForceCap(result.units);
   const general = generalById(army.generalId);
   if (general) general.units = { ...army.units };
   return before - forcePoints(armyUnits(army));
@@ -508,7 +521,7 @@ function evictArmyFromCity(army) {
 
 // 執行一筆 foreign_punishment_damage。範圍判定與後端同一套：
 // 省份（地面佔領）、水域（封鎖）、城市清單（空襲）。
-function applyForeignPunishmentDamage(faction, effect) {
+async function applyForeignPunishmentDamage(faction, effect) {
   const notes = [];
   const provinces = new Set(effect.provinces || []);
   const waters = new Set(effect.waters || []);
@@ -539,12 +552,12 @@ function applyForeignPunishmentDamage(faction, effect) {
     const cell = cells[army.cellKey];
     const here = inZone(cell);
     if (chain && here && cumulativeForce) {
-      forceLost += setArmyForceFromBaseline(army, `${chain}`, 1 - cumulativeForce);
+      forceLost += await setArmyForceFromBaseline(army, `${chain}`, 1 - cumulativeForce);
       continue;
     }
     const harbor = Boolean(effect.harbor_army_force) && cell?.city && nextToZone(cell);
     const rate = here ? Number(effect.army_force || 0) : (harbor ? Number(effect.harbor_army_force || 0) : 0);
-    if (rate) forceLost += scaleArmyForce(army, 1 + rate);
+    if (rate) forceLost += await scaleArmyForce(army, 1 + rate);
     if (here && effect.evict_from_city && evictArmyFromCity(army)) evicted += 1;
   }
 
@@ -574,14 +587,16 @@ function applyForeignPunishmentDamage(faction, effect) {
 // 第一次被打到時記下當時的值，之後每一段都從這個值重算。
 const punishmentBaselines = new Map();
 
-function setArmyForceFromBaseline(army, chain, remaining) {
+async function setArmyForceFromBaseline(army, chain, remaining) {
   const key = `${army.id}:${chain}`;
   const current = forcePoints(armyUnits(army));
   if (!punishmentBaselines.has(key)) punishmentBaselines.set(key, current);
   const baseline = punishmentBaselines.get(key);
   const target = Math.max(0, Math.floor(baseline * remaining));
   if (target >= current) return 0;
-  army.units = clampUnitsToForceCap(armyUnits(army), target);
+  // 裁法一樣走後端那一份。
+  const result = await api("/api/cut-force", { units: armyUnits(army), target });
+  army.units = clampUnitsToForceCap(result.units);
   const general = generalById(army.generalId);
   if (general) general.units = { ...army.units };
   return current - forcePoints(armyUnits(army));
@@ -915,12 +930,20 @@ const UNIT_DISPLAY_SCALE = {
   artillery: { multiplier: 10, suffix: "門" },
 };
 
-const GENERAL_SLOT_DEFAULTS = {
-  great_general: 3,
-  lieutenant_general: 2,
-  major_general: 0,
-};
-const LIEUTENANT_SLOT_CAP = 3;
+// 將領直屬名額是**規則**，住在後端的 features.general_slots。
+// 將領樹留在前端不代表名額也可以留在前端——先前這四個數字只寫在這裡，
+// 後端連〈擴編直屬〉的上限都無從把關。
+function generalSlotRules() {
+  return backendRule("features.general_slots") || {};
+}
+
+function generalSlotDefault(role) {
+  return Number(generalSlotRules()[role] ?? 0);
+}
+
+function lieutenantSlotCap() {
+  return Number(generalSlotRules().lieutenant_general_cap ?? 0);
+}
 
 
 const TRAIT_LABELS = {
@@ -1189,7 +1212,15 @@ const INITIAL_ARMY_CELLS = Object.fromEntries(
     lat: army.lat,
   }])
 );
-const INITIAL_CELL_FACTIONS = Object.fromEntries(
+// map.js 剛把地圖建好時的地格歸屬。**這份是「套用省級歸屬保證之前」的樣子**
+// ——`applyProvinceOwnershipClaims()`（四川全境歸川軍、察哈爾歸西北軍、
+// 陝甘的川軍飛地、青海）是 boot() 裡才跑的，跑在這個 const 之後。
+//
+// 所以還原它**不等於**回到開局：先前 resetGame() 直接把 cell.fac 寫回這份快照，
+// 於是按一次「重新開始」，整套省級歸屬保證就被抹掉，地圖倒退回沒有那些條款的
+// 版本（實測：川軍 64→52、西北軍 140→124、馬家軍 69→75）。部隊會重新入城，
+// 所以症狀是「駐軍變了、地格沒變」。還原之後一定要再跑一次 indexProvinceCells()。
+const SCENARIO_CELL_FACTIONS = Object.fromEntries(
   Object.values(cells).map((cell) => [cell.key, cell.fac])
 );
 const INITIAL_CITY_FACTIONS = {};
@@ -1405,10 +1436,11 @@ function generalAbsoluteLoyaltyActive(general) {
 
 function normalizedSlotCount(general) {
   const role = general?.role || "major_general";
-  if (role === "great_general") return GENERAL_SLOT_DEFAULTS.great_general;
-  if (role === "major_general") return GENERAL_SLOT_DEFAULTS.major_general;
-  const current = Number(general?.subordinate_slots ?? GENERAL_SLOT_DEFAULTS.lieutenant_general);
-  return Math.max(GENERAL_SLOT_DEFAULTS.lieutenant_general, Math.min(LIEUTENANT_SLOT_CAP, current || 0));
+  if (role === "great_general") return generalSlotDefault("great_general");
+  if (role === "major_general") return generalSlotDefault("major_general");
+  const base = generalSlotDefault("lieutenant_general");
+  const current = Number(general?.subordinate_slots ?? base);
+  return Math.max(base, Math.min(lieutenantSlotCap(), current || 0));
 }
 
 function normalizeGeneralTree(tree) {
@@ -1483,8 +1515,9 @@ function applyFunctionSideEffects(result) {
     const general = generalById(generalId);
     if (general && general.role === "lieutenant_general") {
       general.subordinate_slots = Math.min(
-        LIEUTENANT_SLOT_CAP,
-        Math.max(GENERAL_SLOT_DEFAULTS.lieutenant_general, Number(general.subordinate_slots || GENERAL_SLOT_DEFAULTS.lieutenant_general) + Number(amount || 0)),
+        lieutenantSlotCap(),
+        Math.max(generalSlotDefault("lieutenant_general"),
+          Number(general.subordinate_slots || generalSlotDefault("lieutenant_general")) + Number(amount || 0)),
       );
     }
   }
@@ -1673,19 +1706,29 @@ function syncStrategicCitiesFromState() {
   // 先前這裡只讀 city_economy，於是 **NPC 手上的城市永遠同步不到**——
   // 那張表只有四家玩家的城。〈黔軍整頓茅台酒造〉把遵義升到 3 級、
   // 〈閻錫山督辦山西教育〉把山西全省升一級，後端都寫進去了，畫面一動也不動。
-  const levelOverrides = state.city_level_overrides || {};
+  // 等級與產出的權威是後端的 city_output：**全圖每一座城**都在裡面，
+  // 而各玩家的 city_economy 只有自己那幾座。
+  //
+  // 先前等級讀 city_level_overrides（全圖都有）、產出卻只讀 city_economy
+  // （只有玩家的），於是〈黔軍整頓茅台酒造〉把遵義升到 3 級之後，
+  // 標籤寫「3 級城市」、產出還印著 2 級的「$2・工廠 2」——等級與產能各說各話。
+  const outputs = state.city_output || {};
   const ownerless = new Set(state.ownerless_cities || []);
   for (const city of bootstrap.strategic_map.cities) {
     if (!baseCityLevels.has(city.id)) baseCityLevels.set(city.id, city.level);
     const economy = economyByCity.get(city.id);
-    if (economy) {
+    const resolved = outputs[city.id];
+    if (resolved) {
+      city.cash = resolved.cash;
+      city.factory = resolved.factory;
+      city.level = Number(resolved.level);
+    } else if (economy) {
       city.cash = economy.cash;
       city.factory = economy.factory;
+      city.level = economy.level !== undefined ? economy.level : baseCityLevels.get(city.id);
+    } else {
+      city.level = baseCityLevels.get(city.id);
     }
-    const override = levelOverrides[city.id];
-    if (override !== undefined) city.level = Number(override);
-    else if (economy && economy.level !== undefined) city.level = economy.level;
-    else city.level = baseCityLevels.get(city.id);
     // 無主：列強懲戒解除後的城市不屬於任何人，畫面要跟著中立化。
     // 權威是後端的 ownerless_cities，所以每次同步都重讀一次，
     // 而不是只靠那一筆 cities_became_ownerless 交辦——換一台瀏覽器進來
@@ -2366,11 +2409,21 @@ function provinceOptions() {
   return [...provinces].sort((first, second) => first.localeCompare(second, "zh-Hant"));
 }
 
+// 地圖上真的存在的省份＝省界檔裡的那些。判準只有這一份。
+//
+// 先前這裡用的是 `provinceOptions()`——「有城市的省份」。青海整省一座城都沒有
+// （西寧照舊民國地圖歸甘肅），於是 provinceAt() 明明答對了「青海」，
+// 這裡卻不認，一路掉到「最近的城市是哪一省」→ 西寧 → 甘肅。
+// 結果就是省界畫出來了、境內卻報成甘肅。**有沒有城市不是省份存在與否的判準。**
+function mapProvinceNames() {
+  return new Set((provinceGeoJson?.features || [])
+    .map((feature) => feature?.properties?.name).filter(Boolean));
+}
+
 function strategicProvinceForCell(cell) {
   if (!cell) return null;
   if (cell.city?.province) return cell.city.province;
-  const playableProvinces = new Set(provinceOptions());
-  if (playableProvinces.has(cell.province)) return cell.province;
+  if (cell.province && mapProvinceNames().has(cell.province)) return cell.province;
   const nearestCity = (bootstrap.strategic_map?.cities || []).reduce((nearest, city) => {
     const cityCell = cells[city.cellKey];
     if (!cityCell) return nearest;
@@ -3992,6 +4045,7 @@ function attachCardHandlers(root = document) {
       button.disabled = true;
       try {
         const card = cardIndex[button.dataset.use];
+        let currentSlots;
         if (card?.mechanic === "army_unit_bundle") {
           const army = allArmies(true).find((item) => item.generalId === card.target_general_id);
           if (!army || (card.requires_active !== false && army.status === "jailed")) {
@@ -4004,13 +4058,14 @@ function attachCardHandlers(root = document) {
           if (!general || generalOwners[targetGeneralId] !== currentPlayer || general.role !== "lieutenant_general") {
             throw new Error("擴編直屬只能指定己方中將。");
           }
-          if (normalizedSlotCount(general) >= LIEUTENANT_SLOT_CAP) {
-            throw new Error("該中將直屬名額已達上限。");
-          }
+          // 上限由後端把關（features.general_slots）；這裡把「現在幾個名額」
+          // 送上去，因為將領樹住在前端，後端數不出來。
+          currentSlots = normalizedSlotCount(general);
         }
         const result = await api("/api/use-function", {
           player: button.dataset.player,
           card_id: button.dataset.use,
+          current_slots: currentSlots,
           target_general_id: targetGeneralId,
           target_owner: root.querySelector(`[data-card-target-owner="${button.dataset.use}"]`)?.value
             || generalOwners[targetGeneralId],
@@ -4221,7 +4276,11 @@ function applyExileRecruit(outcome) {
 function loyaltyCardTargetMarkup(card) {
   if (!["unit_promotion", "local_autonomy_agitation"].includes(card.id)) return "";
   const targets = loyaltyCardTargets(card);
-  return `<label class="card-target">指定將領<select data-card-target="${card.id}" ${targets.length ? "" : "disabled"}>${targets.map(({ general, owner, loyalty }) => `<option value="${general.id}">${FACTIONS[owner]?.shortName || owner} · ${general.name}（忠誠 ${loyalty}）</option>`).join("")}</select></label>`;
+  return `<label class="card-target">指定將領<select data-card-target="${card.id}" ${targets.length ? "" : "disabled"}>${targets.map(({ general, owner, loyalty }) => {
+    // 免疫的目標選了也是白選——後端會擋。畫面直接說清楚，並且不給選。
+    const immune = immuneTarget(card.id, owner);
+    return `<option value="${general.id}"${immune ? " disabled" : ""}>${FACTIONS[owner]?.shortName || owner} · ${general.name}（忠誠 ${loyalty}）${immune ? `　✕ ${immune.label}免疫` : ""}</option>`;
+  }).join("")}</select></label>`;
 }
 
 // 警政單位只能佈在自己有城市的省份。
@@ -4243,7 +4302,8 @@ function subordinateSlotTargets() {
   return Object.entries(generalOwners)
     .filter(([, owner]) => owner === currentPlayer)
     .map(([generalId]) => generalById(generalId))
-    .filter((general) => general?.role === "lieutenant_general" && normalizedSlotCount(general) < LIEUTENANT_SLOT_CAP)
+    .filter((general) => general?.role === "lieutenant_general"
+      && normalizedSlotCount(general) < lieutenantSlotCap())
     .map((general) => ({ general, slots: normalizedSlotCount(general) }));
 }
 
@@ -4429,7 +4489,7 @@ function functionCardTargetMarkup(card) {
     const targets = subordinateSlotTargets();
     if (!targets.length) return `<div class="card-target-note">目前沒有可再擴編的中將</div>`;
     return `<label class="card-target">指定中將<select data-card-target="${card.id}">${targets
-      .map(({ general, slots }) => `<option value="${general.id}">${general.name}（${slots}/${LIEUTENANT_SLOT_CAP}）</option>`)
+      .map(({ general, slots }) => `<option value="${general.id}">${general.name}（${slots}/${lieutenantSlotCap()}）</option>`)
       .join("")}</select></label>`;
   }
   return loyaltyCardTargetMarkup(card);
@@ -5783,7 +5843,14 @@ function applyFieldHospitalResult(report) {
     if (!army) continue;
     army.units = { ...entry.units };
     delete army.fieldHospitalPending;
-    healed.push(`${army.designator}：${UNIT_META[entry.unit]?.name || entry.unit} +1 營`);
+    // 補了幾營由後端說（紅十字會一次兩營）。先前這裡寫死 +1。
+    const picked = entry.picked && entry.picked.length ? entry.picked : [entry.unit];
+    const tally = picked.reduce((acc, unit) => {
+      acc[unit] = (acc[unit] || 0) + 1;
+      return acc;
+    }, {});
+    healed.push(`${army.designator}：` + Object.entries(tally)
+      .map(([unit, count]) => `${UNIT_META[unit]?.name || unit} +${count} 營`).join("、"));
   }
   for (const armyId of report?.cleared || []) {
     const army = armyById(armyId);
@@ -9900,7 +9967,9 @@ async function resetGame() {
   for (const key of PREBUILT_PONTOONS) completedPontoons.add(key);
   completedFortresses.clear();
   selectedTileKey = null;
-  for (const cell of Object.values(cells)) cell.fac = INITIAL_CELL_FACTIONS[cell.key];
+  for (const cell of Object.values(cells)) cell.fac = SCENARIO_CELL_FACTIONS[cell.key];
+  // 上面那份是 map.js 的原始判定，還沒有省級歸屬保證。重跑一次才是真正的開局地圖。
+  indexProvinceCells();
   for (const city of bootstrap.strategic_map?.cities || []) city.faction = INITIAL_CITY_FACTIONS[city.id];
   for (const faction of Object.keys(jailedGenerals)) {
     jailedGenerals[faction].length = 0;
@@ -10056,6 +10125,15 @@ $("debugForceTurnBtn").addEventListener("click", () => {
 
 // 除錯掛勾：把戰鬥加成的組裝過程開放給自動化檢查用（和「強制下一回合」按鈕同性質）。
 window.__neDebug = {
+  resetGame,
+  forcePoints,
+  armyUnits,
+  factionForArmy,
+  occupyTile,
+  initMap,
+  cellAt,
+  strategicProvinceForCell,
+  indexProvinceCells,
   effectActive,
   cityControlledBy,
   appliedModifiersMarkup,
@@ -10111,7 +10189,6 @@ window.__neDebug = {
   cityForArmy,
   moveArmyToCell,
   waitForCityEconomySync: () => cityEconomySync,
-  occupyTile,
   buyForcedMarch,
   undoLastArmyOrder,
   startEngineeringOperation,
@@ -10124,7 +10201,6 @@ window.__neDebug = {
   // 而不是只證明清單裡有那條線的名字。
   railwayPath,
   railLinkUsable,
-  renderLoansMarkup,
   applyFrontendEventEffects,
   // 水患／決口的城市級凍結要能從測試夾具問得到，否則只能靠肉眼點地圖驗。
   movementFreezeForArmy,
@@ -10137,7 +10213,6 @@ window.__neDebug = {
   relocationCellNear,
   tacticalSnapshot,
   resolveBattleRound,
-  armyUnits,
   allNavies,
   handleNavyOperation,
   carriedArmy,
@@ -10145,18 +10220,15 @@ window.__neDebug = {
   applyCarriedArmySettlement,
   clearNavyResolved,
   clearArmyResolved,
-  generalById,
   getUiNotice: () => uiNotice,
   traitDisabledByRelations,
   defectionQuoteFor,
   getLoyaltyOverrides: () => loyaltyOverrides,
-  forcePoints,
   applyNavyDuel,
   applyArmyNavyContact,
   getBackendLoyalty: () => backendLoyalty,
   setBackendLoyalty: (value) => { backendLoyalty = value || {}; },
   getNavyOutlook: () => backendNavyOutlook,
-  factionForArmy,
   ceasefireEffect,
   forcedPeaceEffect,
   withdrawBattlesForForcedPeace,
@@ -10184,13 +10256,11 @@ window.__neDebug = {
   lockedForeignRailways,
   bannedRailways,
   disabledRailways,
-  railwayStatusLabel,
   get railwayAccess() { return backendRailwayAccess; },
   armyCanBeCaptured,
   annihilateArmy,
   applyGeneralDeath,
   sinkCarriedArmyWithNavy,
-  carriedArmy,
   paralysedPorts,
   portParalysed,
   navyLockedInPort,
@@ -10201,7 +10271,6 @@ window.__neDebug = {
   traitDescription,
   enemyPortCityOptions,
   navyById,
-  allNavies,
   navyRules,
   navyFaction,
   NO_CAPTURE_FACTIONS,
@@ -10209,12 +10278,9 @@ window.__neDebug = {
   forcedMarchActive,
   forcedMarchRemainingTurns,
   forcedMarchCooldownTurns,
-  forcePoints,
-  armyUnits,
   armyForceCap,
   reinforcementWouldExceedCap,
   cellNeighbors,
-  railwayPath,
   railwayMoveLimit,
   // 阻截與支援範圍：自動化檢查要能直接問「這條路被誰擋住」、
   // 「這支部隊投不投得進那場仗」，而不是靠點地圖猜。

@@ -282,6 +282,128 @@ out.逐格例外 = {
 """
 
 
+# 按「重新開始」之後，地圖必須還是同一張。
+#
+# 先前 resetGame() 把 cell.fac 寫回一份 module-load 時抓的快照，而省級歸屬保證
+# （四川全境、察哈爾、陝甘飛地、青海）是 boot() 裡才套的——快照比它早。
+# 於是按一次新局，那整套條款就被抹掉：川軍 64→52、西北軍 140→124、
+# 馬家軍 69→75。部隊照樣重新入城，所以症狀是「駐軍變了、地格沒變」。
+NEW_GAME_KEEPS_THE_MAP = r"""
+async () => {
+  const d = window.__neDebug;
+  const count = () => {
+    const out = {};
+    for (const c of Object.values(d.cells)) { if (!c.land) continue;
+      out[c.fac ?? 'null'] = (out[c.fac ?? 'null'] || 0) + 1; }
+    return out;
+  };
+  const before = count();
+  await d.resetGame();
+  await new Promise(r => setTimeout(r, 1500));
+  return { 新局前: before, 新局後: count() };
+}
+"""
+
+# 整省沒有半座城市的省份（青海：西寧照舊民國地圖歸甘肅），
+# 地格資訊也要說得出它是哪一省。
+PROVINCE_WITHOUT_A_CITY = r"""
+() => {
+  const d = window.__neDebug;
+  const read = (lon, lat) => { const c = d.cellAt(lon, lat);
+    return c ? { 幾何: c.province, 顯示: d.strategicProvinceForCell(c) } : null; };
+  const hasCity = (name) => (d.getBootstrap().strategic_map?.cities || [])
+    .some(city => city.province === name);
+  return { 青海湖: read(100.2, 36.9), 都蘭: read(98.1, 36.3),
+           西寧一帶: read(101.8, 36.6),
+           青海有沒有城市: hasCity('青海'), 甘肅有沒有城市: hasCity('甘肅') };
+}
+"""
+
+
+# 省級歸屬保證是**開局的一次性播種**，不是每次重畫都跑一遍的規則。
+# 跑第二次就會把玩家打下來的地盤還給原主，所以這一關驗兩件事：
+#   1. 佔領之後，經過推回後端／拉回來／換回合／重畫，歸屬還是佔領者的；
+#   2. 地格本身的屬性（省份、鐵路、河流、城市、租借地）一格都沒被弄壞。
+CAPTURE_KEEPS_OWNERSHIP = r"""
+async () => {
+  const d = window.__neDebug;
+  await d.switchFaction('N');
+  await new Promise(r => setTimeout(r, 1200));
+  const me = d.getCurrentPlayer();
+
+  // 挑一格「省級歸屬保證管到、而且現在不是我的」的地：四川境內的川軍地。
+  const target = Object.values(d.cells).find(c =>
+    c.land && c.fac === 'C' && c.province === '四川' && !c.city && !c.power);
+  const neighbourBefore = Object.values(d.cells)
+    .filter(c => c.land && c.province === '四川' && c.key !== target.key)
+    .map(c => [c.key, c.fac]);
+  const attrsOf = (c) => ({ province: c.province, river: c.river ?? null,
+    city: c.city?.id ?? null, power: c.power ?? null,
+    rail: [...(c.railroads || [])].sort(), land: c.land === true });
+  const attrsBefore = Object.fromEntries(
+    Object.values(d.cells).filter(c => c.land).map(c => [c.key, JSON.stringify(attrsOf(c))]));
+
+  // 真的佔下來（occupyTile 是移動與艦隊佔城共用的那一支）。
+  await d.occupyTile(target, me);
+  const rightAfter = d.cells[target.key].fac;
+
+  // 接著把所有「可能重畫地圖」的路徑都走一遍。
+  await d.publishSharedState(true);
+  await d.pullSharedState();
+  await d.api('/api/next-turn', { active_player: me, force: true });
+  await d.pullSharedState();
+  d.initMap();
+
+  const neighbourAfter = Object.values(d.cells)
+    .filter(c => c.land && c.province === '四川' && c.key !== target.key)
+    .map(c => [c.key, c.fac]);
+  const attrsAfter = Object.fromEntries(
+    Object.values(d.cells).filter(c => c.land).map(c => [c.key, JSON.stringify(attrsOf(c))]));
+  const brokenAttrs = Object.keys(attrsBefore)
+    .filter(k => attrsBefore[k] !== attrsAfter[k]).slice(0, 5);
+
+  return {
+    佔的那一格: target.key,
+    佔領當下: rightAfter,
+    走完一輪之後: d.cells[target.key].fac,
+    四川其餘地格有沒有被動到:
+      JSON.stringify(neighbourBefore) === JSON.stringify(neighbourAfter),
+    地格屬性被弄壞的: brokenAttrs,
+    後端那份地圖同一格是誰的:
+      (await d.api('/api/shared-state')).tactical?.cellFactions?.[target.key] ?? null,
+  };
+}
+"""
+
+# 城市易主之後，城市歸屬與後端的 city_owners 要一起動。
+CITY_CAPTURE_FOLLOWS = r"""
+async () => {
+  const d = window.__neDebug;
+  const me = d.getCurrentPlayer();
+  const city = (d.getBootstrap().strategic_map?.cities || []).find(c =>
+    c.faction && c.faction !== me && d.cells[c.cellKey] && !d.cells[c.cellKey].power);
+  const cell = d.cells[city.cellKey];
+  const before = { 城: city.id, 原主: city.faction, 地格: cell.fac };
+  await d.occupyTile(cell, me);
+  await new Promise(r => setTimeout(r, 1200));
+  await d.publishSharedState(true);
+  await d.pullSharedState();
+  const st = d.getState();
+  return {
+    ...before,
+    佔領後的地格: d.cells[city.cellKey].fac,
+    佔領後的城市歸屬: city.faction,
+    後端city_owners: (st.city_owners || {})[city.id] ?? null,
+    後端有沒有把它算進我的產出:
+      Object.values(st.players || {}).some(p =>
+        (p.city_economy || []).some(c => c.id === city.id)) ,
+    我的產出裡有沒有它:
+      ((st.players || {})[me]?.city_economy || []).some(c => c.id === city.id),
+  };
+}
+"""
+
+
 async def main():
     proc = start_server()
     SHOTS.mkdir(exist_ok=True)
@@ -295,6 +417,10 @@ async def main():
             await page.goto(BASE + '/', wait_until='networkidle')
             await page.wait_for_timeout(7000)
             results['結果'] = await page.evaluate("async () => {" + PAGE_PROBE + "\nreturn out; }")
+            results['新局'] = await page.evaluate(NEW_GAME_KEEPS_THE_MAP)
+            results['沒有城市的省份'] = await page.evaluate(PROVINCE_WITHOUT_A_CITY)
+            results['佔領之後'] = await page.evaluate(CAPTURE_KEEPS_OWNERSHIP)
+            results['城市易主'] = await page.evaluate(CITY_CAPTURE_FOLLOWS)
             if errs:
                 results['__主控台錯誤__'] = errs[:5]
             await page.screenshot(path=str(SHOTS / 'province_ownership_map.png'))
@@ -309,7 +435,35 @@ async def main():
 
     print(json.dumps(results, ensure_ascii=False, indent=1, default=str))
     r = results.get('結果') or {}
+    reset = results.get('新局') or {}
+    cap = results.get('佔領之後') or {}
+    citycap = results.get('城市易主') or {}
+    nocity = results.get('沒有城市的省份') or {}
     checks = {
+        "佔領：當下那一格就換人了": cap.get('佔領當下') is not None
+            and cap.get('佔領當下') == cap.get('走完一輪之後'),
+        "佔領：推回後端、換回合、重畫之後歸屬沒有被還回去":
+            cap.get('走完一輪之後') is not None
+            and cap.get('走完一輪之後') == cap.get('後端那份地圖同一格是誰的'),
+        "佔領：同省其他地格一格都沒被動到":
+            cap.get('四川其餘地格有沒有被動到') is True,
+        "佔領：地格屬性（省份／鐵路／河流／城市／租借地）沒被弄壞":
+            (cap.get('地格屬性被弄壞的') or []) == [],
+        "城市易主：地格與城市歸屬一起動":
+            citycap.get('佔領後的地格') == citycap.get('佔領後的城市歸屬')
+            and citycap.get('佔領後的城市歸屬') != citycap.get('原主'),
+        "城市易主：後端的 city_owners 跟著改":
+            citycap.get('後端city_owners') == citycap.get('佔領後的城市歸屬'),
+        "城市易主：後端把它算進新主人的產出": citycap.get('我的產出裡有沒有它') is True,
+        "新局之後地圖還是同一張（省級歸屬保證沒被抹掉）":
+            bool(reset.get('新局前')) and reset.get('新局前') == reset.get('新局後'),
+        "青海整省沒有城市（不然下面兩關驗不到東西）":
+            nocity.get('青海有沒有城市') is False and nocity.get('甘肅有沒有城市') is True,
+        "青海境內的地格說得出自己在青海":
+            (nocity.get('青海湖') or {}).get('顯示') == '青海'
+            and (nocity.get('都蘭') or {}).get('顯示') == '青海',
+        "西寧一帶仍然報甘肅（省界沒有被畫走）":
+            (nocity.get('西寧一帶') or {}).get('顯示') == '甘肅',
         "四川全境歸川軍（川東除外）": (r.get('四川') or {}).get('非川軍的都是直系'),
         "四川的例外只在川東": (r.get('四川') or {}).get('非川軍的都在川東'),
         "陝西境內沒有川軍飛地": (r.get('秦嶺以北沒有川軍') or {}).get('陝西的川軍格') == 0,
