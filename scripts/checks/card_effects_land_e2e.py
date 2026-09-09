@@ -33,6 +33,10 @@ def start_server():
         ['python3', '-c', f'from backend.server import run; run(port={port})'],
         cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
+        # Popen 綁不上埠時子程序會立刻死掉，而輪詢仍可能連上**別人那一台**，
+        # 於是整份量測都是對著別的伺服器做的。先確認自己的那台真的活著。
+        if proc.poll() is not None:
+            raise SystemExit("伺服器啟動失敗（多半是埠被佔住）")
         try:
             urllib.request.urlopen(BASE + '/', timeout=2).read(1)
             return proc
@@ -131,6 +135,14 @@ async () => {
       保定_前端顯示: cityOf('baoding')?.level,
       保定_後端city_economy: Object.values(st.players || {})
         .flatMap(p => p.city_economy || []).find(c => c.id === 'baoding')?.level,
+      // NPC 手上的城：它不在任何玩家的 city_economy 裡，所以只能靠
+      // city_level_overrides 同步。先前前端只讀 city_economy，於是打在
+      // 遵義、太原這些 NPC 城上的升級卡，畫面一動也不動。
+      遵義_前端顯示: cityOf('zunyi')?.level,
+      遵義_後端覆寫: (st.city_level_overrides || {}).zunyi ?? null,
+      遵義_在哪家的city_economy裡: Object.entries(st.players || {})
+        .filter(([, p]) => (p.city_economy || []).some(c => c.id === 'zunyi'))
+        .map(([code]) => code),
     },
     吞併地格: {
       前端還剩幾格Q: Object.values(d.cells).filter(c => c.fac === 'Q').length,
@@ -140,6 +152,23 @@ async () => {
 }
 """
 
+
+# 覆寫被清掉時，城市等級要回得到基準值。
+# 這條路在「還原另一份快照」時會走到——bootstrap 那些城市物件是就地改寫的，
+# 沒有底稿的話，上一盤棋升上去的等級會一路跟著跑到下一盤。
+LEVEL_RESET = r"""
+async () => {
+  const d = window.__neDebug;
+  const cityOf = (id) => (d.getBootstrap().strategic_map?.cities || []).find(c => c.id === id);
+  const before = cityOf('zunyi')?.level;
+  const snap = JSON.parse(JSON.stringify((await d.api('/api/shared-state')).engine_state));
+  const had = { ...(snap.city_level_overrides || {}) };
+  snap.city_level_overrides = {};
+  await d.api('/api/restore-shared-state', { engine_state: snap, tactical: d.tacticalSnapshot() });
+  await d.pullSharedState();
+  return { 清掉覆寫前: before, 清掉的內容: had, 清掉覆寫後: cityOf('zunyi')?.level };
+}
+"""
 
 DRAIN_IDEMPOTENCE = r"""
 async () => {
@@ -211,11 +240,14 @@ async def main():
             out['忠誠卡'] = await page.evaluate(AFTER_LOYALTY)
 
             out['城市等級卡applied'] = await page.evaluate(EVENT_CARDS, ['yan_yangchu_rural_education'])
+            # NPC 手上的城市也要跟著動：遵義在黔軍手上，不在任何玩家的 city_economy 裡。
+            out['NPC城市等級卡applied'] = await page.evaluate(EVENT_CARDS, ['qian_army_moutai'])
             before_q = await page.evaluate(
                 "() => Object.values(window.__neDebug.cells).filter(c => c.fac === 'Q').length")
             out['吞併前的Q地格'] = before_q
             out['吞併卡applied'] = await page.evaluate(EVENT_CARDS, ['liu_xiang_annexes_qian'])
             out.update(await page.evaluate(MEASURE))
+            out['等級回復'] = await page.evaluate(LEVEL_RESET)
             out['交辦排空'] = await page.evaluate(DRAIN_IDEMPOTENCE)
             if errs:
                 out['__主控台錯誤__'] = errs[:5]
@@ -256,6 +288,14 @@ async def main():
         "城市等級：畫面上的保定升到 3": city.get('保定_前端顯示') == 3,
         "城市等級：畫面等於後端":
             city.get('保定_前端顯示') == city.get('保定_後端city_economy'),
+        "城市等級：NPC 手上的遵義也升上去了":
+            city.get('遵義_前端顯示') is not None
+            and city.get('遵義_前端顯示') == city.get('遵義_後端覆寫'),
+        "城市等級：遵義確實不在任何玩家的 city_economy 裡（不然這關驗不到東西）":
+            city.get('遵義_在哪家的city_economy裡') == [],
+        "城市等級：覆寫清掉後遵義回到基準的 2 級":
+            (out.get('等級回復') or {}).get('清掉覆寫前') == 3
+            and (out.get('等級回復') or {}).get('清掉覆寫後') == 2,
         "吞併：事件前畫面上真的有黔軍地盤": (out.get('吞併前的Q地格') or 0) > 3,
         "吞併：後端把黔軍地盤清空": merge.get('後端還剩幾格Q') == 0,
         "吞併：畫面跟著清空（後端改動有傳到前端）": merge.get('前端還剩幾格Q') == 0,

@@ -16,7 +16,7 @@
 共通規則：
 
   * **解除條件**：關係改善到非敵對（> −4）的**下一回合**才解除。
-    演習（drill）例外——演習不是懲戒，有固定回合數，時間到就結束。
+    演習（`mode: "drill"`）例外——演習不是懲戒，有固定回合數，時間到就結束。
   * **傷害**：只有在關係真的處於敵對時才吃。演習一律不造成傷害。
   * **同一玩家同一懲戒不重複**：一個懲戒對某玩家還生效時，那張卡對他封鎖；
     但**不同玩家可以同時吃到同一張**（兩個對日交惡的人可以一起被炸）。
@@ -37,6 +37,33 @@ GROUND_OCCUPATION_LOSS = 0.40
 WAR_SPLASH_LOSS = 0.10
 
 KINDS = ("ground_occupation", "water_blockade", "air_raid")
+
+# 佔領與演習是**兩種不同的狀態**，不是「懲戒帶一個布林旗標」。
+# 差別不只在有沒有期限：
+#
+#   punishment（懲戒）  關係修好的下一回合才解除；解除後**土地變無主**，
+#                       原屬勢力要重新佔領；敵對時造成一次性傷害；
+#                       日蘇範圍重疊時要為那一省打一仗。
+#   drill（演習）        固定回合數到就結束；結束後**原封不動歸還原主**；
+#                       一律不造成傷害；也**不加入先來後到的爭奪**——
+#                       先前演習會佔住省份，於是日方一次演習就能挑起
+#                       一場日蘇戰爭，還連帶把傷害算在玩家頭上。
+MODE_PUNISHMENT = "punishment"
+MODE_DRILL = "drill"
+MODES = (MODE_PUNISHMENT, MODE_DRILL)
+
+# 解除時土地怎麼處理。這是卡面白紙黑字寫的差別，所以做成明白的欄位，
+# 前端照著寫字，不自己從 mode 推。
+RELEASE_BECOMES_OWNERLESS = "becomes_ownerless"
+RELEASE_RETURNS_TO_OWNER = "returns_to_owner"
+
+
+def is_drill(entry: Dict[str, Any]) -> bool:
+    """這一筆是演習還是懲戒。舊存檔沒有 mode，退回看 drill 布林。"""
+    mode = entry.get("mode")
+    if mode:
+        return mode == MODE_DRILL
+    return bool(entry.get("drill"))
 
 # 各列強的佔領區顏色（設計稿指定）。美國不使用地面部隊懲戒，所以沒有顏色。
 POWER_TERRITORY_COLORS = {
@@ -117,13 +144,38 @@ class PunishmentBook:
         return None
 
     def occupied_provinces(self) -> Dict[str, Dict[str, Any]]:
-        """省份 → 佔領它的那一筆。先來後到：已經被佔的省不會被第二國蓋掉。"""
+        """省份 → **佔領**它的那一筆懲戒。先來後到：已經被佔的省不會被第二國蓋掉。
+
+        演習不算數：它有固定期限、結束就歸還，不參與列強之間的爭奪，
+        也不該讓日蘇為了一場演習開戰。畫地圖與算收入要的是
+        `ground_controlled_provinces()`（兩種都算）。
+        """
         out: Dict[str, Dict[str, Any]] = {}
         for entry in self.entries:
-            if entry.get("kind") != "ground_occupation":
+            if entry.get("kind") != "ground_occupation" or is_drill(entry):
                 continue
             for province in entry.get("provinces") or []:
                 out.setdefault(province, entry)
+        return out
+
+    def drilled_provinces(self) -> Dict[str, Dict[str, Any]]:
+        """省份 → 正在那裡演習的那一筆。"""
+        out: Dict[str, Dict[str, Any]] = {}
+        for entry in self.entries:
+            if entry.get("kind") != "ground_occupation" or not is_drill(entry):
+                continue
+            for province in entry.get("provinces") or []:
+                out.setdefault(province, entry)
+        return out
+
+    def ground_controlled_provinces(self) -> Dict[str, Dict[str, Any]]:
+        """省份 → 現在有列強地面部隊在上面的那一筆（佔領優先於演習）。
+
+        收入歸零、部隊被鎖、地圖換色看的是這一份：卡面上兩種都寫了
+        「期間金錢與工廠收入歸零」。
+        """
+        out = dict(self.drilled_provinces())
+        out.update(self.occupied_provinces())
         return out
 
     def blockaded_waters(self) -> Dict[str, Dict[str, Any]]:
@@ -176,14 +228,14 @@ class PunishmentBook:
         city = self.engine._city_by_id(city_id)
         if not city:
             return False
-        if city.get("province") in self.occupied_provinces():
+        if city.get("province") in self.ground_controlled_provinces():
             return True
         return self._port_is_blockaded(city)
 
     def _port_is_blockaded(self, city: Dict[str, Any]) -> bool:
         # 海軍演習不影響城市生產，所以查封鎖時把演習那幾筆排除掉。
         waters = {name: entry for name, entry in self.blockaded_waters().items()
-                  if not entry.get("drill")}
+                  if not is_drill(entry)}
         if not waters:
             return False
         return bool(set(waters_for_city(city)) & set(waters))
@@ -209,7 +261,11 @@ class PunishmentBook:
             "owner": owner,
             "label": label or card_id,
             "since_turn": turn,
-            "drill": drill,
+            "mode": MODE_DRILL if drill else MODE_PUNISHMENT,
+            # 解除時土地怎麼處理：只有「地面佔領的懲戒」會變無主。
+            "release_rule": (RELEASE_BECOMES_OWNERLESS
+                             if (not drill and kind == "ground_occupation")
+                             else RELEASE_RETURNS_TO_OWNER),
             "until_turn": (turn + int(drill_turns)) if drill else None,
             "provinces": [],
             "waters": [],
@@ -301,7 +357,7 @@ class PunishmentBook:
         relations = self.engine._player(owner).get("foreign_relations", {})
         total = 0.0
         for entry in self.entries:
-            if entry.get("kind") != "ground_occupation" or entry.get("drill"):
+            if entry.get("kind") != "ground_occupation" or is_drill(entry):
                 continue
             if entry.get("owner") != owner or province not in (entry.get("provinces") or []):
                 continue
@@ -309,7 +365,7 @@ class PunishmentBook:
                 total += GROUND_OCCUPATION_LOSS
         # 戰敗方的那一份打擊已經先落地了，仍然算在帳上。
         for entry in self.entries:
-            if entry.get("kind") != "ground_occupation" or entry.get("drill"):
+            if entry.get("kind") != "ground_occupation" or is_drill(entry):
                 continue
             if entry.get("owner") != owner or province not in (entry.get("lost_provinces") or []):
                 continue
@@ -433,7 +489,7 @@ class PunishmentBook:
                 "retargeted": retargeted, "rebuilt": rebuilt}
 
     def _should_release(self, entry: Dict[str, Any], turn: int) -> bool:
-        if entry.get("drill"):
+        if is_drill(entry):
             return entry.get("until_turn") is not None and turn >= int(entry["until_turn"])
         # 懲戒：關係修好之後的**下一回合**才解除，所以先記下修好的回合。
         relation = int(self.engine._player(entry["owner"])
@@ -448,14 +504,27 @@ class PunishmentBook:
         return turn > int(mended)
 
     def _release(self, entry: Dict[str, Any]) -> None:
-        if entry["kind"] == "ground_occupation" and not entry.get("drill"):
+        if entry["kind"] == "ground_occupation" and not is_drill(entry):
             # 懲戒解除後土地變無主，原屬勢力要重新佔領。演習則原封不動還回去。
+            #
+            # 記法是 city_owners[id] = None，**不是**把那一格移除：引擎裡到處都是
+            # `city_owners.get(id, city["faction"])`，鍵一旦不見，回退值就把城市
+            # 悄悄還給 1926 劇本的原主（很可能是別家玩家）。留一個 None 才是
+            # 「沒有主人」，所有 `== player` 的比較一律不成立。
+            freed = []
             for city in self.engine.data["strategic_map"]["cities"]:
                 if city.get("province") in (entry.get("provinces") or []):
-                    self.engine.state["city_owners"].pop(city["id"], None)
-                    self.engine.state.setdefault("ownerless_cities", [])
-                    if city["id"] not in self.engine.state["ownerless_cities"]:
-                        self.engine.state["ownerless_cities"].append(city["id"])
+                    self.engine.state["city_owners"][city["id"]] = None
+                    freed.append(city["id"])
+            if freed:
+                # 地圖要真的變中立。後端算完沒人畫，等於沒發生。
+                self.engine.queue_frontend_effect(entry["owner"], {
+                    "kind": "cities_became_ownerless",
+                    "punishment_id": entry["id"],
+                    "power": entry["power"],
+                    "provinces": list(entry.get("provinces") or []),
+                    "city_ids": freed,
+                })
         if entry["kind"] == "air_raid":
             # 轟炸停了，城市還要三回合才復工。
             rebuilding = self.engine.state.setdefault("city_rebuilding", {})

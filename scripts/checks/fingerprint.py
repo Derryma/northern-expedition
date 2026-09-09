@@ -2,8 +2,10 @@ import hashlib, os, sys, json
 root = sys.argv[1]
 # `_to_delete/` 只存在於使用者本機——device_bash 刪不掉檔案，所以要丟棄的東西
 # 都搬進那裡等他自己清。它不該算進指紋，否則兩邊永遠對不起來。
+# `_shots/` 是驗證腳本產生的存證截圖，隨時可以重跑產出，不是原始碼；
+# 它只會出現在跑過檢查的那一邊，算進指紋兩邊就永遠對不起來。
 skip_dirs = {'.git', '__pycache__', 'node_modules', '_source', 'PJ Boardgame',
-             '_to_delete'}
+             '_to_delete', '_shots'}
 rows = []
 for base, dirs, files in os.walk(root):
     dirs[:] = [d for d in dirs if d not in skip_dirs]

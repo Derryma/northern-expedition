@@ -33,7 +33,8 @@
       "lat": 40.82,
       "level": 3,
       "cash": 5,
-      "factory": 2
+      "factory": 2,
+      "cell_key": "25,13"
     },
     {
       "id": "chengde",
@@ -470,7 +471,8 @@
       "lat": 40.1,
       "level": 2,
       "cash": 4,
-      "factory": 1
+      "factory": 1,
+      "cell_key": "24,15"
     },
     {
       "id": "linfen",
@@ -655,7 +657,8 @@
       "level": 2,
       "cash": 4,
       "factory": 1,
-      "port": "river"
+      "port": "river",
+      "cell_key": "13,27"
     },
     {
       "id": "guiyang",
@@ -886,6 +889,10 @@
     },
     {
       "name": "甘肅",
+      "type": "省"
+    },
+    {
+      "name": "青海",
       "type": "省"
     },
     {

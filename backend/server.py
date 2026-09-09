@@ -40,6 +40,22 @@ SHARED_TACTICAL_STATE: Optional[Dict[str, Any]] = None
 SHARED_REVISION = 0
 
 
+def current_tactical() -> Optional[Dict[str, Any]]:
+    """伺服器現在手上那份戰術快照。
+
+    所有會讀它或改它的東西都必須拿這一份，而且是**每次請求重新拿**。
+    前端每推一次共享狀態，SHARED_TACTICAL_STATE 就換成新的 dict；
+    誰要是把上一次拿到的那個存起來重複用，寫進去的東西就沒有人看得到。
+    這個專案已經為此付過一次代價：所有吞併與歸屬轉移的事件卡都在
+    respond_event() 裡結算，而引擎手上那份是上一次 next_turn 留下的，
+    於是卡片回報成功、地圖一格沒動，而且時好時壞——端看那一輪前端有沒有
+    剛好在中間推過一次。
+
+    這是唯一的定義。不要在別處再寫一次 `SHARED_TACTICAL_STATE if ... else None`。
+    """
+    return SHARED_TACTICAL_STATE if isinstance(SHARED_TACTICAL_STATE, dict) else None
+
+
 def _tactical_fingerprint() -> str:
     """共享戰術狀態現在長什麼樣。用來判斷伺服器自己有沒有動過它。"""
     if SHARED_TACTICAL_STATE is None:
@@ -215,6 +231,17 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         global SHARED_REVISION
         before_revision = SHARED_REVISION
         before = _tactical_fingerprint()
+        # 引擎手上那份戰術快照，每一個請求都重新綁成**現在這一份**。
+        #
+        # 先前只有 /api/next-turn 會傳 tactical 進去，其餘路由沿用上一次留下的
+        # 那個物件。可是前端每推一次共享狀態，SHARED_TACTICAL_STATE 就會換成
+        # 一份新的 dict，於是引擎手上那個變成孤兒：事件卡在 respond_event 裡
+        # 把黔軍的地格、部隊、城市全部轉給了川軍——轉在一份沒有人再看的字典上。
+        # applied 回報成功，地圖一格沒動。
+        #
+        # 綁在這裡而不是各路由自己傳，理由和下面推進版本那段一樣：
+        # 「哪些路由會用到戰術快照」是一張遲早會漏掉新成員的清單。
+        ENGINE._tactical = current_tactical()
         result = handler(payload)
         # 路由自己管過版本（/api/shared-state、/api/restore-shared-state）就不重複加。
         if SHARED_REVISION == before_revision and _tactical_fingerprint() != before:
@@ -243,7 +270,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             city_garrison_report=payload.get("city_garrison_report") or {},
             marshal_ids=payload.get("marshal_ids") or {},
             # NPC 事件卡的觸發條件要看將領與編制的現況，那份資料在共享戰術狀態裡。
-            tactical=SHARED_TACTICAL_STATE,
+            tactical=current_tactical(),
         )
 
     def _new_game(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -326,6 +353,9 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def _respond_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.respond_event(
             str(payload["player"]), choice=payload.get("choice"), follow_up=payload.get("follow_up"),
+            # 吞併、歸屬轉移、編制增減的卡全部在這裡結算，改的是戰術快照。
+            # 傳的必須是伺服器現在手上這一份，不能沿用上一次 next_turn 留下的。
+            tactical=current_tactical(),
         )
 
     def _ack_frontend_effects(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -427,19 +457,19 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             payload.get("traits"),
             float(payload.get("resistance", 0) or 0),
             payload.get("general_id"),
-            tactical=SHARED_TACTICAL_STATE,
+            tactical=current_tactical(),
         )
 
     def _loyalty_effect(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         # 忠誠加減：挑誰、加多少、算成什麼樣的 override，全在後端。
         return ENGINE.resolve_loyalty_effect(
             str(payload["kind"]), str(payload["faction"]), payload.get("effect") or {},
-            tactical=SHARED_TACTICAL_STATE)
+            tactical=current_tactical())
 
     def _defection_quote(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         # 面板上的「策反費用／成功率」只能有一個來源。
         return ENGINE.defection_quote(str(payload["general_id"]),
-                                      tactical=SHARED_TACTICAL_STATE)
+                                      tactical=current_tactical())
 
     def _deal(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.make_deal(

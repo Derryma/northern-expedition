@@ -480,6 +480,175 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
   最後一條是實跑的：設環境變數、reload 模組、確認路徑真的跟著換。
   先前只斷言原始碼裡有那個字串——註解裡也有，所以永遠通過。
 
+省界與省級歸屬（第十七批）新增的驗證：
+* `scripts/checks/province_ownership_e2e.py`（真前端 14 關：逐格量四川、
+  陝西南部、甘肅東南、察哈爾、青海的歸屬，量西北軍四個軍的駐地，
+  再把地圖推上後端確認 `cellFactions` 一致）
+* `scripts/checks/mutate_province_ownership.py`（8 個突變體）
+* `scripts/checks/province_map_screenshots.py`（存證截圖，不判定）
+* `backend/test_backend.py` 的 `ProvinceBordersAndOwnershipTests`
+
+  這一輪把「某省全境歸某陣營」從手描的控制圈裡抽出來，寫成 `frontend/map.js`
+  的 `PROVINCE_OWNERSHIP_CLAIMS`，開局時拿真正的省界幾何逐格判定。
+  省界因此只剩一份（`frontend/data/provinces_1926.geojson`），
+  不會出現「省界改了、勢力界沒跟上」這種兩份幾何互相打架的情況。
+
+  e2e 裡「條款以外全圖一格都沒動」那一關拿 `factionAt()` 當基準，
+  所以不必在測試裡寫死任何一個會過期的格數。
+
+  城市落點對地格歸屬很敏感：`indexScenarioCells()` 是先篩同陣營的格子再取最近的，
+  所以地格一改色，城市就可能在畫面上跳一格。防線有三層——套用條款時護著別家
+  城市腳下那一格、城市名冊的 `cell_key` 釘選、以及 `CELL_OWNERSHIP_OVERRIDES`
+  這張逐格例外表。改地格歸屬之前先看一眼這三層。
+
+陣營吞併／歸屬轉移（第十八批）新增的驗證：
+* `scripts/checks/faction_transfer_e2e.py`（21 張卡逐張打真的 HTTP，
+  而且刻意在 next-turn 與 respond-event 中間換一份新快照上去——那正是競態）
+* `scripts/checks/mutate_faction_transfer.py`（8 個突變體）
+* `backend/test_backend.py` 的 `FactionTransferTacticalTests`
+
+  修的是一個一直在跑的缺陷：這些卡全部在 `respond_event()` 裡結算（卡片的
+  `apply` 要等每一家都回應完才跑），而 `self._tactical` 先前只有 `next_turn()`
+  會設。前端每推一次共享狀態，`SHARED_TACTICAL_STATE` 就換成新的一份，
+  引擎手上那個變成孤兒——卡片回報吞併成功、地圖一格沒動，而且時好時壞。
+
+  現在「伺服器現在手上那一份」只有 `current_tactical()` 一個定義，
+  `_run_route()` 在每個路由跑之前都重新綁一次。**不要把它存起來重複用。**
+  拿不到快照時一律記 `*_skipped` 並附 `reason`，不准靜靜跳過。
+
+排空競態與腳本埠號（第十九批）新增的驗證：
+* `scripts/checks/mutate_drain_race.py`（6 個突變體）
+* `backend/test_backend.py` 的 `DrainRaceTests`、`CheckScriptPortTests`
+* `scripts/checks/faction_transfer_screenshots.py`（隨機觸發吞併／轉移卡並截圖）
+
+  排空（`consumePendingFrontendEffects`）中間全是 await，而背景同步每 1.2 秒
+  跑一次。它只要在那些空檔裡 pull 一次，就會把「已經套用、還沒推上去」的
+  結果蓋掉——而流水號已經記進 `appliedFrontendEffectIds`，下一次只會補銷帳、
+  不會重做，效果永久消失。現在排空期間背景同步讓路（`drainInFlight`），
+  而且排空做完自己發佈一次。
+
+  同時修掉驗證腳本互相踩埠：一支一個埠、啟動的埠就是輪詢的埠、綁不上要出聲。
+  共用埠會製造假紅與假綠，那比壞掉更難查。
+
+NPC 那一半的世界（第二十批）新增的驗證：
+* `scripts/checks/mutate_npc_visible_state.py`（5 個突變體）
+* `backend/test_backend.py` 的 `NpcVisibleStateTests`
+* `scripts/checks/card_effect_screenshots.py`（指定卡逐張跑並截圖，含地格、
+  城市浮窗與鐵路狀態；不判定，只存證）
+* `scripts/checks/card_effects_land_e2e.py` 長到 18 關（多了 NPC 城市等級三關）
+
+  這一輪的缺陷是同一個形狀的兩個實例：**畫面只更新玩家自己那一半的世界**。
+  `syncStrategicCitiesFromState()` 先前只讀各玩家的 `city_economy`，所以
+  〈黔軍整頓茅台酒造〉把遵義升到 3 級之後，後端的 `city_level_overrides`
+  有寫、畫面永遠停在 2 級——因為遵義不屬於任何玩家。現在等級的權威來源是
+  後端的覆寫表，覆寫解除時回到開局基準（`baseCityLevels`），
+  `city_economy` 只在沒有覆寫時當備援。
+
+  第二個：鐵路停擺的**理由**先前只有後端知道，前端一律寫「搶修中」，
+  於是〈閻錫山封鎖窄軌鐵路〉這種永久封鎖看起來像是修得好的。
+  後端的 `railway_access()` 現在多回一份 `disabled_detail`
+  （`permanent` / `no_repair` / `until_general_leaves`），
+  前端只負責把它翻成字——判斷仍然只在後端。
+
+  留給下一個人的判準：改任何後端狀態之前先問一句「這東西**不屬於玩家**的時候，
+  畫面靠什麼知道它變了？」。答不出來就是又一個這種 bug。
+
+後端知道、玩家看不到（第二十一批）新增的驗證：
+* `scripts/checks/world_visibility_e2e.py`（真前端 25 關，埠 8794）
+* `scripts/checks/mutate_world_visibility.py`（14 個突變體）
+* `backend/test_backend.py` 的 `WorldVisibilityTests`（13 項）
+
+  上一批修完之後做的全面稽核，又挖出三個同一家族的缺陷：
+
+  **一、`remaining_turns` 為 null 在後端是「無限期」，前端當成「已結束」。**
+  前端在八個地方各寫一份 `Number(remaining_turns || 0) > 0`，於是每一種永久
+  效果在畫面上一律被當成過期：〈閻錫山封鎖窄軌鐵路〉兩條線全停，「持續效果」
+  清單一筆都不列；廢兩改元的永久免疫同理。現在判準只有一份——後端在
+  `snapshot()` 裡替每一筆限時效果蓋 `active`，前端只讀 `effectActive()`。
+  **不要再在前端寫任何一條 `remaining_turns` 的判斷。**
+
+  **二、擋得住卻不說。** 被事件按住的功能卡（`perk_suspensions`）與被禁掉的
+  行動（`action_bans`），後端本來就會在路由上擋下來，但畫面按鈕照樣亮著，
+  玩家按下去才收到例外訊息。後端現在送 `blocked_cards` / `blocked_actions`
+  （判準仍只在後端），前端負責把按鈕關掉並寫出理由。
+
+  **三、變無主卻沒人知道。** 列強「地面部隊佔領」的懲戒解除時，後端把城市從
+  `city_owners` **移除**——可是引擎裡到處都是 `.get(id, city["faction"])`，
+  鍵一不見，回退值就把城市悄悄還給 1926 劇本的原主（很可能是別家玩家），
+  而那份 `ownerless_cities` 名單全專案沒有人讀，地圖一格都沒動。現在記成
+  `city_owners[id] = None`（＝沒有主人），`ownerless_cities()` 由它算出來，
+  解除時開一筆 `cities_became_ownerless` 交辦讓畫面中立化，無主之地任何一家
+  都可以直接進去佔領。
+
+  順帶清掉兩個「存了沒人讀」：`npc_accounts`（整份死狀態，已移除，
+  `WorldVisibilityTests` 有守門）與前端自己重算的 `cityPunishmentStatus`
+  （改讀後端的 `city_punishment_status`）。
+
+  稽核方法留在這裡，下次照做：把後端 `state` 的每一個鍵列出來，數它在
+  引擎、測試、前端各出現幾次；只出現在寫入處的就是空轉，只出現在後端而
+  「玩家理當要看到」的就是這一類缺陷。`comprador_deflections` 與
+  `assassination_log` 前端零引用是**刻意**的（查帳用），不要順手刪。
+
+卡面 vs 實作 vs 畫面（第二十二批）新增的驗證：
+* `scripts/checks/world_visibility_e2e.py` 長到 38 關
+* `scripts/checks/mutate_world_visibility.py` 長到 25 個突變體
+* `backend/test_backend.py` 的 `EffectsReachThePlayerTests`（10 項）、
+  `OccupationVersusDrillStateTests`（8 項）
+
+  **稽核方法（下次照做）**：把每張事件卡的 payload（含 resolution 每個選項）
+  套進一局乾淨的引擎，比對前後的 `snapshot()`，列出它真正改了哪些鍵，
+  再問前端有沒有讀那個鍵。207 張裡有 36 張的改動**全部**落在前端讀不到的地方。
+  腳本留在 `/tmp` 不進 repo，但方法就是這三步，很容易重寫。
+
+  修掉的四件：
+
+  1. **戰鬥加成算了一整套，畫面一個字都沒有。** `combat_adapter` 回傳
+     `applied_modifiers`，註解還寫著「讓前端照著顯示」——而 `app.js` 只把它存進
+     `battle.appliedModifiers` 之後**再也沒有人讀**。技能、光環、限時效果、
+     要塞、NPC 事件（15.2 傅作義加固城防那一類）全部在暗地裡改數字。
+     現在後端替每一項貼上中文說明（`CombatModifierBuilder._modifier_label`），
+     前端在戰鬥面板列出來。**新增修正項來源時記得補 `_modifier_source`。**
+  2. **事件卡改寫功能卡的數字，手上那張卡還印著舊數字。** 卡面 `effect` 是靜態
+     文字，〈飛鳥非鳥案〉把〈盜賣文物〉收益永久改成 $30～60 之後畫面照舊。
+     後端新增 `card_field_changes`（解算後的卡 vs 資料檔原卡），前端在卡片下面
+     補一行「事件改寫：收益下限 $20 → $30」。
+  3. **單一銀行被事件停貸，借款面板照樣印「可借」。** `take_loan()` 會擋，
+     但 `loan_offers()` 只處理玩家層級的 `loan_ban_until_turn`，漏了
+     `bank_bans`。現在 offer 上帶 `bank_ban`，面板寫理由、收掉借款鈕。
+  4. **鐵路交涉的代價寫「沿線每座城市」，實作卻是整個省。** 12.58／12.59／12.60
+     的 `city_output.select` 從 `provinces` 改成新的 `railways` 選擇器
+     （`cities_along_railways()`，門檻 0.9 度是量出來的，落選者最近 1.08 度）。
+
+  還沒動、但已經知道的：`event_locks`、`scheduled_event_effects`、
+  `function_card_freezes`、`perk_copy_bonuses`、`student_unrest_relief`、
+  `unlocks` 這幾類改的是**未來的抽牌機率與卡池組成**，當下畫面沒有東西可以動。
+  要補的話是加一塊「全場效果」清單，不是改這些機制本身。
+
+佔領與演習是兩種狀態（第二十二批）：
+
+  先前兩者共用 `kind: "ground_occupation"` 加一個 `drill` 布林，於是**演習也算進
+  「先來後到」的爭奪**：一場日方演習就能把蘇聯的真佔領擋在門外，範圍重疊時還會
+  照日蘇開戰規則打一仗、把戰損算在玩家頭上——而卡面白紙黑字寫著
+  「演習不是懲戒：不造成任何傷害」。
+
+  現在 `mode` 是明白的欄位（`punishment` / `drill`），另有 `release_rule`
+  （`becomes_ownerless` / `returns_to_owner`）：
+
+  * `occupied_provinces()` 只算真的佔領（先來後到與日蘇開戰用它）；
+  * `drilled_provinces()` 是另一層；
+  * `ground_controlled_provinces()` 是兩者的聯集，收入歸零、部隊被鎖、
+    地圖換色用它（卡面兩種都寫了「期間金錢與工廠收入歸零」）；
+  * 前端 `punishmentIsDrill()` / `punishmentReleaseNote()` 把差別寫在地格資訊上，
+    佔領區是實線、演習區是虛線。
+
+  **不要再用 `entry["drill"]`**：`is_drill(entry)` 是唯一的判準（舊存檔才回退看
+  那個布林）。
+
+**絕對不要在這份 clone 裡跑 `git checkout <檔案>`。** repo 的 HEAD 落後工作區
+很多（這條線從來不 commit，改動是直接同步到使用者本機的），`git checkout` 會把
+檔案還原成好幾個批次以前的版本——這次就把 207 張的 `event_cards.json` 還原成
+59 張，靠使用者本機那份救回來的。要比對就跟本機比指紋，不要動 git。
+
 四條底線，違反等於白做：
 * 絕不推 main，一律 feature branch + PR。
 * 絕不在使用者本機那份 repo 裡跑任何 git 指令。
@@ -487,7 +656,7 @@ python3 scripts/checks/fingerprint.py .      # 產生整體指紋
 * 本質屬於後端的計算只能在後端，同一條規則不准前後端各寫一份。
 
 NPC 事件卡這條線**已經做完了**：33 張全部上線，apply.pending 清空，
-後端 1262 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
+後端 1332 項測試全綠。所以你多半是來改規則或修 bug 的，不是來補新機制的。
 
 改任何東西之前先跑一次收尾流程（HANDOFF.md 第六節），確認現況真的是綠的；
 改完也照那份流程走一遍，尤其別跳過突變測試——這個專案裡它挖出過真漏洞，

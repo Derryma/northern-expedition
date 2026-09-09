@@ -15,16 +15,20 @@ import asyncio, json, os, signal, subprocess, sys, tempfile, time, urllib.reques
 sys.path.insert(0, REPO)
 from playwright.async_api import async_playwright
 
-BASE = 'http://127.0.0.1:8766'
+BASE = 'http://127.0.0.1:8773'
 
 
 def start_server():
     # 驗證一律用自己的存檔目錄：不然每次起伺服器都會接續玩家上一盤，
     # 檢查會變成空轉，而且會把玩家的存檔覆蓋掉。
     env = {**os.environ, 'NE_GAME_DATA_DIR': tempfile.mkdtemp(prefix='ne-check-')}
-    proc = subprocess.Popen(['python3', '-m', 'backend.server'], env=env,
+    proc = subprocess.Popen(['python3', '-c', 'from backend.server import run; run(port=8773)'], env=env,
                             cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
+        # Popen 綁不上埠時子程序會立刻死掉，而輪詢仍可能連上**別人那一台**，
+        # 於是整份量測都是對著別的伺服器做的。先確認自己的那台真的活著。
+        if proc.poll() is not None:
+            raise SystemExit("伺服器啟動失敗（多半是埠被佔住）")
         try:
             urllib.request.urlopen(BASE + '/', timeout=2).read(1)
             return proc

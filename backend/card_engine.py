@@ -446,7 +446,6 @@ class GameEngine:
             "concession_controls": [],
             # city_rebuilding：轟炸解除後還在停工的城市 → 還要幾回合。
             "city_rebuilding": {},
-            "ownerless_cities": [],
             # event_duration_bonuses：依標籤替事件卡的持續時間加碼
             # （火燒紅蓮寺讓 [幫會] 卡多撐 1 回合）。
             "event_duration_bonuses": [],
@@ -470,14 +469,6 @@ class GameEngine:
             "assassination_log": [],
             # 在野將領池已被延攬的人：general_id -> 延攬方。全場每人只能被延攬一次。
             "recruited_exiles": {},
-            "npc_accounts": {
-                code: {
-                    "treasury": 60,
-                    "unit_reserves": {"infantry": 20, "cavalry": 5, "machine_gun": 3, "artillery": 2},
-                }
-                for code in WARLORD_CODES
-                if code not in DEFAULT_PLAYERS
-            },
             "turn_log": [],
             "last_action": None,
             "recurring_effects": [],
@@ -495,6 +486,139 @@ class GameEngine:
             self._sync_conditional_deck_cards(player)
             self.random.shuffle(self.state["players"][player]["function_deck"])
         return self.snapshot()
+
+    @staticmethod
+    def _effect_row_active(effect: Dict[str, Any]) -> bool:
+        """一筆限時效果現在還算不算數。
+
+        `remaining_turns` 是 None（或 `permanent`）代表**無限期**，不是過期。
+        前端先前每個地方各寫一份 `Number(remaining_turns || 0) > 0`，
+        於是所有永久效果在畫面上一律被當成已經結束——〈閻錫山封鎖窄軌鐵路〉
+        兩條線全停，「持續效果」清單卻一筆都不列。判準只能有一份，
+        所以由這裡蓋章，前端只讀 `active`。
+        """
+        if effect.get("permanent"):
+            return True
+        remaining = effect.get("remaining_turns")
+        if remaining is None:
+            return True
+        return int(remaining or 0) > 0
+
+    def _stamp_effect_activity(self, state: Dict[str, Any]) -> None:
+        """替送出去的每一筆限時效果蓋上 `active`。前端不自己判，只讀這個欄位。"""
+        for effect in state.get("railway_effects", []) or []:
+            effect["active"] = self._railway_effect_active(effect)
+        for key in ("port_effects", "city_output_effects"):
+            for effect in state.get(key, []) or []:
+                effect["active"] = self._effect_row_active(effect)
+        for payload in (state.get("players") or {}).values():
+            for effect in payload.get("timed_effects", []) or []:
+                effect["active"] = self._effect_row_active(effect)
+
+    # 事件卡可以改寫功能卡的數字。卡面上的說明文字是**靜態**的，改寫之後畫面
+    # 仍然印著原本那組數字——〈飛鳥非鳥案〉把〈盜賣文物〉的收益從 $20～40 永久
+    # 改成 $30～60，玩家手上那張卡卻還寫著 $20～40。所以由後端把「哪個欄位、
+    # 從多少變成多少」算好送出去，前端在卡片下面補一行。
+    CARD_FIELD_LABELS = {
+        "payout_min": "收益下限",
+        "payout_max": "收益上限",
+        "shame_copies_per_use": "每次洗入〈中國人之恥〉",
+        "max_copies": "〈中國人之恥〉張數上限",
+        "cash_gain": "現金收益",
+        "success_rate": "成功率",
+        "min_units": "最少營數",
+        "max_units": "最多營數",
+        "cost": "費用",
+    }
+
+    @staticmethod
+    def _card_field_text(field: str, value: Any) -> str:
+        if value is None:
+            return "—"
+        if field == "success_rate":
+            return f"{float(value) * 100:.0f}%"
+        if field in ("payout_min", "payout_max", "cash_gain", "cost"):
+            return f"${int(value)}"
+        return str(value)
+
+    def card_field_changes(self, player: str) -> Dict[str, Any]:
+        """這位玩家手上的每張功能卡，有哪些數字被事件卡改過。
+
+        比對的是「解算後的卡」與「資料檔上的原卡」，所以不管改寫是全場的
+        （`function_card_overrides`）還是只咬這一家的（`player_card_overrides`），
+        兩種都看得到。
+        """
+        payload = self._player(player)
+        seen = set(payload.get("hand") or []) | set(payload.get("function_deck") or []) \
+            | set(payload.get("discard") or [])
+        if payload.get("pending_draw"):
+            seen.add(str(payload["pending_draw"]))
+        out: Dict[str, Any] = {}
+        base_index = self.data["indexes"]["function_cards"]
+        for card_id in sorted(seen):
+            if card_id not in base_index:
+                continue
+            base = base_index[card_id]
+            resolved = self._card_template(card_id, player)
+            changes = []
+            for field, label in self.CARD_FIELD_LABELS.items():
+                if field not in base and field not in resolved:
+                    continue
+                if base.get(field) == resolved.get(field):
+                    continue
+                changes.append({
+                    "field": field,
+                    "label": label,
+                    "before": base.get(field),
+                    "after": resolved.get(field),
+                    "text": f"{label} {self._card_field_text(field, base.get(field))}"
+                            f" → {self._card_field_text(field, resolved.get(field))}",
+                })
+            if changes:
+                out[card_id] = changes
+        return out
+
+    def blocked_cards(self, player: str) -> Dict[str, Any]:
+        """這位玩家手上／牌庫裡現在打不出去的卡，以及擋住它的是什麼。
+
+        判準是 `suspended_card_entry`（事件卡的 perk 封鎖、研究院收編文物……），
+        規則只在後端。先前這份判斷完全沒送出去：被封鎖的卡照樣印一顆「打出」，
+        玩家按下去才收到例外訊息。
+        """
+        payload = self._player(player)
+        seen = set(payload.get("hand") or []) | set(payload.get("function_deck") or [])             | set(payload.get("discard") or [])
+        if payload.get("pending_draw"):
+            seen.add(str(payload["pending_draw"]))
+        blocked: Dict[str, Any] = {}
+        for card_id in sorted(seen):
+            entry = self.suspended_card_entry(player, str(card_id))
+            if not entry:
+                continue
+            blocked[str(card_id)] = {
+                "label": entry.get("label") or "事件影響",
+                "until_turn": entry.get("until_turn"),
+                "note": entry.get("note"),
+                "source_card": entry.get("source_card"),
+            }
+        return blocked
+
+    def blocked_actions(self, player: str) -> Dict[str, Any]:
+        """這位玩家現在被事件禁掉的行動（13.25 軍餉短缺、14.10 土匪劫道）。
+
+        後端本來就會在路由上擋下來，但畫面上按鈕照樣亮著，玩家按了才知道。
+        名稱用 ACTION_NAMES，前端不另備一份對照表。
+        """
+        blocked: Dict[str, Any] = {}
+        for action in sorted(self.BANNABLE_ACTIONS):
+            entry = self.action_banned(player, action)
+            if not entry:
+                continue
+            blocked[action] = {
+                "label": entry.get("label") or "事件效果",
+                "until_turn": entry.get("until_turn"),
+                "name": self.ACTION_NAMES.get(action, action),
+            }
+        return blocked
 
     def snapshot(self) -> Dict[str, Any]:
         state = deepcopy(self.state)
@@ -536,6 +660,22 @@ class GameEngine:
                 for unit in NAVY_RECRUIT_COSTS
                 for cash, factory in [self._navy_unit_cost_for(player, unit)]
             }
+            # 打不出去的卡與做不了的事。判準在後端，畫面只負責把按鈕關掉並寫理由。
+            payload["blocked_cards"] = self.blocked_cards(player)
+            payload["blocked_actions"] = self.blocked_actions(player)
+            # 事件卡改寫過的功能卡數字：卡面文字是靜態的，改寫要另外標出來。
+            payload["card_field_changes"] = self.card_field_changes(player)
+        # 每一筆限時效果現在還算不算數，由後端蓋章（永久＝remaining_turns 為 None）。
+        self._stamp_effect_activity(state)
+        # 無主城市：畫面要畫成中立、產出不算給任何人、任何一家都可以進城佔領。
+        state["ownerless_cities"] = self.ownerless_cities()
+        # 城市現在是「轟炸中」還是「重建中」，也由後端說——前端先前自己重算一份。
+        state["city_punishment_status"] = {
+            str(city["id"]): status
+            for city in self.data["strategic_map"]["cities"]
+            for status in [self.punishments.city_status(str(city["id"]))]
+            if status
+        }
         return state
 
     def restore_snapshot(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -1158,6 +1298,18 @@ class GameEngine:
             if city["id"] == city_id:
                 return city
         return None
+
+    def ownerless_cities(self) -> list:
+        """現在沒有主人的城市 id。
+
+        唯一的判準是 `city_owners` 上那一格是不是 None——列強「地面部隊佔領」
+        的懲戒解除時就這樣記（卡片寫的是「土地變無主，原屬勢力要重新佔領」）。
+        先前是把該城從 `city_owners` **移除**，於是全部 `.get(id, city["faction"])`
+        的回退把它悄悄還給 1926 劇本的原主（很可能是別家玩家），
+        而且那份 `ownerless_cities` 名單全專案沒有人讀，畫面也不會重畫。
+        """
+        return sorted(city_id for city_id, owner
+                      in (self.state.get("city_owners") or {}).items() if owner is None)
 
     def _refresh_city_income(self) -> None:
         for player, payload in self.state["players"].items():
@@ -3397,6 +3549,25 @@ class GameEngine:
                 offer["loan_ban_until_turn"] = int(ban_until)
                 offer["loan_ban_remaining_turns"] = int(ban_until) - turn
                 offer["tier_label"] = f"銀行拒貸至第 {int(ban_until)} 回合"
+        # 事件卡對**單一銀行**下的停貸令（1.3 大英總罷工、6.3 昭和金融恐慌、
+        # 13.20 洋行倒閉）。take_loan() 本來就會擋，但面板先前照樣印出
+        # 「可借 $30・利率 8%」，玩家按下去才收到例外訊息。
+        for offer in offers:
+            bank_id = offer.get("bank")
+            if bank_id is None:
+                continue
+            event_ban = self.bank_banned(player, str(bank_id))
+            if not event_ban:
+                continue
+            offer["can_borrow"] = False
+            offer["available"] = 0
+            offer["bank_ban"] = {
+                "label": event_ban.get("label") or "事件影響",
+                "until_turn": int(event_ban["until_turn"]),
+                "remaining_turns": max(0, int(event_ban["until_turn"]) - turn),
+            }
+            offer["tier_label"] = (f"{event_ban.get('label') or '事件影響'}"
+                                   f"（至第 {int(event_ban['until_turn'])} 回合）")
         return {
             "player": player,
             "turn": turn,
@@ -4194,6 +4365,29 @@ class GameEngine:
             if self._railway_effect_active(effect)
         ]
 
+    def disabled_railway_detail(self) -> Dict[str, Any]:
+        """每條停擺的線是為什麼停的。前端照著寫字，不自己判。
+
+        「搶修中」與「永久停擺、無法搶修」對玩家是兩回事：前者等得到、
+        後者等不到。先前前端一律寫「搶修中」，於是〈閻錫山封鎖窄軌鐵路〉
+        那種修不好的封鎖，畫面上看起來像個會自己好的暫時狀況。
+        """
+        detail: Dict[str, Any] = {}
+        for effect in self.state.get("railway_effects", []):
+            if not self._railway_effect_active(effect):
+                continue
+            name = str(effect.get("railway"))
+            gate = effect.get("until_general_leaves") or {}
+            detail[name] = {
+                "permanent": bool(effect.get("permanent")),
+                "no_repair": bool(effect.get("no_repair")),
+                "remaining_turns": effect.get("remaining_turns"),
+                "until_general_leaves": (gate.get("general") if isinstance(gate, dict)
+                                         else None),
+                "name": effect.get("name"),
+            }
+        return detail
+
     def foreign_railways(self) -> Dict[str, str]:
         """列強鐵路 → 該國的關係鍵。
 
@@ -4258,6 +4452,8 @@ class GameEngine:
             "hostile_threshold": FOREIGN_HOSTILE_THRESHOLD,
             "foreign_railways": foreign,
             "disabled": disabled,
+            # 停擺的理由：修得好還是修不好，由後端說了算。
+            "disabled_detail": self.disabled_railway_detail(),
             "by_player": by_player,
         }
 
@@ -4781,6 +4977,41 @@ class GameEngine:
         cash, factory = self._unit_cost_for(player, "infantry")
         return {"cash": cash * count, "factory": factory * count}
 
+    # 城市離鐵路多近才算「沿線」，以經緯度計。地圖上每一格約 1 度，
+    # 0.9 是量出來的：所有線在這個值之後都有明顯的斷層（最近的落選者 1.08 度），
+    # 所以不是拍腦袋挑的門檻。前端用的是六角格路徑，兩者必須挑出同一批城，
+    # world_visibility e2e 有一關就在比對這件事。
+    RAILWAY_STATION_DEGREES = 0.9
+
+    def cities_along_railways(self, railways) -> list:
+        """這幾條鐵路沿線的城市 id。名單只有這一份，前端不自己算。"""
+        import math
+        wanted = {str(name) for name in (railways or [])}
+        lines = [line for line in self.data["strategic_map"].get("railroads", [])
+                 if str(line.get("name")) in wanted]
+        unknown = wanted - {str(line.get("name")) for line in lines}
+        if unknown:
+            raise ValueError(f"strategic_map 裡沒有這幾條鐵路：{sorted(unknown)}")
+
+        def distance(point, start, end):
+            (px, py), (ax, ay), (bx, by) = point, start, end
+            dx, dy = bx - ax, by - ay
+            if dx == 0 and dy == 0:
+                return math.hypot(px - ax, py - ay)
+            share = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+            return math.hypot(px - (ax + share * dx), py - (ay + share * dy))
+
+        out = []
+        for city in self.data["strategic_map"]["cities"]:
+            point = (float(city["lon"]), float(city["lat"]))
+            for line in lines:
+                points = line.get("points") or []
+                if any(distance(point, points[i], points[i + 1]) < self.RAILWAY_STATION_DEGREES
+                       for i in range(len(points) - 1)):
+                    out.append(city["id"])
+                    break
+        return out
+
     def _select_cities(self, select, players) -> list:
         """依條件挑城市。給 city_output／city_output_once 共用。
 
@@ -4795,7 +5026,7 @@ class GameEngine:
         """
         known = {"port", "port_types", "min_level", "max_level", "concession",
                  "concession_of", "concession_of_any", "provinces",
-                 "owned_by_target", "waters", "largest", "random"}
+                 "owned_by_target", "waters", "railways", "largest", "random"}
         unknown = set(select or {}) - known
         if unknown:
             raise ValueError(f"_select_cities 不認得的條件：{sorted(unknown)}")
@@ -4834,6 +5065,12 @@ class GameEngine:
                 continue
             provinces = select.get("provinces")
             if provinces and city.get("province") not in provinces:
+                continue
+            # railways：鐵路「沿線」的城市（12.58 南滿路權、12.59 中東路、
+            # 12.60 滇越路的代價都是寫「沿線每座城市」，不是整個省）。
+            railways = select.get("railways")
+            if railways and not (set(self.cities_along_railways(railways))
+                                 & {city["id"]}):
                 continue
             if select.get("owned_by_target"):
                 owner = self.state["city_owners"].get(city["id"], city["faction"])
@@ -5593,18 +5830,29 @@ class GameEngine:
         if str(faction) not in retired:
             retired.append(str(faction))
 
-    def _transfer_all_faction_cells(self, from_faction: str, to_faction: str) -> None:
-        """將舊陣營控制的所有地格轉給新陣營。
+    def _transfer_all_faction_cells(self, from_faction: str, to_faction: str) -> Optional[int]:
+        """將舊陣營控制的所有地格轉給新陣營。回傳改了幾格；沒有戰術快照回 None。
 
         NPC 被併吞或歸附時，不只是城市和部隊要轉手，地圖上所有標記為該陣營的
         地格也要一併改色，否則地圖會出現「已經退出地圖的勢力」仍然佔據大片領土。
+
+        回傳值不是裝飾品：呼叫端要拿它決定 applied 裡記的是「成功」還是
+        「skipped」。先前這裡沒有快照就直接 return，卡片照樣回報吞併成功，
+        地圖上卻一格沒動——沒有任何一個測試或重播看得出來。
         """
         if not isinstance(self._tactical, dict):
-            return
+            return None
         cell_factions = self._tactical.setdefault("cellFactions", {})
+        moved = 0
         for cell_key, fac in list(cell_factions.items()):
             if fac == str(from_faction):
                 cell_factions[cell_key] = str(to_faction)
+                moved += 1
+        return moved
+
+    def _tactical_or_none(self) -> Optional[Dict[str, Any]]:
+        """伺服器現在這份戰術快照。拿不到就是 None——呼叫端必須出聲，不准靜默。"""
+        return self._tactical if isinstance(self._tactical, dict) else None
 
     def _hand_over_npc_armies(self, faction: str, new_owner: str) -> list:
         """把一個 NPC 陣營的部隊整批換旗，回傳搬了哪些。
@@ -6013,7 +6261,19 @@ class GameEngine:
 
     def respond_event(
         self, player: str, *, choice: Optional[str] = None, follow_up: Optional[str] = None,
+        tactical: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """回應一張待決的事件卡。
+
+        `tactical` 一定要傳，而且要傳**伺服器現在手上那一份**。
+        所有吞併、歸屬轉移、編制增減的卡都是在這裡結算的（卡片的 apply 要等
+        每一家都回應完才跑），而它們改的是戰術快照。先前這個參數不存在，
+        引擎用的是上一次 next_turn 留下來的那個物件——前端中間只要推過一次
+        共享狀態，伺服器就換上了新的一份，引擎手上那個變成孤兒：
+        卡面說「黔軍全軍併入劉湘部」，applied 也照樣回報成功，
+        可是地圖上黔軍一格沒少。
+        """
+        self._tactical = tactical if isinstance(tactical, dict) else self._tactical
         view = self.pending_event_view()
         if not view:
             raise ValueError("目前沒有待回應的事件卡")
@@ -6462,7 +6722,14 @@ class GameEngine:
             if broke:
                 entry["skipped_no_funds"] = broke
 
-            if bidders:
+            if bidders and self._tactical_or_none() is None:
+                # 沒有戰術快照就換不了旗。不能收錢又不交人——這裡直接不辦，
+                # 並且如實記一筆（下面那個 applied.append(entry) 會把它收走），
+                # 讓重播與測試看得見。
+                entry["kind"] = "contested_npc_recruit_skipped"
+                entry["reason"] = "no_tactical"
+                bidders = []
+            elif bidders:
                 for code in bidders:
                     self._player(code)["treasury"] = int(self._player(code)["treasury"]) - cost
                 # 成功率平分：n 個人各 1/n，所以必定有人成功——卡片沒有寫「可能全部失敗」。
@@ -6546,13 +6813,21 @@ class GameEngine:
                     f"{card.get('id')} 的 npc_general_transfer 目標不是 NPC 陣營：{to_faction}")
             if to_faction == home_faction:
                 raise ValueError(f"{card.get('id')}：{name} 本來就在 {to_faction}")
+            if self._tactical_or_none() is None:
+                # 沒有戰術快照就搬不了人。這裡一定要記一筆：先前是靜靜地
+                # 搬了 0 支部隊，applied 照樣回報「轉屬成功」。
+                applied.append({"kind": "npc_general_transfer_skipped",
+                                "reason": "no_tactical", "general": name,
+                                "from_faction": home_faction, "to_faction": to_faction})
+                transfer = None
+        if transfer:
             moved = []
             for army_id, army in sorted(self._living_npc_armies(self._tactical).items()):
                 if army.get("generalId") != general_id:
                     continue
                 army["faction"] = to_faction
                 moved.append({"armyId": army_id, "units": dict(army.get("units") or {})})
-            if moved and isinstance(self._tactical, dict):
+            if moved:
                 self._tactical.setdefault("generalOwners", {})[general_id] = to_faction
             entry = {"kind": "npc_general_transfer", "general": name,
                      "general_id": general_id, "from_faction": home_faction,
@@ -6597,8 +6872,10 @@ class GameEngine:
                 cities = self._npc_faction_cities(faction)
                 for city_id in cities:
                     self.state["city_owners"][city_id] = winner
-                # 將舊陣營控制的所有地格轉給接管方，這樣地圖才會完全更新
-                self._transfer_all_faction_cells(faction, winner)
+                # 將舊陣營控制的所有地格轉給接管方，這樣地圖才會完全更新。
+                # 轉了幾格要記在 applied 裡：拿不到快照時它是 None，
+                # 而 None 和 0 的意思完全不同——前者代表這件事根本沒辦成。
+                cells_moved = self._transfer_all_faction_cells(faction, winner)
                 self._retire_npc_faction(faction)
                 self._refresh_city_income()
                 holder = sorted(self.state["players"])[0]
@@ -6610,6 +6887,7 @@ class GameEngine:
                                  f'地盤 {len(cities)} 座城一併轉屬。')
                 applied.append({"kind": "npc_faction_absorb", "faction": faction,
                                 "owner": winner, "armies": armies, "cities": cities,
+                                "cells_moved": cells_moved,
                                 "ranking": self.player_force_ranking()})
 
         # ---- NPC 併 NPC（15.14／15.27 黔軍遭吞併）----
@@ -6660,8 +6938,9 @@ class GameEngine:
                 cities = self._npc_faction_cities(source)
                 for city_id in cities:
                     self.state["city_owners"][city_id] = winner_faction
-                # 將被併吞陣營控制的所有地格轉給接管方，這樣地圖才會完全更新
-                self._transfer_all_faction_cells(source, winner_faction)
+                # 將被併吞陣營控制的所有地格轉給接管方，這樣地圖才會完全更新。
+                # 轉了幾格要記在 applied 裡（見 npc_faction_absorb 那段的說明）。
+                cells_moved = self._transfer_all_faction_cells(source, winner_faction)
                 self._retire_npc_faction(source)
                 self._refresh_city_income()
                 holder = sorted(self.state["players"])[0]
@@ -6676,6 +6955,7 @@ class GameEngine:
                                 "into_general": name, "into_general_id": winner_general,
                                 "into_army_id": target_id, "units": dict(units),
                                 "absorbed": absorbed, "cities": cities,
+                                "cells_moved": cells_moved,
                                 "overflow": overflow})
 
         # ---- 永久改寫功能卡的利率（11.3 不裁兵：軍閥公債利率永久 12%）----

@@ -125,7 +125,8 @@ class CombatModifierBuilder:
                             .get("foreign_relations", {}).get(relation_rule["power"], 0))
                 if value >= int(relation_rule["min"]):
                     extra += relation_rule["modifiers"]
-            out += [dict(m) for m in self.base_modifiers(trait) + extra]
+            out += [{**dict(m), "source_trait": trait}
+                    for m in self.base_modifiers(trait) + extra]
         return out
 
     def aura_modifiers(self, *, own_general_id: Optional[str],
@@ -204,7 +205,8 @@ class CombatModifierBuilder:
         payload = self.engine._player(faction) if faction in self.engine.state["players"] else {}
         # 8.2 戈達德的火箭：要塞戰時雙方砲兵 +5%。
         if fortress and GODDARD_ROCKET_UNLOCK in (payload.get("unlocks") or []):
-            out.append(dict(GODDARD_ROCKET_MODIFIER))
+            out.append({**dict(GODDARD_ROCKET_MODIFIER),
+                        "source_rule": "goddard_rocket"})
         if defending:
             peace = self._forced_peace(faction)
             if peace:
@@ -213,7 +215,8 @@ class CombatModifierBuilder:
                                                           DEFAULT_FORCED_PEACE_MULTIPLIER)),
                             "source_effect": peace.get("name") or "強制和平"})
             if fortress:
-                out.append(dict(FORTRESS_DEFENCE_MODIFIER))
+                out.append({**dict(FORTRESS_DEFENCE_MODIFIER),
+                            "source_rule": "fortress_defence"})
         return out
 
     def _forced_peace(self, faction: str) -> Optional[Dict[str, Any]]:
@@ -226,6 +229,46 @@ class CombatModifierBuilder:
             if effect.get("permanent") or remaining is None or int(remaining) > 0:
                 return effect
         return None
+
+    # ── 說明文字：後端貼，前端只印 ──────────────────────────────────────
+    #
+    # 先前 build() 回傳的是一堆 {stat, multiplier}，沒有任何出處；
+    # combat_adapter 把它放進 `applied_modifiers`、註解寫著「讓前端照著顯示」，
+    # 而前端只是把它存進 battle.appliedModifiers 之後**再也沒有人讀**。
+    # 於是所有技能、光環、限時效果、要塞與 NPC 加成都在暗地裡改數字，
+    # 玩家看不到自己為什麼贏或輸。
+    STAT_LABELS = {
+        "attack": "攻擊",
+        "hp": "生命",
+        "harm_taken": "承傷",
+        "defence": "防禦",
+    }
+
+    def _modifier_label(self, modifier: Dict[str, Any]) -> str:
+        stat = self.STAT_LABELS.get(str(modifier.get("stat")), str(modifier.get("stat")))
+        multiplier = modifier.get("multiplier")
+        if multiplier is None:
+            amount = ""
+        else:
+            percent = (float(multiplier) - 1) * 100
+            amount = f"{stat} {percent:+.0f}%"
+        source = self._modifier_source(modifier)
+        return f"{source}：{amount}" if source and amount else (source or amount)
+
+    def _modifier_source(self, modifier: Dict[str, Any]) -> str:
+        trait = modifier.get("source_trait")
+        if trait:
+            return str((self.traits.get(trait) or {}).get("name") or trait)
+        aura = modifier.get("source_aura")
+        if aura:
+            name = str((self.traits.get(aura) or {}).get("name") or aura)
+            return f"{name}（光環）"
+        effect = modifier.get("source_effect")
+        if effect:
+            return str(effect)
+        rule = modifier.get("source_rule")
+        return {"goddard_rocket": "戈達德的火箭（要塞砲戰）",
+                "fortress_defence": "要塞防禦"}.get(str(rule), "")
 
     # ── 對外：組一整場 ──────────────────────────────────────────────────
     def build(self, battle: Dict[str, Any]) -> Dict[str, Any]:
@@ -260,5 +303,7 @@ class CombatModifierBuilder:
                 modifiers += self.situational_modifiers(
                     faction=faction, defending=bool(army.get("defending")), fortress=fortress)
                 modifiers += self.npc_combat_modifiers(faction, army.get("general_id"))
+                for modifier in modifiers:
+                    modifier["label"] = self._modifier_label(modifier)
                 out[army["id"]] = modifiers
         return out
