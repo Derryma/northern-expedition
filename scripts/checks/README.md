@@ -300,3 +300,21 @@ python3 scripts/checks/mutate_world_visibility.py
 **數字對不對也量過**：把 `effect` 文字裡的數字（含百分比轉成倍率）與 payload
 裡的數字對照，207＋90 張全掃。殘留的不一致只有三張鐵路交涉卡
 （12.58／12.59／12.60），已修；其餘都是文字寫百分比、資料存倍率之類的假警報。
+
+### 全卡池稽核工具
+
+```bash
+# 三軸全跑（數字、具名實體、效果有沒有出現在畫面上）
+python3 scripts/checks/card_effect_audit.py
+
+# 只跑一軸
+python3 scripts/checks/card_effect_audit.py 畫面
+```
+
+**不判定成敗，離開碼一律 0**——它只做候選篩選，結論要人看。假警報很多是正常的：
+軸一初篩 127 張，真正的不一致只有 3 張。
+
+軸三有一張 `DERIVED_OUTLETS` 對照表：有些原始狀態鍵前端本來就不該直接讀
+（後端會解算成另一個欄位送出去，例如 `perk_suspensions` → `blocked_cards`）。
+**新增這種「後端解算、前端只讀結果」的欄位時，記得補一行**，否則報告會一直
+對著已經修好的東西喊狼來了。

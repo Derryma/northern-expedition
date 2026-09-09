@@ -542,7 +542,8 @@ class BackendTests(unittest.TestCase):
 
         result = engine.use_function("N", "affiliation_slot_upgrade", target_general_id="he_yingqin", target_owner="N")
 
-        self.assertEqual(result["affiliation_slot_delta"], {"owner": "N", "general_id": "he_yingqin", "amount": 1})
+        self.assertEqual(result["affiliation_slot_delta"],
+                         {"owner": "N", "general_id": "he_yingqin", "amount": 1, "cap": 3})
 
     def test_first_united_front_requires_the_wang_jingwei_unlock(self):
         """國共合作需「汪精衛復出」生效後才可使用（該卡於下一批實作）。"""
@@ -18774,8 +18775,11 @@ class NpcVisibleStateTests(unittest.TestCase):
         body = re.search(r"function syncStrategicCitiesFromState\(\) \{(.*?)\n\}",
                          self._app_js(), re.S).group(1)
         stripped = "\n".join(re.sub(r"//.*$", "", line) for line in body.split("\n"))
-        self.assertIn("city_level_overrides", stripped,
-                      "城市等級沒有讀後端的覆寫表，NPC 手上的城會同步不到")
+        # 權威從 city_level_overrides 換成了 city_output——後者是後端拿覆寫表
+        # 算完的**等級＋產出**，全圖每一座城都有。要守的仍然是同一件事：
+        # 不准只讀 city_economy（那張表只有玩家自己的城）。
+        self.assertIn("city_output", stripped,
+                      "城市等級沒有讀後端算好的那一份，NPC 手上的城會同步不到")
 
     def test_npc_held_cities_really_are_outside_city_economy(self):
         """上面那條測試要有意義，前提是 NPC 的城真的不在 city_economy 裡。"""
@@ -19026,6 +19030,459 @@ class WorldVisibilityTests(unittest.TestCase):
 
 
 from backend.foreign_punishment import waters_for_city as _waters_for_city
+
+
+class NewGameAndProvinceNamingTests(unittest.TestCase):
+    """第二十三批：使用者回報「開了新局，除了駐軍以外地格還是沒變」。
+
+    兩個獨立的病根，都是**一份在權威計算之前拍的快照／清單蓋掉了正確答案**：
+
+      * `INITIAL_CELL_FACTIONS` 是 module load 時抓的，而
+        `applyProvinceOwnershipClaims()` 是 `boot()` 裡才跑的。resetGame()
+        把 cell.fac 寫回那份快照，等於把省級歸屬保證整套抹掉。
+      * `strategicProvinceForCell()` 只認「有城市的省份」。青海整省沒有城
+        （西寧照舊民國地圖歸甘肅），於是幾何答對了「青海」也不算數，
+        一路掉到「最近的城市是哪一省」→ 西寧 → 甘肅。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _no_comments(text):
+        return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+    def test_reset_reapplies_the_province_claims(self):
+        body = re.search(r"async function resetGame\(\) \{(.*?)\n\}\n",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("SCENARIO_CELL_FACTIONS", stripped)
+        self.assertIn("indexProvinceCells()", stripped,
+                      "新局還原地格之後沒有重跑省級歸屬保證——地圖會倒退回沒有條款的版本")
+
+    def test_the_stale_snapshot_name_is_gone(self):
+        """改名是刻意的：那份快照不是「開局的地圖」，別再有人這樣用它。"""
+        self.assertNotIn("INITIAL_CELL_FACTIONS", self._app_js())
+
+    def test_province_naming_trusts_the_border_file_not_the_city_list(self):
+        body = re.search(r"function strategicProvinceForCell\(cell\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertNotIn("provinceOptions()", stripped,
+                         "又拿「有沒有城市」當省份存在與否的判準了")
+        self.assertIn("mapProvinceNames()", stripped)
+
+    def test_qinghai_really_has_no_city(self):
+        """上面那條要有意義，前提是青海真的一座城都沒有。"""
+        cities = load_game_data()["strategic_map"]["cities"]
+        provinces = {c.get("province") for c in cities}
+        self.assertNotIn("青海", provinces,
+                         "青海有城市了？那這一組驗證就空轉了，改挑別的省")
+        self.assertIn("甘肅", provinces)
+
+    def test_the_border_file_puts_qinghai_and_xining_where_we_decided(self):
+        """幾何本身要對：青海湖在青海、西寧仍在甘肅。"""
+        from backend.data_store import REPO_ROOT
+        geojson = json.loads(
+            (REPO_ROOT / "frontend/data/provinces_1926.geojson").read_text(encoding="utf-8"))
+
+        def rings(feature):
+            coords = feature["geometry"]["coordinates"]
+            return [coords] if feature["geometry"]["type"] == "Polygon" else coords
+
+        def inside(lon, lat, ring):
+            hit = False
+            count = len(ring)
+            for index in range(count):
+                x1, y1 = ring[index][0], ring[index][1]
+                x2, y2 = ring[(index + 1) % count][0], ring[(index + 1) % count][1]
+                if (y1 > lat) != (y2 > lat) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
+                    hit = not hit
+            return hit
+
+        def province_at(lon, lat):
+            for feature in geojson["features"]:
+                for polygon in rings(feature):
+                    if polygon and polygon[0] and inside(lon, lat, polygon[0]):
+                        return feature["properties"]["name"]
+            return None
+
+        self.assertEqual(province_at(100.2, 36.9), "青海", "青海湖")
+        self.assertEqual(province_at(98.1, 36.3), "青海", "都蘭")
+        self.assertEqual(province_at(101.8, 36.6), "甘肅", "西寧")
+        self.assertEqual(province_at(103.8, 36.06), "甘肅", "蘭州")
+
+
+class OutputAndRuleOwnershipTests(unittest.TestCase):
+    """第二十四批：產能有沒有跟著等級走，以及規則有沒有偷偷住在前端。
+
+      * 城市升級之後**產能要跟上**。等級讀 `city_level_overrides`（全圖都有）、
+        產出卻只讀 `city_economy`（只有玩家的城），於是 NPC 手上的城
+        升級之後標籤寫「3 級城市」、產出還印著 2 級的數字。
+      * 將領直屬名額（大將 3、中將 2、少將 0、中將上限 3）先前只寫在 app.js，
+        後端連〈擴編直屬〉的上限都無從把關。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _no_comments(text):
+        return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+    # ── 產能跟著等級走 ──────────────────────────────────────────────
+    def test_output_follows_the_level_for_every_city(self):
+        engine = GameEngine(seed=5)
+        before = engine.snapshot()["city_output"]
+        self.assertIn("zunyi", before, "全圖每一座城都要在裡面，不只玩家的")
+        self.assertEqual(before["zunyi"], {"level": 2, "cash": 2, "factory": 2})
+        engine.state.setdefault("city_level_overrides", {})["zunyi"] = 3
+        after = engine.snapshot()["city_output"]["zunyi"]
+        self.assertEqual(after["level"], 3)
+        self.assertGreater(after["cash"], before["zunyi"]["cash"],
+                           "等級升了產能沒跟上")
+        self.assertGreater(after["factory"], before["zunyi"]["factory"])
+
+    def test_the_report_covers_cities_no_player_owns(self):
+        """這條要有意義，前提是遵義真的不在任何玩家的 city_economy 裡。"""
+        engine = GameEngine(seed=5)
+        listed = {city["id"] for code in engine.state["players"]
+                  for city in engine._city_economy_for(code)}
+        self.assertNotIn("zunyi", listed)
+        self.assertIn("zunyi", engine.snapshot()["city_output"])
+
+    def test_the_card_actually_moves_both_numbers(self):
+        """〈黔軍整頓茅台酒造〉：真的跑一次卡，等級與產能一起動。"""
+        engine = GameEngine(seed=5)
+        card = next(c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+                    if c["id"] == "qian_army_moutai")
+        before = engine.snapshot()["city_output"]["zunyi"]
+        engine._apply_event_payload(card["apply"],
+                                    players=list(engine.state["players"]), card=card)
+        after = engine.snapshot()["city_output"]["zunyi"]
+        self.assertEqual(after["level"], before["level"] + 1)
+        self.assertEqual(after["cash"], before["cash"] + 1)
+        self.assertEqual(after["factory"], before["factory"] + 1)
+
+    def test_the_frontend_reads_the_resolved_output(self):
+        body = re.search(r"function syncStrategicCitiesFromState\(\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("state.city_output", stripped,
+                      "產出又只讀玩家的 city_economy 了，NPC 的城會等級與產能各說各話")
+
+    # ── 規則不准只住在前端 ──────────────────────────────────────────
+    def test_general_slot_rules_live_in_the_backend(self):
+        from backend.card_engine import FEATURES
+        slots = FEATURES["general_slots"]
+        self.assertEqual(slots["great_general"], 3)
+        self.assertEqual(slots["lieutenant_general"], 2)
+        self.assertEqual(slots["major_general"], 0)
+        self.assertEqual(slots["lieutenant_general_cap"], 3)
+
+    def test_the_frontend_no_longer_hard_codes_them(self):
+        stripped = self._no_comments(self._app_js())
+        self.assertNotIn("const LIEUTENANT_SLOT_CAP", stripped)
+        self.assertNotIn("const GENERAL_SLOT_DEFAULTS", stripped)
+        self.assertIn('backendRule("features.general_slots")', stripped)
+
+    def test_the_backend_enforces_the_slot_cap(self):
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        card_id = next(c["id"] for c in engine.data["function_cards"]["cards"]
+                       if c.get("mechanic") == "affiliation_slot")
+        engine.state["players"][player]["hand"] = [card_id]
+        with self.assertRaises(ValueError):
+            engine.use_function(player, card_id,
+                                target_general_id="he_yingqin", current_slots=3)
+        # 還沒滿的時候要放行。
+        engine.state["players"][player]["hand"] = [card_id]
+        result = engine.use_function(player, card_id,
+                                     target_general_id="he_yingqin", current_slots=2)
+        self.assertEqual(result["affiliation_slot_delta"]["cap"], 3)
+
+    def test_every_function_card_mechanic_is_known_to_the_backend(self):
+        """前端不准有後端不認得的機制——那就是「只在畫面上發生」。"""
+        from backend.data_store import REPO_ROOT
+        source = (REPO_ROOT / "backend/card_engine.py").read_text(encoding="utf-8")
+        handled = set(re.findall(r'mechanic == "([a-z_]+)"', source))
+        for group in re.findall(r"mechanic in \(([^)]*)\)", source):
+            handled |= {piece.strip().strip("\"'") for piece in group.split(",") if piece.strip()}
+        cards = load_game_data()["function_cards"]["cards"]
+        unknown = sorted({c["mechanic"] for c in cards
+                          if c.get("mechanic") and c["mechanic"] not in handled})
+        self.assertEqual(unknown, [], f"這些機制後端沒有分派：{unknown}")
+
+    # ── 削兵的規則只有一份 ──────────────────────────────────────────
+    def test_cutting_to_a_force_target_does_not_overshoot(self):
+        """「裁到 N 點」要命中 N，不能一刀砍過頭。"""
+        engine = GameEngine(seed=5)
+        units = {"infantry": 15, "cavalry": 2, "artillery": 4, "machine_gun": 2}
+        result = engine.cut_units_to_force(units, multiplier=0.6)
+        self.assertEqual(result["force_before"], 37)
+        self.assertEqual(result["target"], 22)
+        self.assertEqual(result["force_after"], 22,
+                         "裁過頭了——「−40%」會變成更大的損失")
+
+    def test_the_naive_cut_really_would_overshoot(self):
+        """這條在於證明上面那關**驗得到東西**：天真的裁法真的會砍過頭。"""
+        from backend.card_engine import UNIT_FORCE_POINTS
+        units = {"infantry": 15, "cavalry": 2, "artillery": 4, "machine_gun": 2}
+        target = 22
+        naive = dict(units)
+        order = sorted(UNIT_FORCE_POINTS, key=lambda u: -UNIT_FORCE_POINTS[u])
+        force = lambda d: sum(d.get(u, 0) * p for u, p in UNIT_FORCE_POINTS.items())
+        while force(naive) > target:
+            unit = next((u for u in order if naive.get(u, 0) > 0), None)
+            if unit is None:
+                break
+            naive[unit] -= 1
+        self.assertLess(force(naive), target,
+                        "天真的裁法沒有砍過頭？那這組數字挑得不好，換一組")
+
+    def test_a_multiplier_of_one_changes_nothing(self):
+        engine = GameEngine(seed=5)
+        units = {"infantry": 15, "cavalry": 2, "artillery": 4, "machine_gun": 2}
+        result = engine.cut_units_to_force(units, multiplier=1.0)
+        self.assertEqual(result["units"], {**units})
+        self.assertEqual(result["force_after"], result["force_before"])
+
+    def test_a_negative_multiplier_is_a_loud_error(self):
+        engine = GameEngine(seed=5)
+        with self.assertRaises(ValueError):
+            engine.cut_units_to_force({"infantry": 5}, multiplier=-0.5)
+
+    def test_the_frontend_asks_the_backend_to_cut(self):
+        stripped = self._no_comments(self._app_js())
+        body = re.search(r"async function scaleArmyForce\(army, multiplier\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        self.assertIn('api("/api/cut-force"', self._no_comments(body),
+                      "前端又自己裁兵了——同一條規則會有兩個答案")
+        baseline = re.search(
+            r"async function setArmyForceFromBaseline\(army, chain, remaining\) \{(.*?)\n\}",
+            self._app_js(), re.S).group(1)
+        self.assertIn('api("/api/cut-force"', self._no_comments(baseline))
+        self.assertIn("/api/cut-force", stripped)
+
+    def test_the_route_is_wired_up(self):
+        from backend.data_store import REPO_ROOT
+        server = (REPO_ROOT / "backend/server.py").read_text(encoding="utf-8")
+        self.assertIn('"/api/cut-force": self._cut_force', server)
+
+    def test_trait_names_do_not_drift_between_the_two_copies(self):
+        """技能中文名在 general_traits.json 與 app.js 各有一份。
+
+        目前兩份一致；這條測試在於它們**開始不一致的那一天**要有人叫。
+        """
+        traits = load_game_data()["general_traits"]["traits"]
+        block = re.search(r"const TRAIT_LABELS = \{(.*?)\n\};",
+                          self._app_js(), re.S).group(1)
+        front = dict(re.findall(r'^\s*([a-z_0-9]+):\s*"([^"]*)"', block, re.M))
+        self.assertEqual(sorted(front), sorted(traits), "兩份技能清單的項目對不上")
+        drifted = {key: (front[key], traits[key].get("name"))
+                   for key in front if front[key] != traits[key].get("name")}
+        self.assertEqual(drifted, {}, f"技能中文名兩邊對不上：{drifted}")
+
+
+class RevivalUnlockAndImmunityTests(unittest.TestCase):
+    """第二十五批：兵力復活、事件卡解鎖的功能卡、以及免疫／封鎖類。
+
+    抓到的兩個缺陷都是老家族：
+
+      * 12.49〈國際紅十字救護團〉卡面寫「復原隨機 **2** 個營」，資料檔也寫了
+        `units: 2`——但那個欄位**沒有人讀**，實際只補 1 營。
+      * 綁省份的免疫（10.8 復興儒學）後端擋得住，但畫面上的「指定將領」
+        照樣把免疫的目標列出來，玩家選了按了才收到「本牌對其無效」。
+    """
+
+    @staticmethod
+    def _app_js():
+        from backend.data_store import REPO_ROOT
+        return (REPO_ROOT / "frontend/app.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _no_comments(text):
+        return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
+
+    @staticmethod
+    def _draw(engine, card_id, limit=14):
+        engine.state["event_pool"] = [card_id]
+        view = None
+        for _ in range(limit):
+            engine.next_turn(active_player=sorted(engine.state["players"])[0])
+            view = engine.pending_event_view()
+            if view:
+                break
+        applied, guard = [], 0
+        while view and guard < 24:
+            guard += 1
+            options = (view["card"].get("resolution") or {}).get("options") or []
+            result = engine.respond_event(view.get("waiting_for") or view["drawer"],
+                                          choice=options[0]["id"] if options else None)
+            applied += (result.get("applied") or [])
+            view = engine.pending_event_view()
+        return applied
+
+    @staticmethod
+    def _open(seed=11):
+        engine = GameEngine(seed=seed)
+        for payload in engine.state["players"].values():
+            payload["treasury"] = 300
+            payload["factory_points"] = 300
+            for power in payload.get("foreign_relations", {}):
+                payload["foreign_relations"][power] = 0
+        return engine
+
+    # ── 兵力復活 ────────────────────────────────────────────────────
+    def test_the_red_cross_really_heals_two_battalions(self):
+        """12.49 卡面寫 2 營，資料寫了 units: 2——那個欄位要真的有人讀。"""
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        engine.state["players"][player]["timed_effects"] = [
+            {"kind": "field_hospital_window", "remaining_turns": 3, "units": 2}]
+        self.assertEqual(engine._field_hospital_battalions(player, "anyone"), 2)
+
+    def test_the_swimmer_card_still_heals_one(self):
+        """5.2 沒寫 units，吃預設值 1。"""
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        engine.state["players"][player]["timed_effects"] = [
+            {"kind": "field_hospital_window", "remaining_turns": 3}]
+        self.assertEqual(engine._field_hospital_battalions(player, "anyone"), 1)
+
+    def test_penicillin_uses_the_card_number(self):
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        engine.state["players"][player]["timed_effects"] = []
+        engine.state["players"][player]["field_hospital_generals"] = ["he_yingqin"]
+        card = next(c for c in engine.data["function_cards"]["cards"]
+                    if c.get("mechanic") == "field_hospital")
+        self.assertEqual(engine._field_hospital_battalions(player, "he_yingqin"),
+                         int(card["recover_battalions"]))
+
+    def test_the_better_source_wins_when_both_apply(self):
+        engine = GameEngine(seed=5)
+        player = sorted(engine.state["players"])[0]
+        engine.state["players"][player]["timed_effects"] = [
+            {"kind": "field_hospital_window", "remaining_turns": 3, "units": 2}]
+        engine.state["players"][player]["field_hospital_generals"] = ["he_yingqin"]
+        self.assertEqual(engine._field_hospital_battalions(player, "he_yingqin"), 2)
+
+    def test_the_card_data_still_says_two(self):
+        """上面那條要有意義，前提是 12.49 真的寫著 units: 2。"""
+        cards = {c.get("ref"): c for c in
+                 json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]}
+        flags = cards["12.49"]["apply"]["timed_flags"]
+        self.assertEqual(flags[0]["units"], 2)
+        self.assertNotIn("units", cards["5.2"]["apply"]["timed_flags"][0])
+
+    def test_the_recovery_report_says_how_many(self):
+        """畫面先前一律寫「+1 營」，補了兩營也寫 1。"""
+        body = re.search(r"function applyFieldHospitalResult\(report\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("entry.picked", stripped,
+                      "畫面沒有讀後端送的實際補兵清單")
+        # 只看這支函式：別處的「各 +1 營」是 NPC 例行補兵，那裡本來就是 1。
+        self.assertNotIn("+1 營", stripped)
+
+    # ── 事件卡解鎖的功能卡 ──────────────────────────────────────────
+    UNLOCK_CHAIN = (("3.1", "event_sound_film", "sound_film_studio"),
+                    ("3.2", "event_radio_network", "state_radio_station"),
+                    ("6.2", "event_model_a_car", "mechanized_division"),
+                    ("7.1", "event_government_scholars", "government_scholars"),
+                    ("7.4", "event_penicillin", "penicillin_import"),
+                    ("8.4", "event_graf_zeppelin", "zeppelin_recon"))
+
+    def test_every_unlock_flag_has_a_card_that_wants_it(self):
+        """解鎖旗標開了卻沒有卡在等它＝空轉。"""
+        cards = json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+        granted = set()
+
+        def walk(node):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key == "unlock":
+                        granted.update(value if isinstance(value, list) else [value])
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+        for card in cards:
+            walk(card.get("apply") or {})
+        wanted = {c.get("requires_unlock") for c in load_game_data()["function_cards"]["cards"]
+                  if c.get("requires_unlock")}
+        # event_goddard_rocket 沒有功能卡在等它——它是戰鬥修正的開關，
+        # combat_modifiers.situational_modifiers 會讀。這是刻意的例外。
+        orphan = sorted(granted - wanted - {"event_goddard_rocket"})
+        self.assertEqual(orphan, [], f"這些解鎖旗標沒有任何卡在等：{orphan}")
+
+    def test_the_locked_card_cannot_be_played_before_the_event(self):
+        for ref, unlock, card_id in self.UNLOCK_CHAIN:
+            engine = self._open()
+            player = sorted(engine.state["players"])[0]
+            engine.state["players"][player]["hand"] = [card_id]
+            with self.assertRaises(ValueError, msg=f"{ref} {card_id}"):
+                engine.use_function(player, card_id)
+
+    def test_the_event_grants_the_flag_and_shuffles_the_card_in(self):
+        for ref, unlock, card_id in self.UNLOCK_CHAIN:
+            engine = self._open()
+            player = sorted(engine.state["players"])[0]
+            before = engine._card_count_in_player_zones(engine._player(player), card_id)
+            card = next(c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]
+                        if c.get("ref") == ref)
+            self._draw(engine, card["id"])
+            self.assertIn(unlock, engine._player(player).get("unlocks") or [],
+                          f"{ref} 沒有給出 {unlock}")
+            after = engine._card_count_in_player_zones(engine._player(player), card_id)
+            self.assertGreater(after, before, f"{ref} 解鎖了但 {card_id} 沒進牌庫")
+
+    # ── 免疫 ────────────────────────────────────────────────────────
+    def test_province_immunity_blocks_the_card_and_says_so(self):
+        engine = self._open()
+        self._draw(engine, "confucian_revival")
+        holder = sorted(engine.state["players"])[0]
+        self.assertIsNotNone(
+            engine.province_card_immunity(holder, "local_autonomy_agitation"))
+        published = engine.snapshot()["immune_targets"]
+        self.assertIn("local_autonomy_agitation", published)
+        self.assertIn(holder, published["local_autonomy_agitation"])
+        self.assertIn("無效", published["local_autonomy_agitation"][holder]["note"])
+
+    def test_the_target_list_marks_immune_factions(self):
+        stripped = self._no_comments(self._app_js())
+        self.assertIn("immuneTarget(card.id, owner)", stripped,
+                      "指定將領的下拉又把免疫的目標當成可選了")
+        self.assertIn("immune_targets", stripped)
+
+    def test_widening_and_suspending_run_through_the_real_draw(self):
+        """10.1 擴大、10.3 按下——兩張都走 conditional_branch 的 if_active。"""
+        cards = {c.get("ref"): c for c in
+                 json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]}
+        engine = self._open()
+        self._draw(engine, "confucian_revival")
+        applied = self._draw(engine, cards["10.1"]["id"])
+        branch = next(x for x in applied if x.get("kind") == "conditional_branch")
+        self.assertEqual(branch["chosen"], "if_active", branch)
+        holder = sorted(engine.state["players"])[0]
+        provinces = (engine._player(holder)["province_card_immunities"][0]["provinces"])
+        self.assertIn("直隸", provinces)
+
+        engine2 = self._open()
+        self._draw(engine2, "confucian_revival")
+        applied2 = self._draw(engine2, cards["10.3"]["id"])
+        branch2 = next(x for x in applied2 if x.get("kind") == "conditional_branch")
+        self.assertEqual(branch2["chosen"], "if_active", branch2)
+        entry = engine2._player(holder)["province_card_immunities"][0]
+        self.assertIsNotNone(entry.get("suspended_until_turn"))
+        self.assertIsNone(
+            engine2.province_card_immunity(holder, "local_autonomy_agitation"),
+            "免疫被按下去了，province_card_immunity 卻還說有效")
 
 
 class OccupationVersusDrillStateTests(unittest.TestCase):

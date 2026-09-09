@@ -37,6 +37,12 @@ UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
 # 戰力點的唯一真源是 comabt_system/data/unit_stats.json（戰鬥解算器也讀同一份）。
 # 先前這裡是第三份寫死的副本：資料檔一份、combat.py 一份、這裡一份，
 # 三份剛好相同，但沒有任何東西保證它們會一直相同。
+# 將領直屬名額：大將 3、中將 2（可用〈擴編直屬〉加到 3）、少將 0。
+GREAT_GENERAL_SLOTS = 3
+LIEUTENANT_GENERAL_SLOTS = 2
+MAJOR_GENERAL_SLOTS = 0
+LIEUTENANT_SLOT_CAP = 3
+
 UNIT_FORCE_POINTS = {
     unit: int(stats["force_points"])
     for unit, stats in load_game_data()["unit_stats"]["units"].items()
@@ -210,6 +216,15 @@ FEATURES = {
     "function_card_max_hand_size": MAX_HAND_SIZE,
     "army_force_cap": ARMY_FORCE_CAP,
     "unit_force_points": dict(UNIT_FORCE_POINTS),
+    # 將領直屬名額。將領樹住在前端，但**名額是規則**，規則只能有一份。
+    # 先前這三個數字（大將 3、中將 2、少將 0，中將上限 3）只寫在 app.js，
+    # 後端完全不知道——〈擴編直屬〉那張卡因此只有前端在把關。
+    "general_slots": {
+        "great_general": GREAT_GENERAL_SLOTS,
+        "lieutenant_general": LIEUTENANT_GENERAL_SLOTS,
+        "major_general": MAJOR_GENERAL_SLOTS,
+        "lieutenant_general_cap": LIEUTENANT_SLOT_CAP,
+    },
     "forced_march": {
         "cash": 10,
         "factory": 10,
@@ -578,6 +593,34 @@ class GameEngine:
                 out[card_id] = changes
         return out
 
+    def immune_targets(self) -> Dict[str, Any]:
+        """誰對哪張卡免疫，以及理由。給畫面用的。
+
+        〈復興儒學〉那種「只要還控制某省，這張卡對你無效」的免疫，先前只在
+        `use_function()` 裡擋——畫面上的「指定將領」下拉照樣把免疫的目標列出來，
+        玩家選了、按了，才收到「本牌對其無效」。與被事件按住的卡同一種毛病。
+
+        判定仍然只有 `province_card_immunity()` 一份，這裡只是把它逐格算出來。
+        """
+        out: Dict[str, Any] = {}
+        cards = {card_id
+                 for code in self.state["players"]
+                 for entry in (self._player(code).get("province_card_immunities") or [])
+                 for card_id in (entry.get("cards") or [])}
+        for code in sorted(self.state["players"]):
+            for card_id in sorted(cards):
+                entry = self.province_card_immunity(code, card_id)
+                if not entry:
+                    continue
+                out.setdefault(card_id, {})[code] = {
+                    "label": entry.get("label") or "事件影響",
+                    "province": entry.get("province"),
+                    "provinces": entry.get("provinces") or [entry.get("province")],
+                    "note": f"{entry.get('label', '事件影響')}：仍控制"
+                            f"{entry.get('province')}，本牌對其無效",
+                }
+        return out
+
     def blocked_cards(self, player: str) -> Dict[str, Any]:
         """這位玩家手上／牌庫裡現在打不出去的卡，以及擋住它的是什麼。
 
@@ -667,6 +710,11 @@ class GameEngine:
             payload["card_field_changes"] = self.card_field_changes(player)
         # 每一筆限時效果現在還算不算數，由後端蓋章（永久＝remaining_turns 為 None）。
         self._stamp_effect_activity(state)
+        # 誰對哪張卡免疫（復興儒學那種綁省份的免疫），畫面照著把目標標出來。
+        state["immune_targets"] = self.immune_targets()
+        # 每一座城市現在的等級與產出（全圖，不分屬誰）。
+        # 各玩家的 city_economy 只有自己的城，NPC 手上的城一座都不在裡面。
+        state["city_output"] = self.city_output_report()
         # 無主城市：畫面要畫成中立、產出不算給任何人、任何一家都可以進城佔領。
         state["ownerless_cities"] = self.ownerless_cities()
         # 城市現在是「轟炸中」還是「重建中」，也由後端說——前端先前自己重算一份。
@@ -1135,6 +1183,60 @@ class GameEngine:
             city["level"] = int(self._with_level(city).get("level", city.get("level", 1)))
             city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["scenario_faction"])
         return strategic_map
+
+    def cut_units_to_force(self, units: Dict[str, Any],
+                           target: Optional[int] = None,
+                           multiplier: Optional[float] = None) -> Dict[str, Any]:
+        """把一支部隊裁到指定的戰力點。**這條規則只有這一份實作。**
+
+        部隊住在前端，所以列強懲戒那種「範圍內部隊戰力一次性 −40%」只能由
+        前端動手——但**怎麼裁**是規則。先前前端自己寫了一套「從最貴的兵種裁到
+        不超過目標為止」，跟這裡的 `_cut_down_to_force`（每一步只裁「裁下去還不會
+        低於 target」的最貴兵種）答案不一樣：37 點打 −40%，這裡給 22，前端給 21。
+        砲兵多的部隊差更多——那正是 `_cut_down_to_force` 的註解一開始就在警告的事。
+        現在前端改打這條路由，兩邊不可能再各說各話。
+        """
+        clean = {unit: max(0, int(units.get(unit) or 0)) for unit in UNIT_FORCE_POINTS}
+        before = self._force_of(clean)
+        if target is None:
+            if multiplier is None:
+                raise ValueError("cut_units_to_force 需要 target 或 multiplier")
+            if float(multiplier) < 0:
+                raise ValueError("倍率不能是負的")
+            target = int(math.floor(before * float(multiplier)))
+        target = max(0, min(ARMY_FORCE_CAP, int(target)))
+        after = clean if target >= before else self._cut_down_to_force(clean, target)
+        return {"units": after, "force_before": before,
+                "force_after": self._force_of(after), "target": target}
+
+    def city_output_report(self) -> Dict[str, Any]:
+        """每一座城市**現在**的等級與產出。全圖，不分屬誰。
+
+        `_strategic_map_snapshot()` 只在 bootstrap 送一次，之後城市等級被事件卡
+        改過（`city_level_overrides`）、或被 `city_development` 加過建設，
+        畫面就對不上了——而各玩家的 `city_economy` 只有自己那幾座城，
+        NPC 手上的城一座都不在裡面。
+
+        於是先前的症狀是：升級卡打在 NPC 手上的城，畫面標籤跟著變成「3 級城市」，
+        **產出卻還印著 2 級的數字**——等級與產能各說各話。
+        算法只有一份（就是下面這幾行，與 `_strategic_map_snapshot` 同源），
+        前端只讀結果。
+        """
+        out: Dict[str, Any] = {}
+        for city in self.data["strategic_map"]["cities"]:
+            bonus = self.state.get("city_development", {}).get(city["id"], {})
+            levelled = self._with_level(city)
+            cash, factory = self._adjusted_city_output(
+                city["id"],
+                scaled_city_value(levelled, "cash") + int(bonus.get("cash", 0)),
+                scaled_city_value(levelled, "factory") + int(bonus.get("factory", 0)),
+            )
+            out[str(city["id"])] = {
+                "level": int(levelled.get("level", city.get("level", 1))),
+                "cash": cash,
+                "factory": factory,
+            }
+        return out
 
     def concession_override(self) -> Optional[Dict[str, Any]]:
         """11.2 南洋兄弟與英美煙草：期間內租界加成停發，改成每回合固定值。"""
@@ -1735,16 +1837,30 @@ class GameEngine:
         資料檔目前只有一張 field_hospital 卡；真要出現第二張、而且數字不一樣時
         這裡會直接擋下來，不會偷偷挑第一張（FieldHospitalSourceTests 也守著）。
         """
+        # 事件卡開的全軍醫院可以自己指定歸隊營數。
+        # 12.49〈國際紅十字救護團〉卡面寫「復原隨機 2 個營」，資料檔也寫了
+        # `units: 2`——但先前這裡只認功能卡的 recover_battalions，那個欄位
+        # **從來沒有人讀**，紅十字會實際只補 1 營。又一個「寫了沒人讀」。
+        window = self.active_timed_flag(faction, "field_hospital_window") or {}
+        from_window = max(1, int(window.get("units",
+                                            self.DEFAULT_FIELD_HOSPITAL_BATTALIONS))) \
+            if window else 0
+
         roster = self._player(faction).get("field_hospital_generals") or []
-        if general_id not in roster:
-            return self.DEFAULT_FIELD_HOSPITAL_BATTALIONS
-        values = {max(1, int(card.get("recover_battalions",
-                                      self.DEFAULT_FIELD_HOSPITAL_BATTALIONS)))
-                  for card in self.data["function_cards"]["cards"]
-                  if card.get("mechanic") == "field_hospital"}
-        if len(values) > 1:
-            raise ValueError(f"field_hospital 卡的 recover_battalions 不只一種：{sorted(values)}")
-        return values.pop() if values else self.DEFAULT_FIELD_HOSPITAL_BATTALIONS
+        from_card = 0
+        if general_id in roster:
+            values = {max(1, int(card.get("recover_battalions",
+                                          self.DEFAULT_FIELD_HOSPITAL_BATTALIONS)))
+                      for card in self.data["function_cards"]["cards"]
+                      if card.get("mechanic") == "field_hospital"}
+            if len(values) > 1:
+                raise ValueError(
+                    f"field_hospital 卡的 recover_battalions 不只一種：{sorted(values)}")
+            from_card = values.pop() if values else self.DEFAULT_FIELD_HOSPITAL_BATTALIONS
+
+        # 兩種來源同時在場時取多的那個：盤尼西林 1 營、紅十字 2 營，
+        # 兩者都有的時候玩家吃到的是比較好的那一份，不是相加。
+        return max(from_window, from_card) or self.DEFAULT_FIELD_HOSPITAL_BATTALIONS
 
     def field_hospital_recovery(self, tactical: Optional[Dict[str, Any]],
                                 turn: Optional[int] = None) -> Dict[str, Any]:
@@ -1791,7 +1907,10 @@ class GameEngine:
                 units[pick] += 1
                 picked.append(pick)
             pick = picked[0]
-            healed.append({"armyId": army_id, "unit": pick,
+            # `picked` 是這一次真的補了哪幾營（紅十字會一次補兩營）。
+            # 先前只送 `unit`，畫面因此一律寫「+1 營」——補了兩營也寫 1。
+            healed.append({"armyId": army_id, "unit": pick, "picked": picked,
+                           "battalions": len(picked),
                            "units": self._clamp_to_force_cap(units)})
         return {"healed": healed, "cleared": cleared}
 
@@ -2007,6 +2126,9 @@ class GameEngine:
         target_power: Optional[str] = None,
         exchange_direction: Optional[str] = None,
         exchange_amount: Optional[int] = None,
+        # 將領樹住在前端，所以「這位中將現在幾個直屬名額」只有前端數得出來。
+        # 上限的判定仍然在後端——前端送事實，後端判規則。
+        current_slots: Optional[int] = None,
     ) -> Dict[str, Any]:
         player_state = self._player(player)
         if card_id not in player_state["hand"]:
@@ -2370,10 +2492,17 @@ class GameEngine:
                 raise ValueError("affiliation slot upgrade requires a target general")
             if target_owner and target_owner != player:
                 raise ValueError("affiliation slot upgrade can only target your own general")
+            # 名額上限在後端把關。將領樹住在前端，所以「現在幾個名額」要前端送上來；
+            # 但**上限是規則**，不能只有前端擋——那正是「應該自動化的機制還要玩家
+            # 自主遵守」的另一種寫法。
+            if current_slots is not None and int(current_slots) >= LIEUTENANT_SLOT_CAP:
+                raise ValueError(
+                    f"該中將直屬名額已達上限（{LIEUTENANT_SLOT_CAP}）")
             affiliation_slot_delta = {
                 "owner": player,
                 "general_id": target_general_id,
                 "amount": 1,
+                "cap": LIEUTENANT_SLOT_CAP,
             }
         elif mechanic == "permanent_player_output":
             bonus = player_state.setdefault("permanent_output_bonus", {"cash": 0, "factory": 0})

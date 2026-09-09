@@ -310,6 +310,69 @@ async () => {
 }
 """
 
+# ── 11. 列強懲戒的一次性戰力損失 ──────────────────────────────────
+#
+# 這是**唯一**由前端做算術的戰力路徑：後端只送「損失率」，削兵在前端做。
+# 部隊住在前端，所以只能這樣分工——但也因此它一直沒有 e2e 覆蓋。
+# 這一關驗兩件事：削的量對不對，以及三重疊加走的是「以初始值為基準相加」
+# （−40%−10%−40% → 剩 10%），不是逐次相乘（那會剩 32.4%）。
+PUNISHMENT_FORCE_LOSS = r"""
+async () => {
+  const d = window.__neDebug;
+  const me = d.getCurrentPlayer();
+  const mine = d.allArmies(true).filter(a => d.factionForArmy(a) === me
+    && a.status === 'active' && d.cells[a.cellKey]?.land);
+  const army = mine[0];
+  const cell = d.cells[army.cellKey];
+  const province = d.strategicProvinceForCell(cell);
+  const forceOf = (a) => d.forcePoints(d.armyUnits(a));
+  const before = forceOf(army);
+  const unitsBefore = { ...d.armyUnits(army) };
+
+  const inject = async (effect) => {
+    const snap = JSON.parse(JSON.stringify((await d.api('/api/shared-state')).engine_state));
+    for (const code of Object.keys(snap.players)) snap.players[code].pending_frontend_effects = [];
+    snap.players[me].pending_frontend_effects = [effect];
+    await d.api('/api/restore-shared-state', { engine_state: snap, tactical: d.tacticalSnapshot() });
+    await d.pullSharedState();
+    await d.consumePendingFrontendEffects();
+  };
+
+  await inject({ id: 'probe-damage', kind: 'foreign_punishment_damage',
+                 punishment_id: 'probe', punishment_kind: 'ground_occupation',
+                 power: 'jp', provinces: [province], waters: [], city_ids: [],
+                 army_force: -0.4 });
+  const afterSingle = forceOf(army);
+  const unitsAfterSingle = { ...d.armyUnits(army) };
+
+  // 三重疊加：後端送的是**累計**損失率，前端要從這條鏈開始前的初始值重算。
+  await inject({ id: 'probe-chain-1', kind: 'foreign_punishment_damage',
+                 punishment_id: 'probe2', punishment_kind: 'ground_occupation',
+                 power: 'su', provinces: [province], waters: [], city_ids: [],
+                 chain: 'probe-chain', cumulative_army_force: 0.4 });
+  const chain1 = forceOf(army);
+  await inject({ id: 'probe-chain-2', kind: 'foreign_punishment_damage',
+                 punishment_id: 'probe2', punishment_kind: 'ground_occupation',
+                 power: 'su', provinces: [province], waters: [], city_ids: [],
+                 chain: 'probe-chain', cumulative_army_force: 0.9 });
+  const chain2 = forceOf(army);
+
+  // 期望值也跟後端要——這一關要驗的是「前端有沒有照後端的裁法裁」，
+  // 不是「前端的算式跟我寫在測試裡的算式一不一樣」。
+  const expectSingle = (await d.api('/api/cut-force',
+    { units: unitsBefore, multiplier: 0.6 })).force_after;
+  return {
+    省: province, 原始戰力: before,
+    單筆minus40之後: afterSingle,
+    單筆該剩: expectSingle,
+    鏈第一段之後: chain1, 鏈第二段之後: chain2,
+    鏈第二段該剩: (await d.api('/api/cut-force',
+      { units: unitsAfterSingle, multiplier: 0.1 })).force_after,
+    鏈中途不該停在: chain1,
+  };
+}
+"""
+
 
 async def main():
     proc = start_server()
@@ -334,6 +397,7 @@ async def main():
             out['銀行停貸'] = await page.evaluate(BANK_BAN)
             out['佔領與演習'] = await page.evaluate(OCCUPATION_VS_DRILL)
             out['戰鬥加成'] = await page.evaluate(COMBAT_MODIFIERS)
+            out['懲戒戰力損失'] = await page.evaluate(PUNISHMENT_FORCE_LOSS)
             if errs:
                 out['__主控台錯誤__'] = errs[:5]
             await page.close(); await b.close()
@@ -355,6 +419,7 @@ async def main():
     bank = out.get('銀行停貸') or {}
     occ = out.get('佔領與演習') or {}
     modifiers = out.get('戰鬥加成') or {}
+    damage = out.get('懲戒戰力損失') or {}
     checks = {
         "永久停擺：後端認定兩條線都停了":
             sorted(rail.get('後端認定停擺的線') or []) == ['京漢鐵路', '正太鐵路'],
@@ -424,6 +489,12 @@ async def main():
             and (occ.get('佔領') or {}).get('是演習') is False,
         "戰鬥加成：面板印得出後端貼的說明": modifiers.get('有沒有印出來') is True,
         "戰鬥加成：沒有加成時不佔版面": modifiers.get('空的時候不佔位') is True,
+        "懲戒戰力：驗得到東西（部隊本來有兵）": (damage.get('原始戰力') or 0) > 0,
+        "懲戒戰力：單筆 −40% 削的量對":
+            damage.get('單筆minus40之後') == damage.get('單筆該剩'),
+        "懲戒戰力：疊加是以初始值為基準相加（第二段從基準重算，不是在現值上再乘）":
+            damage.get('鏈第二段之後') == damage.get('鏈第二段該剩')
+            and damage.get('鏈第二段之後') < damage.get('鏈中途不該停在'),
     }
     print()
     failed = [n for n, ok in checks.items() if not ok]

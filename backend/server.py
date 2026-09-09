@@ -172,6 +172,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             "/api/respond-event": self._respond_event,
             "/api/ack-frontend-effects": self._ack_frontend_effects,
             "/api/draw-function": self._draw_function,
+            "/api/cut-force": self._cut_force,
             "/api/use-function": self._use_function,
             "/api/discard-for-draw": self._discard_for_draw,
             "/api/diplomacy": self._diplomacy,
@@ -334,6 +335,14 @@ class PlaytestHandler(BaseHTTPRequestHandler):
     def _draw_function(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.draw_function(str(payload["player"]))
 
+    def _cut_force(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """把一支部隊裁到指定的戰力點。部隊住在前端，裁法住在後端。"""
+        return ENGINE.cut_units_to_force(
+            payload.get("units") or {},
+            target=payload.get("target"),
+            multiplier=payload.get("multiplier"),
+        )
+
     def _use_function(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return ENGINE.use_function(
             str(payload["player"]),
@@ -348,6 +357,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             target_power=payload.get("target_power"),
             exchange_direction=payload.get("exchange_direction"),
             exchange_amount=payload.get("exchange_amount"),
+            current_slots=payload.get("current_slots"),
         )
 
     def _respond_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
