@@ -318,3 +318,48 @@ python3 scripts/checks/card_effect_audit.py 畫面
 （後端會解算成另一個欄位送出去，例如 `perk_suspensions` → `blocked_cards`）。
 **新增這種「後端解算、前端只讀結果」的欄位時，記得補一行**，否則報告會一直
 對著已經修好的東西喊狼來了。
+
+## 港口水域與地形（第二十七批）
+
+```bash
+# 真前端 23 關，埠 8819
+python3 scripts/checks/port_terrain_e2e.py
+
+# 13 個突變體（判定器＝上面那支 e2e ＋ PortWaterRosterTests ＋ CityRosterTests）
+python3 scripts/checks/mutate_port_terrain.py
+```
+
+單元測試：`PortWaterRosterTests`（9 項）、`CityRosterTests`（6 項）。
+
+**抓到的真缺陷：成都與襄陽是「地圖上的長江河港、後端不屬於任何水系」。**
+水域名單 `foreign_punishment.RIVER_PORTS` 是手維護的，這兩座從來沒被寫進去，
+於是 `waters_for_city()` 回傳空陣列——長江水患／封鎖挑港市時挑不到它們。
+可是前端 `markRiverPortWater()` 另外拿 `nearestRiverName()` 量最近的河，
+把它們標成「河港・長江」，連封鎖的斜紋都照塗。**畫面說被淹、結算說沒事。**
+
+修法照專案的老規矩：**規則只留一份，在後端。**
+`_strategic_map_snapshot()` 現在對每座港市送出 `city["waters"]`，
+前端 `portWaterName()` 只讀；名單漏掉時前端**大聲丟例外**，不再悄悄補一個河名。
+`nearestRiverName()` 與 `pointSegmentDistance()` 隨之刪除（前端已無人使用）。
+
+**加港口城市的檢查清單**（照做，不要憑印象）：
+
+1. `scenario/data/strategic_map.json` 加 `"port": "river"` 或 `"sea"`；
+2. 河港**一定要**在 `RIVER_PORTS` 裡選一條幹流（支流掛幹流：漢水、岷江
+   都歸長江）。海港不用，`coastal_sea_name()` 照經緯度自己分；
+3. 開真前端量三件事——地格有沒有變成水域、河名等不等於後端給的水系、
+   鄰格有沒有同一條河（沒有的話艦隊到不了，那是一座孤港）；
+4. 海港的地格必須至少貼著一格近海，否則艦隊一樣進不去。
+
+**對照組不能省。** 「河港放陸軍通行」這一關單獨看是假綠——`riverStepAllowed()`
+整條 return true 也會過。所以 e2e 另外掃全圖沒有城市的河道格，斷言它們照樣
+攔得住陸軍；突變體 P9 就是靠這一關抓到的。
+
+**把港口改回普通城市時要改兩邊。** 名冊拿掉 `"port"`、`RIVER_PORTS` 撤掉 id，
+缺一不可——`_select_cities` 是先看 waters 再看 port，只回退一半會出現
+「不是港口卻被長江水患挑到」。突變體 P7／P7b 分別咬這兩半（自貢就是這樣改回去的）。
+
+**等價突變體的處理方式**（P11）：`portWaterName()` 裡那個 throw 在資料完整時
+永遠跑不到，把它改成「回傳內河」的突變體與原始碼等價，任何判定器都看不出差別。
+解法不是刪掉那個突變體，而是替那條路徑補一關——e2e 直接拿一座假的港市去問
+`portWaterName()`，斷言它拋例外。補完之後 11/11 全抓。

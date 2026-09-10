@@ -78,8 +78,12 @@ POWER_TERRITORY_COLORS = {
 # 相同的四條分界線（渤海海峽、長江口、平潭—富貴角、南澳島），河港則直接列出來——
 # 河道走向沒辦法用一條經緯度規則講清楚，硬湊只會錯得很難查。
 RIVER_PORTS = {
+    # 支流上的港市一律掛在幹流底下（漢水、岷江都是長江的支流），
+    # 水患與封鎖才算得到它們。成都與襄陽先前漏在這份名單外面，於是地圖上
+    # 是「河港・長江」、後端卻不屬於任何水系——畫面塗到它們身上、結算卻跳過。
     "長江": ["yichang", "hankou", "wuchang", "jiujiang", "anqing",
-             "nanjing", "suzhou", "shanghai", "chongqing", "luzhou"],
+             "nanjing", "suzhou", "shanghai", "chongqing", "luzhou",
+             "shashi", "chengdu", "xiangyang"],
     "黃河": ["lanzhou", "baotou", "tongguan", "luoyang", "zhengzhou",
              "kaifeng", "jinan"],
     "珠江": ["guangzhou", "foshan", "wuzhou", "nanning"],

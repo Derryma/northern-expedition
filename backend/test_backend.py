@@ -5008,21 +5008,26 @@ class ForeignActionBatchOneTests(unittest.TestCase):
         self.assertNotIn("渤海", engine.punishments.blockaded_waters())
 
     def test_the_port_count_gate_actually_bites(self):
-        """「控制至少三座長江河港城市」先前只寫在說明裡，沒有真的擋。"""
+        """「控制至少三座長江河港城市」先前只寫在說明裡，沒有真的擋。
+
+        長江河港的名單會長（沙市、自貢後來都加進來了），所以這裡不寫死幾座，
+        一律先把整條長江推給別人，再精準地把三座交回 W——否則名冊一加城市，
+        W 手上就會多出沒被清掉的港市，這一關會安靜地驗不到東西。
+        """
         engine = GameEngine(seed=3)
         card = engine._event_template("japanese_navy_blockades_yangtze")
         for code in engine.state["players"]:
             engine.state["players"][code]["foreign_relations"]["jp"] = -6
-        yangtze = ["hankou", "wuchang", "nanjing", "shanghai", "jiujiang"]
+        yangtze = engine._select_cities({"waters": ["長江"], "port": True}, [])
+        self.assertGreaterEqual(len(yangtze), 4, "長江河港太少，這一關驗不到東西")
         for city_id in yangtze:
             engine.state["city_owners"][city_id] = "S"
-        engine.state["city_owners"]["hankou"] = "W"
-        engine.state["city_owners"]["wuchang"] = "W"
-        engine.state["city_owners"]["nanjing"] = "W"
+        for city_id in yangtze[:3]:
+            engine.state["city_owners"][city_id] = "W"
         eligible = engine._event_eligible_players(card)
         self.assertIn("W", eligible)
-        engine.state["city_owners"]["nanjing"] = "S"
-        engine.state["city_owners"]["wuchang"] = "S"
+        engine.state["city_owners"][yangtze[1]] = "S"
+        engine.state["city_owners"][yangtze[2]] = "S"
         self.assertNotIn("W", engine._event_eligible_players(card),
                          "只剩一座長江河港就不該再被封鎖")
 
@@ -19743,6 +19748,218 @@ class EffectsReachThePlayerTests(unittest.TestCase):
         engine = GameEngine(seed=3)
         with self.assertRaises(ValueError):
             engine.cities_along_railways(["不存在的鐵路"])
+
+
+class CityRosterTests(unittest.TestCase):
+    """名冊上新加的城市要跟同級的鄰居用同一套規則，不能是手寫的特例。
+
+    這一輪加了六座：信陽（河南）、柳州（廣西）、赤峰（熱河）、惠州（廣東）、
+    沙市（湖北）都是二級，徐州（江蘇）是三級。守三件事：
+      * 六座都在名冊上，等級／省份／陣營與該省既有城市一致；
+      * 產出走 city_output_report()（也就是等級換算那條公式），
+        與同級的既有城市逐項相同——`economy/output.py` 早就不讀 JSON 裡那組
+        `cash`/`factory` 了，等級是唯一的輸入，所以在名冊裡寫死數字沒有用；
+      * 站在鐵路上的城市要真的被算成車站：信陽在京漢鐵路的轉折點上，
+        徐州就是津浦與隴海的交會點，兩者都必須出現在
+        cities_along_railways() 的結果裡，否則鐵路類卡片會漏掉它們。
+    地格落點、顏色、有沒有把別的城市擠開，由
+    scripts/checks/province_ownership_e2e.py 在真前端上驗。
+
+    徐州釘了 `cell_key`：它腳下那一格（29,22）是附近**唯一**同時掛著津浦與
+    隴海的格子，交會點比格子的省份標籤重要，所以寧可釘住它。副作用是那一格
+    的省界標籤報「安徽」而城市自己報「江蘇」——大同（山西／察哈爾）早就是
+    同一種情形，卡片選城市看的是城市自己的 `province`。
+    """
+
+    @staticmethod
+    def _cities():
+        return GameEngine(seed=5).data["strategic_map"]["cities"]
+
+    def test_city_ids_are_unique(self):
+        ids = [city["id"] for city in self._cities()]
+        self.assertEqual(len(ids), len(set(ids)), "城市 id 撞號，後端的 city_owners 會互相蓋掉")
+
+    NEW_CITIES = (
+        ("xinyang", "信陽", "河南", 2),
+        ("liuzhou", "柳州", "廣西", 2),
+        ("xuzhou", "徐州", "江蘇", 3),
+        ("chifeng", "赤峰", "熱河", 2),
+        ("huizhou", "惠州", "廣東", 2),
+        ("shashi", "沙市", "湖北", 2),
+        ("yulin", "榆林", "陝西", 2),
+        ("xianyang", "咸陽", "陝西", 2),
+        ("zigong", "自貢", "四川", 2),
+    )
+
+    def test_the_new_cities_are_on_the_roster(self):
+        by_id = {city["id"]: city for city in self._cities()}
+        for city_id, name, province, level in self.NEW_CITIES:
+            self.assertIn(city_id, by_id, f"{name} 不在名冊上")
+            city = by_id[city_id]
+            self.assertEqual(city["name"], name)
+            self.assertEqual(city["province"], province)
+            self.assertEqual(city["level"], level, f"{name} 應該是 {level} 級城市")
+
+    def test_the_new_cities_belong_to_whoever_holds_the_province(self):
+        cities = self._cities()
+        for city_id, _name, province, _level in self.NEW_CITIES:
+            new = next(city for city in cities if city["id"] == city_id)
+            neighbours = {city["faction"] for city in cities
+                          if city["province"] == province and city["id"] != city_id}
+            self.assertEqual({new["faction"]}, neighbours,
+                             f"{new['name']} 的陣營與{province}其他城市不一致")
+
+    def test_the_new_cities_produce_the_same_as_their_level_peers(self):
+        engine = GameEngine(seed=5)
+        report = engine.city_output_report()
+        for city_id, peer in (("xinyang", "yueyang"), ("liuzhou", "wuzhou"),
+                              ("chifeng", "yueyang"), ("huizhou", "foshan"),
+                              ("shashi", "yueyang"), ("xuzhou", "suzhou"),
+                              ("yulin", "yueyang"), ("xianyang", "yueyang"),
+                              ("zigong", "wuzhou")):
+            self.assertEqual(report[city_id], report[peer],
+                             "同級城市的產出應該由等級換算，不是各寫各的")
+
+    def test_the_new_railway_towns_are_counted_as_stations(self):
+        engine = GameEngine(seed=5)
+        self.assertIn("xinyang", engine.cities_along_railways(["京漢鐵路"]),
+                      "信陽就坐在京漢鐵路上，鐵路類卡片不該漏掉它")
+        for railway in ("津浦鐵路", "隴海鐵路"):
+            self.assertIn("xuzhou", engine.cities_along_railways([railway]),
+                          f"徐州是{railway}的交會點之一")
+        # 咸陽緊貼著隴海鐵路的西端（西安），所以它也是車站——這是對的，
+        # 一併釘住免得日後有人以為它漏了。
+        self.assertIn("xianyang", engine.cities_along_railways(["隴海鐵路"]),
+                      "咸陽就在隴海鐵路西端的西安旁邊")
+        off_rail = engine.cities_along_railways(
+            ["京漢鐵路", "津浦鐵路", "隴海鐵路", "粵漢鐵路", "京奉鐵路"])
+        for city_id in ("liuzhou", "huizhou", "shashi", "chifeng",
+                        "yulin", "zigong"):
+            self.assertNotIn(city_id, off_rail, "這幾座城市不在任何一條鐵路上")
+
+    def test_xuzhou_is_pinned_to_the_junction_tile(self):
+        xuzhou = next(city for city in self._cities() if city["id"] == "xuzhou")
+        self.assertEqual(xuzhou.get("cell_key"), "29,22",
+                         "徐州要釘在津浦與隴海交會的那一格，不然地格一改色就會漂走")
+
+
+class PortWaterRosterTests(unittest.TestCase):
+    """港市貼著哪片水域只有一份答案，而且每一座港市都答得出來。
+
+    這一批是為了一個真的漏洞立的：`RIVER_PORTS` 是手維護的名單，
+    成都與襄陽從來沒有被寫進去，於是 `waters_for_city()` 對它們回傳空的——
+    長江水患／封鎖挑得到的港市裡沒有它們，可是**前端照樣把它們畫成
+    「河港・長江」**（`markRiverPortWater()` 自己拿 `nearestRiverName()`
+    量最近的河），連封鎖的斜紋都塗上去。畫面說被淹、結算說沒事。
+
+    修法是把水域改成後端送出來的欄位（`_strategic_map_snapshot()` 的
+    `city["waters"]`），前端只讀；下面這幾關則保證名單不會再有人漏掉：
+      * 每一座港市（河港、海港）都問得出至少一片水域；
+      * 每一座河港剛好落在一份 RIVER_PORTS 名單裡，不多不少；
+      * RIVER_PORTS 裡不會有名冊上不存在、或根本不是河港的 id；
+      * bootstrap 真的把 waters 送出去了（前端只讀得到送出去的東西）。
+    地格那一半（河港地格是水域、名字與這裡一致、陸軍走得過去、艦隊進得去）
+    由 scripts/checks/port_terrain_e2e.py 在真前端上驗。
+    """
+
+    @staticmethod
+    def _cities():
+        return GameEngine(seed=11).data["strategic_map"]["cities"]
+
+    def test_every_port_city_sits_on_some_water(self):
+        from backend.foreign_punishment import waters_for_city
+        missing = [city["name"] for city in self._cities()
+                   if city.get("port") and not waters_for_city(city)]
+        self.assertEqual(missing, [], "這些港市不屬於任何水域，水患與封鎖都挑不到它們")
+
+    def test_every_river_port_is_listed_exactly_once(self):
+        from backend.foreign_punishment import RIVER_PORTS
+        for city in self._cities():
+            if city.get("port") != "river":
+                continue
+            homes = [name for name, ids in RIVER_PORTS.items() if city["id"] in ids]
+            self.assertEqual(len(homes), 1,
+                             f"{city['name']} 落在 {homes} 份水系名單裡，應該剛好一份")
+
+    def test_the_river_roster_has_no_strangers(self):
+        from backend.foreign_punishment import RIVER_PORTS
+        by_id = {city["id"]: city for city in self._cities()}
+        for water, ids in RIVER_PORTS.items():
+            self.assertEqual(len(ids), len(set(ids)), f"{water} 名單裡有重複的 id")
+            for city_id in ids:
+                self.assertIn(city_id, by_id, f"{water} 名單裡的 {city_id} 不在城市名冊上")
+                self.assertEqual(by_id[city_id].get("port"), "river",
+                                 f"{by_id[city_id]['name']} 不是河港，不該出現在 {water} 名單裡")
+
+    def test_sea_ports_resolve_to_a_sea(self):
+        from backend.foreign_punishment import waters_for_city, coastal_sea_name
+        seas = {"渤海", "黃海", "東海", "臺灣海峽", "南海"}
+        for city in self._cities():
+            if city.get("port") != "sea":
+                continue
+            waters = waters_for_city(city)
+            self.assertEqual(len(waters), 1, city["name"])
+            self.assertIn(waters[0], seas, city["name"])
+            self.assertEqual(waters[0], coastal_sea_name(city["lon"], city["lat"]))
+
+    def test_the_bootstrap_carries_the_water_names(self):
+        from backend.foreign_punishment import waters_for_city
+        engine = GameEngine(seed=11)
+        snapshot = engine.bootstrap()["strategic_map"]["cities"]
+        by_id = {city["id"]: city for city in engine.data["strategic_map"]["cities"]}
+        sent = 0
+        for city in snapshot:
+            if not city.get("port"):
+                self.assertNotIn("waters", city, f"{city['name']} 不是港口，不該有水域")
+                continue
+            sent += 1
+            self.assertEqual(city.get("waters"), waters_for_city(by_id[city["id"]]),
+                             f"{city['name']} 送出去的水域與後端算的不一樣")
+        self.assertGreaterEqual(sent, 30, "港市數量不對，這一關大概驗錯東西了")
+
+    def test_the_two_new_ports_are_wired_up(self):
+        from backend.foreign_punishment import waters_for_city
+        by_id = {city["id"]: city for city in self._cities()}
+        for city_id, port, water in (("huizhou", "sea", "南海"),
+                                     ("shashi", "river", "長江")):
+            city = by_id[city_id]
+            self.assertEqual(city.get("port"), port, city["name"])
+            self.assertEqual(waters_for_city(city), [water], city["name"])
+
+    def test_zigong_is_a_plain_inland_city(self):
+        """自貢一度做成河港，使用者改回普通陸地城市——名冊與水系名單都要乾淨。
+
+        沒有這一關，只把 `"port"` 從名冊拿掉、卻忘了把 id 從 RIVER_PORTS 裡
+        撤掉，長江水患照樣挑得到它（`_select_cities` 是先看 waters 再看 port，
+        兩邊各漏一半就會出現「不是港口卻被水淹」）。
+        """
+        from backend.foreign_punishment import RIVER_PORTS, waters_for_city
+        city = next(c for c in self._cities() if c["id"] == "zigong")
+        self.assertIsNone(city.get("port"), "自貢是普通陸地城市，不該有港口")
+        self.assertEqual(waters_for_city(city), [])
+        for water, ids in RIVER_PORTS.items():
+            self.assertNotIn("zigong", ids, f"自貢還留在 {water} 的名單裡")
+        engine = GameEngine(seed=11)
+        self.assertNotIn("zigong",
+                         engine._select_cities({"waters": ["長江"], "port": True}, []),
+                         "自貢不是港口了，長江水患不該挑得到它")
+
+    def test_the_new_river_port_can_be_flooded(self):
+        """長江水患挑港市時真的挑得到沙市——名單進得去、選得出來。"""
+        engine = GameEngine(seed=11)
+        yangtze = engine._select_cities({"waters": ["長江"], "port": True}, [])
+        for city_id in ("shashi", "chengdu", "xiangyang"):
+            self.assertIn(city_id, yangtze, f"{city_id} 選不到，長江水患會跳過它")
+        yellow = engine._select_cities({"waters": ["黃河"], "port": True}, [])
+        self.assertFalse(set(yangtze) & set(yellow), "兩條河的港市不該重疊")
+
+    def test_the_new_sea_port_counts_towards_blockade_conditions(self):
+        """惠州要算進「控制幾座南海港市」，不然封鎖類的門檻會少算一座。"""
+        engine = GameEngine(seed=11)
+        before = engine._ports_in_waters("N", ["南海"])
+        engine.state["city_owners"]["huizhou"] = "F"
+        after = engine._ports_in_waters("N", ["南海"])
+        self.assertEqual(after, before - 1, "惠州沒有被算進南海的港市數")
 
 
 if __name__ == "__main__":

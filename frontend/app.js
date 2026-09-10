@@ -1,5 +1,4 @@
 import { FLAG, factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
-import { RIVERS } from './map.js';
 import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES, PROVINCE_OWNERSHIP_CLAIMS, CELL_OWNERSHIP_OVERRIDES, applyProvinceOwnershipClaims, factionAt } from './map.js';
 import {
   NAVY_UNIT_META,
@@ -1957,13 +1956,24 @@ function indexScenarioCells() {
   bridgeRailwaysOverWater();
 }
 
-// 河港城市的地格一律視為水域。天然河道保留原名，其餘標為內河。
+// 港市貼著哪片水域是後端的答案（`city.waters`，來自
+// foreign_punishment.RIVER_PORTS ／ coastal_sea_name），前端只讀不算。
+// 先前這裡是自己拿 `nearestRiverName()` 量最近的河再標一個名字，於是成都與
+// 襄陽在地圖上是「河港・長江」、在後端卻不屬於任何水系——長江水患的斜紋
+// 塗到它們身上、結算卻跳過它們。同一條規則不准前後端各寫一份。
+function portWaterName(city) {
+  const waters = city?.waters || [];
+  if (waters.length) return waters[0];
+  throw new Error(`City ${city?.name || city?.id} is a ${city?.port} port with no water in the backend roster`);
+}
+
+// 河港城市的地格一律視為水域，天然河道的名字以後端給的水系為準。
 function markRiverPortWater() {
   for (const cell of Object.values(cells)) {
     if (LAND_ONLY_CITY_IDS.has(cell.city?.id)) continue;
     if (cell.city?.port !== "river") continue;
     cell.portWater = true;
-    if (!cell.river) cell.river = nearestRiverName(cell) || "內河";
+    cell.river = portWaterName(cell.city);
   }
 }
 
@@ -1973,29 +1983,6 @@ function bridgeRailwaysOverWater() {
   for (const cell of Object.values(cells)) {
     if (cell.river && cell.railroads?.size) cell.railBridge = true;
   }
-}
-
-function nearestRiverName(cell, maxDegrees = 1.6) {
-  let best = null;
-  let bestDistance = Infinity;
-  for (const river of RIVERS) {
-    for (let i = 0; i < river.pts.length - 1; i++) {
-      const distance = pointSegmentDistance(cell.lon, cell.lat, river.pts[i], river.pts[i + 1]);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = river.name;
-      }
-    }
-  }
-  return bestDistance <= maxDegrees ? best : null;
-}
-
-function pointSegmentDistance(x, y, [ax, ay], [bx, by]) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lengthSquared = dx * dx + dy * dy;
-  const t = lengthSquared ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / lengthSquared)) : 0;
-  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
 }
 
 // 擠不進起點城市時的備位格。畫成水面的地格（河道、近海）一律先跳過，
@@ -10195,6 +10182,11 @@ window.__neDebug = {
   publishSharedState,
   pullSharedState,
   riverStepAllowed,
+  // 港口地形要能被自動化檢查問到：河港地格是水域但陸軍照樣走得過去、
+  // 艦隊進得去；海港地格是陸地但艦隊照樣停得進去。
+  navyCanEnterCell,
+  portWaterName,
+  cellNeighbors,
   cellUsableAsRural,
   cellUsableForForcedMarch,
   // 鐵路運輸真正的判定入口：自動化檢查要能證明「關係不到就真的排不出路線」，
