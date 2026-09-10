@@ -1182,6 +1182,14 @@ class GameEngine:
             # 事件卡升過級的城市，快照要送生效後的等級，前端才畫得對。
             city["level"] = int(self._with_level(city).get("level", city.get("level", 1)))
             city["faction"] = self.state.get("city_owners", {}).get(city["id"], city["scenario_faction"])
+            # 港市貼著哪片水域是**規則**，不是畫面的事。名單只有一份
+            # （foreign_punishment.RIVER_PORTS ＋ coastal_sea_name），水患、封鎖、
+            # 「控制幾座某水系的港市」全都讀它。先前前端另外用
+            # `nearestRiverName()` 量最近的河再自己標一個名字，於是成都與襄陽
+            # 在地圖上是「河港・長江」、在後端卻不屬於任何水系——長江水患畫面
+            # 塗到它們身上，實際結算卻跳過。現在後端把答案送出去，前端只讀。
+            if city.get("port"):
+                city["waters"] = list(waters_for_city(city))
         return strategic_map
 
     def cut_units_to_force(self, units: Dict[str, Any],

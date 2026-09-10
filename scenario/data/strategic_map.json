@@ -48,6 +48,17 @@
       "factory": 2
     },
     {
+      "id": "chifeng",
+      "name": "赤峰",
+      "province": "熱河",
+      "faction": "F",
+      "lon": 118.96,
+      "lat": 42.26,
+      "level": 2,
+      "cash": 3,
+      "factory": 1
+    },
+    {
       "id": "changchun",
       "name": "長春",
       "province": "吉林",
@@ -204,6 +215,17 @@
       "port": "river"
     },
     {
+      "id": "xinyang",
+      "name": "信陽",
+      "province": "河南",
+      "faction": "W",
+      "lon": 114.09,
+      "lat": 32.13,
+      "level": 2,
+      "cash": 4,
+      "factory": 1
+    },
+    {
       "id": "hankou",
       "name": "漢口",
       "province": "湖北",
@@ -242,6 +264,18 @@
       "level": 3,
       "cash": 6,
       "factory": 2,
+      "port": "river"
+    },
+    {
+      "id": "shashi",
+      "name": "沙市",
+      "province": "湖北",
+      "faction": "W",
+      "lon": 112.25,
+      "lat": 30.32,
+      "level": 2,
+      "cash": 4,
+      "factory": 1,
       "port": "river"
     },
     {
@@ -299,6 +333,18 @@
         "jp"
       ],
       "port": "river"
+    },
+    {
+      "id": "xuzhou",
+      "name": "徐州",
+      "province": "江蘇",
+      "faction": "S",
+      "lon": 117.19,
+      "lat": 34.27,
+      "level": 3,
+      "cash": 6,
+      "factory": 2,
+      "cell_key": "29,22"
     },
     {
       "id": "hefei",
@@ -497,12 +543,34 @@
       "factory": 3
     },
     {
+      "id": "xianyang",
+      "name": "咸陽",
+      "province": "陝西",
+      "faction": "G",
+      "lon": 108.71,
+      "lat": 34.33,
+      "level": 2,
+      "cash": 4,
+      "factory": 1
+    },
+    {
       "id": "yanan",
       "name": "延安",
       "province": "陝西",
       "faction": "G",
       "lon": 109.5,
       "lat": 36.6,
+      "level": 2,
+      "cash": 3,
+      "factory": 1
+    },
+    {
+      "id": "yulin",
+      "name": "榆林",
+      "province": "陝西",
+      "faction": "G",
+      "lon": 109.73,
+      "lat": 38.29,
       "level": 2,
       "cash": 3,
       "factory": 1
@@ -661,6 +729,17 @@
       "cell_key": "13,27"
     },
     {
+      "id": "zigong",
+      "name": "自貢",
+      "province": "四川",
+      "faction": "C",
+      "lon": 104.78,
+      "lat": 29.35,
+      "level": 2,
+      "cash": 4,
+      "factory": 1
+    },
+    {
       "id": "guiyang",
       "name": "貴陽",
       "province": "貴州",
@@ -778,6 +857,18 @@
       "factory": 2
     },
     {
+      "id": "huizhou",
+      "name": "惠州",
+      "province": "廣東",
+      "faction": "N",
+      "lon": 114.42,
+      "lat": 23.11,
+      "level": 2,
+      "cash": 4,
+      "factory": 1,
+      "port": "sea"
+    },
+    {
       "id": "nanning",
       "name": "南寧",
       "province": "廣西",
@@ -799,6 +890,17 @@
       "level": 3,
       "cash": 5,
       "factory": 2
+    },
+    {
+      "id": "liuzhou",
+      "name": "柳州",
+      "province": "廣西",
+      "faction": "N",
+      "lon": 109.42,
+      "lat": 24.33,
+      "level": 2,
+      "cash": 4,
+      "factory": 1
     },
     {
       "id": "wuzhou",
