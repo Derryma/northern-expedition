@@ -652,9 +652,10 @@ NPC 那一半的世界（第二十批）新增的驗證：
 **改了地圖或駐防之後，使用者說「我這邊沒更新」——先看存檔，不是先看同步。**
 
 `game_data/tactical_state.json` 存著 `cellFactions`、`armies`、`cityFactions`。
-前端開機時先照 `map.js` 建一張新地圖，接著 `pullSharedState()` 會用存檔**整個蓋掉**
-地格歸屬與部隊位置。所以任何動到 `map.js`／`strategic_map.json`／省界的改動，
-對**進行中的舊存檔一律看不到**——檔案同步得再乾淨也一樣。
+前端開機時先照 `map.js` 建一張新地圖，接著 `pullSharedState()` 會用存檔蓋掉
+地格歸屬與部隊位置。**地格歸屬那一層在第二十八批之後有了防線**（見下），
+但部隊位置與其他進度仍然以存檔為準，所以動到 `map.js`／`strategic_map.json`／
+省界之後，進行中的舊局還是可能看起來「沒更新」。
 
 判斷方法（實測過，不要用猜的）：拿一份乾淨存檔目錄開個 server、無頭開一次頁面，
 把 `cells` 的各家格數與四個軍的 `cellKey` 印出來，跟使用者的存檔比。
@@ -837,6 +838,59 @@ bootstrap 每次都重送，而 `applyTacticalSnapshot()` 對 `cityFactions` 是
 有人以為漏了。另外 `ForeignActionBatchOneTests.test_the_port_count_gate_actually_bites`
 本來寫死五座長江港市，名冊一加城市就驗不到東西了——已改成先把整條長江推給
 別人再精準交回三座。**凡是「數某某類城市有幾座」的測試，都別寫死名單。**
+
+存檔歸存檔、開局地圖歸開局地圖（第二十八批）：使用者第二次回報
+「地格歸屬又跑掉了」。**這次不是同步問題，也不是新城市造成的**——
+實測加那九座城市對地格歸屬與部隊落點的影響是 **0 格、0 支**。
+
+病根在 `applyTacticalSnapshot()`：它先前是無條件
+`cells[k].fac = snapshot.cellFactions[k]`。開局地圖一改（省界、省級歸屬保證、
+新增城市），**舊存檔就把整張地圖蓋回舊版本**，連玩家從來沒打過的格子都一起
+倒退。使用者本機那兩份存檔（9/7 與 8/30）與乾淨新局差 40 格，而且差的正好是
+批次 23 修掉的那批：川軍 52/64、西北軍 124/140、馬家軍 75/69、直系 69/57。
+
+修法分兩層：
+
+**一、開局地圖只有一份定義。** 新增 `applyOpeningMap()`＝原始判定
+（`SCENARIO_CELL_FACTIONS`）＋ `indexProvinceCells()`（省級歸屬保證）。
+`resetGame()` 改叫它，不再自己寫那兩行。守門測試直接數：
+`cell.fac = SCENARIO_CELL_FACTIONS[...]` 在整份 app.js 裡**只准出現一次**。
+
+**二、存檔要記得自己是照哪一版地圖存的。** `tacticalSnapshot()` 多帶一個
+`openingMap: { revision, cells }`。`revision` 是**開局歸屬本身的雜湊**，
+不是手寫的版本號——手寫的一定有人忘了改，雜湊則地圖一動就跟著動。
+還原時 `applyCellFactionsFromSnapshot()` 分三條路：
+
+* **版本一樣** → 照舊全套。同一局的多人同步走這條，行為完全不變（有守門）；
+* **版本不一樣** → 先 `applyOpeningMap()` 歸零回**現在**的開局地圖，再只疊
+  玩家真的打下來的格子（存檔值 ≠ 存檔自己記的開局值）。沒打過的格子留在
+  新地圖上，並提示玩家「N 格戰果保留、其餘改以目前開局地圖為準」；
+* **沒有 `openingMap`**（版本化之前的舊存檔）→ 無從分辨誰是誰打的，
+  地格歸屬**整層不套**，直接用現在的開局地圖，並且大聲提示。
+
+實測使用者那份 9/7 的存檔：修之前載入是 40 格不對，修之後 **0 格**，
+按「重新開始」也是 0 格。
+
+守門在 `scripts/checks/save_vs_opening_map_e2e.py`（真前端 16 關）＋
+`scripts/checks/mutate_save_vs_opening_map.py`（10 個突變體，全抓）＋
+`NewGameAndProvinceNamingTests` 新增的四項（開局地圖只有一份定義、沒有人
+在別處還原那份快照、resetGame 走 applyOpeningMap、存檔還原不准無條件蓋）。
+
+**兩個做法上的教訓，都很痛：**
+
+* **e2e 要走玩家會走的那條路，不要直接叫底下的規則函式。** 第一版的
+  save_vs_opening_map_e2e 直接叫 `applyCellFactionsFromSnapshot()`，於是
+  「把入口 `applyTacticalSnapshot()` 改回無條件全套」的突變體 S1 整個看不到
+  ——測到的是規則，不是入口。改成走 `applyTacticalSnapshot()` 才咬得到。
+* **驗「先歸零」這種步驟，呼叫前要先把狀態弄髒。** S3（拿掉那次歸零）本來也
+  逃掉，因為測試呼叫前地圖已經是開局地圖了，歸不歸零看不出差別。現在測試
+  會先把 60 格塗成一個開局與存檔都不會有的值。
+
+**絕對不要 kill 掉正在跑的 `mutate_safe`。** 它靠 finally 還原原始碼，
+被 SIGTERM 就會把突變體留在檔案裡，而且 `/tmp/mutation_pristine/` 那份基準
+會在**下一次**跑的時候把你後來的修改一起蓋掉——這一輪就這樣掉了一次
+`setUiNotice`，兩次撿回突變殘骸。真的必須中斷，事後要做三件事：
+比對 md5、確認每個突變體的「原始字串」都還在、然後 `rm -rf /tmp/mutation_pristine`。
 
 四條底線，違反等於白做：
 * 絕不推 main，一律 feature branch + PR。

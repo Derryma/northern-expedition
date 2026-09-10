@@ -363,3 +363,42 @@ python3 scripts/checks/mutate_port_terrain.py
 永遠跑不到，把它改成「回傳內河」的突變體與原始碼等價，任何判定器都看不出差別。
 解法不是刪掉那個突變體，而是替那條路徑補一關——e2e 直接拿一座假的港市去問
 `portWaterName()`，斷言它拋例外。補完之後 11/11 全抓。
+
+## 存檔歸存檔、開局地圖歸開局地圖（第二十八批）
+
+```bash
+# 真前端 16 關，埠 8822
+python3 scripts/checks/save_vs_opening_map_e2e.py
+
+# 10 個突變體（判定器＝上面那支 e2e ＋ province_ownership_e2e）
+python3 scripts/checks/mutate_save_vs_opening_map.py
+```
+
+單元測試：`NewGameAndProvinceNamingTests`（新增 4 項）。
+
+**抓到的真缺陷：舊存檔會把整張地圖蓋回舊版本。** `applyTacticalSnapshot()`
+先前是無條件 `cells[k].fac = snapshot.cellFactions[k]`。開局地圖一改，
+連玩家從來沒打過的格子都跟著倒退——使用者本機那兩份存檔與乾淨新局差 40 格。
+
+現在：開局地圖只有 `applyOpeningMap()` 一份定義；存檔帶著
+`openingMap: { revision, cells }`（revision ＝開局歸屬的雜湊，**不是手寫版本號**）；
+還原分三條路——版本一樣照舊全套、版本不一樣先歸零再只疊玩家的戰果、
+沒有版本就整層不套。三條都有守門，包含「同版本不能有提示」（多人同步是常態）。
+
+**改地圖之後要跑這一支。** 任何動到 `map.js`、省界檔、`strategic_map.json`
+的改動都會讓 revision 變，也就是讓所有舊存檔走上第二條路——那條路的行為
+必須是對的。
+
+### 兩個測試設計上的坑（這一輪各踩一次）
+
+* **e2e 要走玩家會走的那條路。** 第一版直接叫 `applyCellFactionsFromSnapshot()`，
+  於是「把入口改回無條件全套」的突變體完全看不到。測入口，不要測規則。
+* **驗「先歸零」要先把狀態弄髒。** 呼叫前地圖已經是開局地圖的話，
+  歸不歸零看不出差別，突變體會逃掉。現在測試會先塗髒 60 格。
+
+### 不要 kill 掉正在跑的 mutate_safe
+
+它靠 finally 還原原始碼，被 SIGTERM 就會把突變體留在檔案裡；更糟的是
+`/tmp/mutation_pristine/` 那份基準會在**下一次**跑的時候把你後來的修改一起蓋掉。
+真的必須中斷，事後三件事：比對 md5、確認每個突變體的「原始字串」都還在、
+`rm -rf /tmp/mutation_pristine`。
