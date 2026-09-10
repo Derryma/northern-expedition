@@ -19059,13 +19059,64 @@ class NewGameAndProvinceNamingTests(unittest.TestCase):
     def _no_comments(text):
         return "\n".join(re.sub(r"//.*$", "", line) for line in text.split("\n"))
 
-    def test_reset_reapplies_the_province_claims(self):
-        body = re.search(r"async function resetGame\(\) \{(.*?)\n\}\n",
+    def test_the_opening_map_has_exactly_one_definition(self):
+        """開局地圖＝原始判定 ＋ 省級歸屬保證，而且只有 applyOpeningMap() 一份。
+
+        先前 resetGame() 自己寫了那兩行，於是「還原地格」與「重跑條款」可以
+        各自被改壞。現在誰要開局地圖都叫同一支，多一個地方寫就是多一個病灶。
+        """
+        body = re.search(r"function applyOpeningMap\(\) \{(.*?)\n\}",
                          self._app_js(), re.S).group(1)
         stripped = self._no_comments(body)
         self.assertIn("SCENARIO_CELL_FACTIONS", stripped)
         self.assertIn("indexProvinceCells()", stripped,
-                      "新局還原地格之後沒有重跑省級歸屬保證——地圖會倒退回沒有條款的版本")
+                      "還原地格之後沒有重跑省級歸屬保證——地圖會倒退回沒有條款的版本")
+
+    def test_nobody_else_restores_the_raw_snapshot(self):
+        """`cell.fac = SCENARIO_CELL_FACTIONS[...]` 只准出現在 applyOpeningMap() 裡。
+
+        那份快照是 map.js 剛建完的樣子——**省級歸屬保證還沒跑**。誰在別的地方
+        還原它，誰就把整套條款抹掉一次（第二十三批的病根，症狀是
+        「駐軍變了、地格沒變」）。
+        """
+        text = self._no_comments(self._app_js())
+        writes = re.findall(r"cell\.fac = SCENARIO_CELL_FACTIONS\[[^\]]+\]", text)
+        self.assertEqual(len(writes), 1,
+                         f"有 {len(writes)} 個地方在還原那份快照，只准 applyOpeningMap() 一個")
+        body = re.search(r"function applyOpeningMap\(\) \{(.*?)\n\}",
+                         self._app_js(), re.S).group(1)
+        self.assertIn("SCENARIO_CELL_FACTIONS", self._no_comments(body))
+
+    def test_reset_reapplies_the_province_claims(self):
+        body = re.search(r"async function resetGame\(\) \{(.*?)\n\}\n",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("applyOpeningMap()", stripped,
+                      "新局沒有回到開局地圖——地圖會停在存檔或上一局的樣子")
+
+    def test_a_save_can_never_move_the_opening_map(self):
+        """存檔還原**不准**無條件蓋地格歸屬。
+
+        病史：使用者連續兩次回報「地格歸屬又跑掉了」。`applyTacticalSnapshot()`
+        先前是 `cells[k].fac = snapshot.cellFactions[k]`，開局地圖一改，
+        舊存檔就把整張圖蓋回舊版本——連玩家從來沒打過的格子都倒退。
+        現在存檔要帶著 `openingMap`（它是照哪一版存的），還原只走
+        `applyCellFactionsFromSnapshot()` 那一份規則。
+        逐格行為由 scripts/checks/save_vs_opening_map_e2e.py 在真前端上驗。
+        """
+        text = self._no_comments(self._app_js())
+        body = re.search(r"function applyTacticalSnapshot\(snapshot\) \{(.*?)\n\}\n",
+                         self._app_js(), re.S).group(1)
+        stripped = self._no_comments(body)
+        self.assertIn("applyCellFactionsFromSnapshot(snapshot)", stripped,
+                      "還原地格歸屬沒有走那條規則")
+        self.assertNotIn("cellFactions || {}", stripped,
+                         "又在還原入口裡自己翻 cellFactions 了")
+        self.assertIn("openingMap:", text, "存檔沒有記下它是照哪一版開局地圖存的")
+        self.assertIn("revision: openingMapRevision", text,
+                      "存檔帶的版本不是從開局地圖算出來的")
+        self.assertNotIn("openingMapRevision = \'", text,
+                         "地圖版本被寫死了——地圖改了它不會跟著改，等於沒有版本")
 
     def test_the_stale_snapshot_name_is_gone(self):
         """改名是刻意的：那份快照不是「開局的地圖」，別再有人這樣用它。"""

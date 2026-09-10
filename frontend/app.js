@@ -1593,6 +1593,12 @@ function tacticalSnapshot() {
       forcedMarchReadyTurn: army.forcedMarchReadyTurn ?? null,
     }])),
     cellFactions: Object.fromEntries(Object.values(cells).map((cell) => [cell.key, cell.fac])),
+    // 這份存檔是照哪一版開局地圖存的。少了它，還原時就分不出「玩家打下來的」
+    // 與「當年的開局地圖長這樣」，舊存檔會把整張圖蓋回舊版本。
+    openingMap: {
+      revision: openingMapRevision,
+      cells: { ...(OPENING_CELL_FACTIONS || {}) },
+    },
     cityFactions: Object.fromEntries((bootstrap.strategic_map?.cities || []).map((city) => [city.id, city.faction])),
     cityEconomy: Object.fromEntries((bootstrap.strategic_map?.cities || []).map((city) => [city.id, {
       cash: city.cash,
@@ -1637,9 +1643,8 @@ function applyTacticalSnapshot(snapshot) {
     Object.assign(army, saved);
     if (!saved.specialOperation) delete army.specialOperation;
   }
-  for (const [cellKey, faction] of Object.entries(snapshot.cellFactions || {})) {
-    if (cells[cellKey]) cells[cellKey].fac = faction;
-  }
+  const mapNotice = applyCellFactionsFromSnapshot(snapshot);
+  if (mapNotice) uiNotice = mapNotice;
   for (const city of bootstrap.strategic_map?.cities || []) {
     if (snapshot.cityFactions?.[city.id]) city.faction = snapshot.cityFactions[city.id];
     if (snapshot.cityEconomy?.[city.id]) {
@@ -2071,6 +2076,87 @@ function indexProvinceCells() {
   // 省界拿到手之後才輪得到省級歸屬保證，而且必須趕在部隊入城之前——
   // startingCellAt() 只肯把部隊放在自家顏色的格子上。
   applyProvinceOwnershipClaims((cell) => cell.province, cityHomeCells());
+}
+
+// ── 開局地圖 ─────────────────────────────────────────────────────────────
+// 「開局地圖」＝ map.js 的原始判定 ＋ 省級歸屬保證，跟任何一份存檔都無關。
+// 這一份是**唯一**的定義，開局、重新開始、以及存檔還原時的基準都走它。
+//
+// 為什麼不寫成檔案頂層的 const：`SCENARIO_CELL_FACTIONS` 就是那樣寫的，
+// 它抓的是 map.js 剛建完的樣子——**省級歸屬保證還沒跑**，所以它不是開局地圖
+// （第二十三批的病根）。這裡改成一支函式，什麼時候需要就重跑一次那個順序。
+function applyOpeningMap() {
+  for (const cell of Object.values(cells)) cell.fac = SCENARIO_CELL_FACTIONS[cell.key];
+  indexProvinceCells();
+}
+
+// boot() 在**套用任何存檔之前**拍下來的開局地圖。之後不再變動。
+let OPENING_CELL_FACTIONS = null;
+let openingMapRevision = null;
+
+function captureOpeningMap() {
+  OPENING_CELL_FACTIONS = Object.fromEntries(
+    Object.values(cells).map((cell) => [cell.key, cell.fac ?? null]));
+  openingMapRevision = hashCellFactions(OPENING_CELL_FACTIONS);
+  return OPENING_CELL_FACTIONS;
+}
+
+// 地圖版本＝開局歸屬本身的雜湊。**不是手寫的版本號**——手寫的一定有人忘了改，
+// 而地圖一動雜湊就一定跟著動，這正是我們要偵測的那件事。
+function hashCellFactions(map) {
+  const text = Object.keys(map || {}).sort()
+    .map((key) => `${key}:${map[key] ?? "-"}`).join("|");
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+  return `${hash.toString(36)}.${Object.keys(map || {}).length}`;
+}
+
+function openingFactionFor(cellKey) {
+  return (OPENING_CELL_FACTIONS || {})[cellKey] ?? null;
+}
+
+// 存檔還原時，地格歸屬要怎麼套。這支是「存檔歸存檔、開局地圖歸開局地圖」
+// 的整條規則，只有這一份。
+//
+// 病史：先前這裡是無條件 `cells[k].fac = snapshot.cellFactions[k]`。開局地圖
+// 一改（省界、省級歸屬保證、新增城市），**舊存檔就把整張地圖蓋回舊版本**——
+// 玩家從來沒打過的格子也一起倒退。使用者連續兩次回報「地格歸屬又跑掉了」。
+//
+// 現在存檔會連同「它是照哪一版開局地圖存的」一起寫進去（`openingMap`）：
+//   * 版本一樣    → 照舊全套（同一局遊戲的多人同步走這條，行為完全不變）；
+//   * 版本不一樣  → 先把地圖歸零回**現在**的開局地圖，再只套用玩家真的打下來的
+//                   格子（存檔值 ≠ 存檔自己的開局值）。沒打過的格子留在新地圖上；
+//   * 沒有 openingMap（地圖版本化之前的舊存檔）→ 無從分辨誰是誰打的，
+//     地格歸屬**整層不套**，直接用現在的開局地圖，並且大聲告訴玩家。
+function applyCellFactionsFromSnapshot(snapshot) {
+  const saved = snapshot?.openingMap;
+  const savedCells = saved?.cells;
+  if (saved?.revision && saved.revision === openingMapRevision) {
+    for (const [cellKey, faction] of Object.entries(snapshot.cellFactions || {})) {
+      if (cells[cellKey]) cells[cellKey].fac = faction;
+    }
+    return null;
+  }
+  // 版本對不上：先回到現在的開局地圖，存檔只准疊上「玩家真的改過的那些格」。
+  applyOpeningMap();
+  if (!savedCells) {
+    const stale = Object.entries(snapshot?.cellFactions || {})
+      .filter(([key, faction]) => cells[key] && faction !== openingFactionFor(key)).length;
+    return stale
+      ? `這份存檔早於地圖版本化，分不出哪些格是打下來的，地格歸屬已改用目前的開局地圖`
+        + `（原本有 ${stale} 格與開局不同）。按「重新開始」可以完全清乾淨。`
+      : null;
+  }
+  let rebased = 0;
+  let carried = 0;
+  for (const [cellKey, faction] of Object.entries(snapshot.cellFactions || {})) {
+    if (!cells[cellKey]) continue;
+    if (faction === (savedCells[cellKey] ?? null)) { rebased++; continue; }  // 玩家沒動過
+    cells[cellKey].fac = faction;
+    carried++;
+  }
+  return `存檔是照舊版開局地圖存的：${carried} 格戰果照舊保留，`
+    + `其餘 ${rebased} 格改以目前的開局地圖為準。`;
 }
 
 function applyMapTransform() {
@@ -4492,6 +4578,9 @@ async function boot() {
   // 尋找起始城市的那一步，會依地格歸屬決定落點。
   indexProvinceCells();
   indexScenarioCells();
+  // 開局地圖要在**套用任何存檔之前**拍下來。下面 applyTacticalSnapshot() 會拿它
+  // 當基準，判斷存檔裡哪些格是玩家真的打下來的。
+  captureOpeningMap();
   snapArmiesToStartCities();
   initializeNavies();
   await loadAllGeneralTrees();
@@ -9954,9 +10043,10 @@ async function resetGame() {
   for (const key of PREBUILT_PONTOONS) completedPontoons.add(key);
   completedFortresses.clear();
   selectedTileKey = null;
-  for (const cell of Object.values(cells)) cell.fac = SCENARIO_CELL_FACTIONS[cell.key];
-  // 上面那份是 map.js 的原始判定，還沒有省級歸屬保證。重跑一次才是真正的開局地圖。
-  indexProvinceCells();
+  // 開局地圖只有 applyOpeningMap() 一份定義（原始判定 ＋ 省級歸屬保證）。
+  // 不要在這裡自己寫 `cell.fac = SCENARIO_CELL_FACTIONS[...]`——那份快照是
+  // 省級歸屬保證跑之前的樣子，還原它等於把整套條款抹掉（第二十三批的病根）。
+  applyOpeningMap();
   for (const city of bootstrap.strategic_map?.cities || []) city.faction = INITIAL_CITY_FACTIONS[city.id];
   for (const faction of Object.keys(jailedGenerals)) {
     jailedGenerals[faction].length = 0;
@@ -10162,6 +10252,14 @@ window.__neDebug = {
   provinceAt,
   factionAt,
   cityHomeCells,
+  // 開局地圖與存檔的界線：自動化檢查要能分別問到「現在的開局地圖是什麼」
+  // 與「這份存檔套進去之後變成什麼」。
+  applyOpeningMap,
+  getOpeningCellFactions: () => ({ ...(OPENING_CELL_FACTIONS || {}) }),
+  getOpeningMapRevision: () => openingMapRevision,
+  hashCellFactions,
+  applyCellFactionsFromSnapshot,
+  applyTacticalSnapshot,
   // 排空冪等的關鍵狀態：哪些流水號已經套用過。查間歇性重複套用時要看得到它。
   getAppliedFrontendEffectIds: () => [...appliedFrontendEffectIds],
   PROVINCE_OWNERSHIP_CLAIMS,
@@ -10213,6 +10311,8 @@ window.__neDebug = {
   clearNavyResolved,
   clearArmyResolved,
   getUiNotice: () => uiNotice,
+  // 存檔還原時的提示要驗得到：地圖被重新對齊過一定要讓玩家知道。
+  setUiNotice: (value) => { uiNotice = value; },
   traitDisabledByRelations,
   defectionQuoteFor,
   getLoyaltyOverrides: () => loyaltyOverrides,
