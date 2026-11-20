@@ -2233,8 +2233,12 @@ class ExileGeneralTests(unittest.TestCase):
         """開局戰力（步1、騎1、機2、砲4）——這些數字是刻意調出來的，別無意改動。"""
         import json
         from backend.data_store import REPO_ROOT
-        stems = {"N": "playtest", "F": "fengtian", "W": "zhili", "S": "sunfang", "Y": "npc_Y"}
-        expected = {"N": 114, "F": 120, "W": 122, "S": 111, "Y": 53}
+        # 四強各加一位 20 點的上將（陳濟棠、吳俊升、劉玉春、謝鴻勳），李宗仁 20 → 23：
+        # 467 → 550。NPC 依同一比例（×550/467）由原始值放大，四捨五入、增額補步兵。
+        stems = {"N": "playtest", "F": "fengtian", "W": "zhili", "S": "sunfang", "Y": "npc_Y",
+                 "G": "npc_G", "M": "npc_M", "H": "npc_H", "C": "npc_C", "D": "npc_D", "Q": "npc_Q"}
+        expected = {"N": 137, "F": 140, "W": 142, "S": 131, "Y": 63,
+                    "G": 85, "M": 43, "H": 56, "C": 59, "D": 34, "Q": 9}
         for code, stem in stems.items():
             tree = json.loads((REPO_ROOT / f"general_tree/data/general_tree_{stem}.json").read_text(encoding="utf-8"))
             total = 0
@@ -19235,7 +19239,7 @@ class OutputAndRuleOwnershipTests(unittest.TestCase):
     def test_general_slot_rules_live_in_the_backend(self):
         from backend.card_engine import FEATURES
         slots = FEATURES["general_slots"]
-        self.assertEqual(slots["great_general"], 3)
+        self.assertEqual(slots["great_general"], 4)
         self.assertEqual(slots["lieutenant_general"], 2)
         self.assertEqual(slots["major_general"], 0)
         self.assertEqual(slots["lieutenant_general_cap"], 3)
@@ -20011,6 +20015,87 @@ class PortWaterRosterTests(unittest.TestCase):
         engine.state["city_owners"]["huizhou"] = "F"
         after = engine._ports_in_waters("N", ["南海"])
         self.assertEqual(after, before - 1, "惠州沒有被算進南海的港市數")
+
+
+class FourthLieutenantTests(unittest.TestCase):
+    """大帥直屬上將名額改為 4；四強各多一位上將（技能待定、戰力 20）。
+
+    劉玉春、謝鴻勳是嫡系（忠誠 6）；陳濟棠、吳俊升非嫡系（忠誠 5）。
+    """
+
+    LOYALTY = {"chen_jitang": (5, False), "wu_junsheng": (5, False),
+               "liu_yuchun": (6, True), "xie_hongxun": (6, True)}
+
+    NEW = {
+        "N": ("chen_jitang", "陳濟棠", "chiang_kai_shek", "foshan"),
+        "F": ("wu_junsheng", "吳俊升", "zhang_zuolin", "qiqihar"),
+        "W": ("liu_yuchun", "劉玉春", "wu_peifu", "wuchang"),
+        "S": ("xie_hongxun", "謝鴻勳", "sun_chuanfang", "jiujiang"),
+    }
+
+    @staticmethod
+    def _force(units):
+        return (int(units.get("infantry", 0)) + int(units.get("cavalry", 0))
+                + int(units.get("machine_gun", 0)) * 2 + int(units.get("artillery", 0)) * 4)
+
+    def test_server_hands_out_four_lieutenant_slots_to_every_marshal(self):
+        from backend.server import PlaytestHandler
+        handler = PlaytestHandler.__new__(PlaytestHandler)
+        for faction in ("N", "F", "W", "S", "Y", "G", "M", "D"):
+            tree = handler._load_general_tree(faction)
+            marshal = tree["generals"][tree["great_general_id"]]
+            self.assertEqual(marshal["subordinate_slots"], 4, faction)
+
+    def test_each_new_lieutenant_sits_directly_under_the_marshal(self):
+        trees = load_game_data()["playable_general_trees"]
+        for faction, (gid, name, marshal_id, _) in self.NEW.items():
+            tree = trees[faction]
+            general = tree["generals"][gid]
+            self.assertEqual(general["name"], name)
+            self.assertEqual(general["role"], "lieutenant_general")
+            self.assertEqual(general["parent_id"], marshal_id)
+            self.assertEqual(tree["great_general_id"], marshal_id)
+            marshal = tree["generals"][marshal_id]
+            self.assertIn(gid, marshal["subordinates"])
+            self.assertEqual(len(marshal["subordinates"]), 4, faction)
+
+    def test_new_lieutenants_loyalty_core_force_and_pending_skill(self):
+        trees = load_game_data()["playable_general_trees"]
+        traits = load_game_data()["general_traits"]["traits"]
+        self.assertEqual(traits["skill_pending"]["name"], "待定")
+        self.assertEqual(traits["skill_pending"]["modifiers"], [])
+        for faction, (gid, _, _, _) in self.NEW.items():
+            general = trees[faction]["generals"][gid]
+            loyalty, core = self.LOYALTY[gid]
+            self.assertEqual(general["loyalty"], loyalty, gid)
+            self.assertIs(general["core_faction"], core, gid)
+            self.assertFalse(general["loyalty_exempt"], gid)
+            self.assertEqual(self._force(general["units"]), 20, gid)
+            self.assertEqual(general["traits"], ["skill_pending"], gid)
+            self.assertEqual(general["skills"], [], gid)
+
+    def test_li_zongren_starts_at_twenty_three(self):
+        tree = load_game_data()["playable_general_trees"]["N"]
+        self.assertEqual(self._force(tree["generals"]["li_zongren"]["units"]), 23)
+
+    def test_wu_junsheng_is_mostly_cavalry_and_the_others_are_mixed(self):
+        trees = load_game_data()["playable_general_trees"]
+        wu = trees["F"]["generals"]["wu_junsheng"]["units"]
+        self.assertGreater(wu["cavalry"], self._force(wu) / 2)
+        for faction in ("N", "W", "S"):
+            gid = self.NEW[faction][0]
+            units = trees[faction]["generals"][gid]["units"]
+            for unit in ("infantry", "cavalry", "machine_gun", "artillery"):
+                self.assertGreater(units[unit], 0, f"{gid} 缺 {unit}")
+
+    def test_each_new_lieutenant_has_a_field_army_in_a_home_city(self):
+        source = (REPO_ROOT / "frontend" / "map.js").read_text(encoding="utf-8")
+        block = re.search(r"export const ARMY_POSITIONS = \{(.*?)\n\};", source, re.S).group(1)
+        starts = dict(re.findall(r"generalId: '([^']+)'[^\n]*?startCityId: '([^']+)'", block))
+        cities = {c["id"]: c for c in load_game_data()["strategic_map"]["cities"]}
+        for faction, (gid, _, _, city_id) in self.NEW.items():
+            self.assertEqual(starts.get(gid), city_id, gid)
+            self.assertEqual(cities[city_id]["faction"], faction, city_id)
 
 
 if __name__ == "__main__":

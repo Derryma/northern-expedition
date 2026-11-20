@@ -37,8 +37,8 @@ UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
 # 戰力點的唯一真源是 comabt_system/data/unit_stats.json（戰鬥解算器也讀同一份）。
 # 先前這裡是第三份寫死的副本：資料檔一份、combat.py 一份、這裡一份，
 # 三份剛好相同，但沒有任何東西保證它們會一直相同。
-# 將領直屬名額：大將 3、中將 2（可用〈擴編直屬〉加到 3）、少將 0。
-GREAT_GENERAL_SLOTS = 3
+# 將領直屬名額：大將 4、中將 2（可用〈擴編直屬〉加到 3）、少將 0。
+GREAT_GENERAL_SLOTS = 4
 LIEUTENANT_GENERAL_SLOTS = 2
 MAJOR_GENERAL_SLOTS = 0
 LIEUTENANT_SLOT_CAP = 3

@@ -24,11 +24,12 @@
         "machine_gun": 4
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 4,
       "subordinates": [
         "he_yingqin",
         "bai_chongxi",
-        "li_zongren"
+        "li_zongren",
+        "chen_jitang"
       ],
       "status": "active"
     },
@@ -99,10 +100,34 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 9,
+        "infantry": 12,
         "cavalry": 3,
         "artillery": 1,
         "machine_gun": 2
+      },
+      "parent_id": "chiang_kai_shek",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "chen_jitang": {
+      "id": "chen_jitang",
+      "name": "陳濟棠",
+      "role": "lieutenant_general",
+      "faction": "粵軍",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "command_cap": 30,
+      "traits": [
+        "skill_pending"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 5,
+        "cavalry": 5,
+        "artillery": 1,
+        "machine_gun": 3
       },
       "parent_id": "chiang_kai_shek",
       "subordinate_slots": 0,

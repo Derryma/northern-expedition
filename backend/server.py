@@ -13,7 +13,14 @@ from threading import RLock
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .card_engine import DEFAULT_PLAYERS, GameEngine
+from .card_engine import (
+    DEFAULT_PLAYERS,
+    GREAT_GENERAL_SLOTS,
+    LIEUTENANT_GENERAL_SLOTS,
+    LIEUTENANT_SLOT_CAP,
+    MAJOR_GENERAL_SLOTS,
+    GameEngine,
+)
 from .combat_adapter import simulate as simulate_combat
 from .combat_adapter import combat_outlook, simulate_with_modifiers
 from .data_store import REPO_ROOT
@@ -141,14 +148,18 @@ class PlaytestHandler(BaseHTTPRequestHandler):
         # 川軍、湘軍是平行編制：沒有大帥，也不掛任何部屬，直接照檔案送出。
         if tree.get("flat_command"):
             return tree
+        # 名額是規則，只住在 card_engine（FEATURES.general_slots 也從那裡送給前端）。
         for general in tree.get("generals", {}).values():
             role = general.get("role")
             if role == "great_general":
-                general["subordinate_slots"] = 3
+                general["subordinate_slots"] = GREAT_GENERAL_SLOTS
             elif role == "lieutenant_general":
-                general["subordinate_slots"] = min(3, max(2, int(general.get("subordinate_slots", 2))))
+                general["subordinate_slots"] = min(
+                    LIEUTENANT_SLOT_CAP,
+                    max(LIEUTENANT_GENERAL_SLOTS,
+                        int(general.get("subordinate_slots", LIEUTENANT_GENERAL_SLOTS))))
             else:
-                general["subordinate_slots"] = 0
+                general["subordinate_slots"] = MAJOR_GENERAL_SLOTS
                 general["subordinates"] = []
         return tree
 

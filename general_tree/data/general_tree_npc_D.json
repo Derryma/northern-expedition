@@ -17,7 +17,7 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 8,
+        "infantry": 11,
         "cavalry": 4,
         "artillery": 1,
         "machine_gun": 1
@@ -43,7 +43,7 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 6,
+        "infantry": 8,
         "cavalry": 3,
         "artillery": 0,
         "machine_gun": 1

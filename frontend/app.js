@@ -992,6 +992,8 @@ const TRAIT_LABELS = {
   fire_support_savant: "火力協同",
   local_supply_boss: "地方補給",
   cavalry_screen_commander: "騎兵屏護",
+  // 技能尚未設計的將領先掛這一項，不帶任何效果
+  skill_pending: "待定",
 };
 
 // 何應欽的光環說明，兩個版本的技能說明共用同一句。
@@ -3474,7 +3476,7 @@ function renderGeneralTreeCard(general, { includeCaptured = false } = {}) {
   return `
     <div class="tree-general-card ${lowLoyalty ? 'low-loyalty' : ''}" data-general="${general.id}">
       ${portrait
-        ? `<img class="tree-portrait" src="${portrait}" alt="${general.name}">`
+        ? `<img class="tree-portrait" src="${portrait}" alt="${general.name}" ${portraitFallbackAttr("tree-portrait portrait-placeholder", general.name)}>`
         : `<div class="tree-portrait portrait-placeholder">${general.name.charAt(0)}</div>`}
       <div class="tree-info">
         <div class="tree-name">${general.name}${killedTag}${guardTag}</div>
@@ -3578,7 +3580,20 @@ function factionHoldingGeneral(generalId) {
 // 技能帶來的忠誠增減（回傳的 amount 已經是帶正負號的總和）：
 // 列強關係讓技能失效時的處罰（張宗昌、何鍵各 -5）。
 function getGeneralPortrait(general) {
-  return PORTRAIT_BY_ID[general.id] || null;
+  return generalPortraitUrl(general?.id, general?.name);
+}
+
+// 肖像對照表沒登記的人，照姓名去 /assets/portraits/<姓名>.jpg 找：
+// 圖檔放進 frontend/assets/portraits/ 之後重新整理就會出現，不必再改程式。
+// 檔案還不存在時由 portraitFallbackAttr 換成姓氏徽章。
+function generalPortraitUrl(generalId, name) {
+  if (generalId && PORTRAIT_BY_ID[generalId]) return PORTRAIT_BY_ID[generalId];
+  return name ? `/assets/portraits/${encodeURIComponent(name)}.jpg` : null;
+}
+
+function portraitFallbackAttr(className, name) {
+  const initial = String(name || "?").charAt(0);
+  return `onerror="this.replaceWith(Object.assign(document.createElement('div'), { className: '${className}', textContent: '${initial}' }))"`;
 }
 
 function getRoleLabel(role) {
@@ -6752,7 +6767,7 @@ function renderArmyDetail() {
   const armyFaction = factionForArmy(army);
   const isOwnArmy = armyFaction === currentPlayer;
   const traits = general?.traits || [];
-  const portrait = PORTRAIT_BY_ID[army.generalId];
+  const portrait = generalPortraitUrl(army.generalId, army.general);
   const units = armyUnits(army);
   const showComposition = armyCompositionVisible(army);
   const city = cityForArmy(army);
@@ -6782,7 +6797,7 @@ function renderArmyDetail() {
   root.innerHTML = `
     <div class="army-profile">
       ${portrait
-        ? `<img src="${portrait}" alt="${army.general}">`
+        ? `<img src="${portrait}" alt="${army.general}" ${portraitFallbackAttr("army-profile-placeholder", army.general)}>`
         : `<div class="army-profile-placeholder">${army.general.charAt(0)}</div>`}
       <div><b>${army.general}</b><span>${army.designator}</span></div>
       ${city ? `<small>${city.name} · ${city.province}</small>` : `<small>野外駐軍</small>`}

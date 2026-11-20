@@ -24,11 +24,12 @@
         "machine_gun": 3
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 4,
       "subordinates": [
         "zhang_xueliang",
         "yang_yuting",
-        "zhang_zongchang"
+        "zhang_zongchang",
+        "wu_junsheng"
       ],
       "status": "active"
     },
@@ -103,6 +104,30 @@
         "infantry": 14,
         "cavalry": 4,
         "artillery": 1,
+        "machine_gun": 2
+      },
+      "parent_id": "zhang_zuolin",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "wu_junsheng": {
+      "id": "wu_junsheng",
+      "name": "吳俊升",
+      "role": "lieutenant_general",
+      "faction": "奉系",
+      "core_faction": false,
+      "loyalty": 5,
+      "loyalty_exempt": false,
+      "command_cap": 30,
+      "traits": [
+        "skill_pending"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 2,
+        "cavalry": 14,
+        "artillery": 0,
         "machine_gun": 2
       },
       "parent_id": "zhang_zuolin",

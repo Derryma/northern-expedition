@@ -22,11 +22,12 @@
         "machine_gun": 3
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 4,
       "subordinates": [
         "jin_yun_e",
         "chen_jiamo",
-        "kou_yingjie"
+        "kou_yingjie",
+        "liu_yuchun"
       ],
       "status": "active"
     },
@@ -100,6 +101,30 @@
         "infantry": 12,
         "cavalry": 4,
         "artillery": 2,
+        "machine_gun": 3
+      },
+      "parent_id": "wu_peifu",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "liu_yuchun": {
+      "id": "liu_yuchun",
+      "name": "劉玉春",
+      "role": "lieutenant_general",
+      "faction": "直系",
+      "core_faction": true,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "command_cap": 30,
+      "traits": [
+        "skill_pending"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 5,
+        "cavalry": 5,
+        "artillery": 1,
         "machine_gun": 3
       },
       "parent_id": "wu_peifu",
