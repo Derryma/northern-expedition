@@ -21,7 +21,7 @@ DEFAULT_FORCE_POINTS = {
 }
 
 DEFAULT_SLOTS = {
-    "great_general": 3,
+    "great_general": 4,
     "lieutenant_general": 2,
     "major_general": 0,
 }

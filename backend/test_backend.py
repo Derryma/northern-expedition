@@ -2233,8 +2233,12 @@ class ExileGeneralTests(unittest.TestCase):
         """開局戰力（步1、騎1、機2、砲4）——這些數字是刻意調出來的，別無意改動。"""
         import json
         from backend.data_store import REPO_ROOT
-        stems = {"N": "playtest", "F": "fengtian", "W": "zhili", "S": "sunfang", "Y": "npc_Y"}
-        expected = {"N": 114, "F": 120, "W": 122, "S": 111, "Y": 53}
+        # 四強各加一位 20 點的上將（陳濟棠、吳俊升、劉玉春、謝鴻勳），李宗仁 20 → 23：
+        # 467 → 550。NPC 依同一比例（×550/467）由原始值放大，四捨五入、增額補步兵。
+        stems = {"N": "playtest", "F": "fengtian", "W": "zhili", "S": "sunfang", "Y": "npc_Y",
+                 "G": "npc_G", "M": "npc_M", "H": "npc_H", "C": "npc_C", "D": "npc_D", "Q": "npc_Q"}
+        expected = {"N": 137, "F": 140, "W": 142, "S": 131, "Y": 63,
+                    "G": 85, "M": 43, "H": 56, "C": 59, "D": 34, "Q": 9}
         for code, stem in stems.items():
             tree = json.loads((REPO_ROOT / f"general_tree/data/general_tree_{stem}.json").read_text(encoding="utf-8"))
             total = 0
@@ -2888,7 +2892,9 @@ class FactionLevelGeneralTraitTest(unittest.TestCase):
         self.assertEqual(result["comprador"]["amount"], 3)
         self.assertEqual(engine.state["players"]["N"]["foreign_relations"]["fr"], before + 3)
         # 山地師是戰場技能，不該被記成陣營層級技能。
-        self.assertEqual(engine.faction_general_traits("N"), ["french_comprador"])
+        # （國軍開局就有陳濟棠的〈廣東省長〉，所以清單裡本來就有它。）
+        self.assertEqual(engine.faction_general_traits("N"),
+                         ["french_comprador", "guangdong_governor"])
 
     def test_the_french_comprador_is_three_times_the_japanese_one(self):
         """免疫率的相對關係沒變（法 30% 對日 10%），變的是它作用在哪裡。"""
@@ -9120,7 +9126,9 @@ class SovietJapaneseWarReportAuditTests(unittest.TestCase):
         hits = []
         for path in list(repo.glob("backend/*.py")) + list(repo.glob("frontend/*.js")) \
                 + list(repo.glob("scripts/*.py")):
-            if path.name == "test_backend.py":
+            # eventFigures.js 是報紙配圖表：逐卡列出圖檔裁切焦點，純顯示資料、沒有任何邏輯，
+            # 而且必須涵蓋每一張事件卡（NewspaperFigureTests 守著），所以不算「多一條路徑」。
+            if path.name in ("test_backend.py", "eventFigures.js"):
                 continue
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 if "jp_su_war" in line:
@@ -19235,7 +19243,7 @@ class OutputAndRuleOwnershipTests(unittest.TestCase):
     def test_general_slot_rules_live_in_the_backend(self):
         from backend.card_engine import FEATURES
         slots = FEATURES["general_slots"]
-        self.assertEqual(slots["great_general"], 3)
+        self.assertEqual(slots["great_general"], 4)
         self.assertEqual(slots["lieutenant_general"], 2)
         self.assertEqual(slots["major_general"], 0)
         self.assertEqual(slots["lieutenant_general_cap"], 3)
@@ -20011,6 +20019,277 @@ class PortWaterRosterTests(unittest.TestCase):
         engine.state["city_owners"]["huizhou"] = "F"
         after = engine._ports_in_waters("N", ["南海"])
         self.assertEqual(after, before - 1, "惠州沒有被算進南海的港市數")
+
+
+class FourthLieutenantTests(unittest.TestCase):
+    """大帥直屬上將名額改為 4；四強各多一位上將（各有專屬技能、戰力 20）。
+
+    劉玉春、謝鴻勳是嫡系；陳濟棠、吳俊升非嫡系。四人基礎忠誠都是 6。
+    """
+
+    LOYALTY = {"chen_jitang": (6, False), "wu_junsheng": (6, False),
+               "liu_yuchun": (6, True), "xie_hongxun": (6, True)}
+
+    def test_meng_zhaoyue_starts_at_loyalty_six(self):
+        tree = load_game_data()["playable_general_trees"]["S"]
+        self.assertEqual(tree["generals"]["meng_zhaoyue"]["loyalty"], 6)
+    TRAITS = {"chen_jitang": "guangdong_governor", "wu_junsheng": "northeast_iron_cavalry",
+              "liu_yuchun": "bridge_general", "xie_hongxun": "lead_from_front"}
+
+    NEW = {
+        "N": ("chen_jitang", "陳濟棠", "chiang_kai_shek", "foshan"),
+        "F": ("wu_junsheng", "吳俊升", "zhang_zuolin", "qiqihar"),
+        "W": ("liu_yuchun", "劉玉春", "wu_peifu", "wuchang"),
+        "S": ("xie_hongxun", "謝鴻勳", "sun_chuanfang", "jiujiang"),
+    }
+
+    @staticmethod
+    def _force(units):
+        return (int(units.get("infantry", 0)) + int(units.get("cavalry", 0))
+                + int(units.get("machine_gun", 0)) * 2 + int(units.get("artillery", 0)) * 4)
+
+    def test_server_hands_out_four_lieutenant_slots_to_every_marshal(self):
+        from backend.server import PlaytestHandler
+        handler = PlaytestHandler.__new__(PlaytestHandler)
+        for faction in ("N", "F", "W", "S", "Y", "G", "M", "D"):
+            tree = handler._load_general_tree(faction)
+            marshal = tree["generals"][tree["great_general_id"]]
+            self.assertEqual(marshal["subordinate_slots"], 4, faction)
+
+    def test_each_new_lieutenant_sits_directly_under_the_marshal(self):
+        trees = load_game_data()["playable_general_trees"]
+        for faction, (gid, name, marshal_id, _) in self.NEW.items():
+            tree = trees[faction]
+            general = tree["generals"][gid]
+            self.assertEqual(general["name"], name)
+            self.assertEqual(general["role"], "lieutenant_general")
+            self.assertEqual(general["parent_id"], marshal_id)
+            self.assertEqual(tree["great_general_id"], marshal_id)
+            marshal = tree["generals"][marshal_id]
+            self.assertIn(gid, marshal["subordinates"])
+            self.assertEqual(len(marshal["subordinates"]), 4, faction)
+
+    def test_new_lieutenants_loyalty_core_force_and_skill(self):
+        trees = load_game_data()["playable_general_trees"]
+        for faction, (gid, _, _, _) in self.NEW.items():
+            general = trees[faction]["generals"][gid]
+            loyalty, core = self.LOYALTY[gid]
+            self.assertEqual(general["loyalty"], loyalty, gid)
+            self.assertIs(general["core_faction"], core, gid)
+            self.assertFalse(general["loyalty_exempt"], gid)
+            self.assertEqual(self._force(general["units"]), 20, gid)
+            self.assertEqual(general["traits"], [self.TRAITS[gid]], gid)
+            self.assertEqual(general["skills"], [], gid)
+
+    def test_li_zongren_starts_at_twenty_three(self):
+        tree = load_game_data()["playable_general_trees"]["N"]
+        self.assertEqual(self._force(tree["generals"]["li_zongren"]["units"]), 23)
+
+    def test_wu_junsheng_is_cavalry_heavy_and_the_others_are_mixed(self):
+        trees = load_game_data()["playable_general_trees"]
+        wu = trees["F"]["generals"]["wu_junsheng"]["units"]
+        self.assertEqual(wu, {"infantry": 6, "cavalry": 10, "artillery": 0, "machine_gun": 2})
+        for faction in ("N", "W", "S"):
+            gid = self.NEW[faction][0]
+            units = trees[faction]["generals"][gid]["units"]
+            for unit in ("infantry", "cavalry", "machine_gun", "artillery"):
+                self.assertGreater(units[unit], 0, f"{gid} 缺 {unit}")
+
+    def test_each_new_lieutenant_has_a_field_army_in_a_home_city(self):
+        source = (REPO_ROOT / "frontend" / "map.js").read_text(encoding="utf-8")
+        block = re.search(r"export const ARMY_POSITIONS = \{(.*?)\n\};", source, re.S).group(1)
+        starts = dict(re.findall(r"generalId: '([^']+)'[^\n]*?startCityId: '([^']+)'", block))
+        cities = {c["id"]: c for c in load_game_data()["strategic_map"]["cities"]}
+        for faction, (gid, _, _, city_id) in self.NEW.items():
+            self.assertEqual(starts.get(gid), city_id, gid)
+            self.assertEqual(cities[city_id]["faction"], faction, city_id)
+
+
+class FourthLieutenantSkillTests(unittest.TestCase):
+    """陳濟棠〈廣東省長〉、謝鴻勳〈身先士卒〉、劉玉春〈過橋將軍〉、吳俊升〈東北鐵騎〉。"""
+
+    GUANGDONG = ("guangzhou", "foshan", "shantou", "shaoguan", "huizhou", "haikou")
+
+    def _builder(self, engine=None):
+        from backend.combat_modifiers import CombatModifierBuilder
+        return CombatModifierBuilder(engine or GameEngine(seed=3))
+
+    def _mods(self, trait, river=None, general_id="x"):
+        battle = {"province": None, "fortress": False,
+                  "sides": {"A": {"faction": "F", "armies": [
+                      {"id": "a1", "general_id": general_id, "traits": [trait],
+                       "defending": False, "river": river}]},
+                            "B": {"faction": "W", "armies": [
+                      {"id": "b1", "general_id": "wu_peifu", "traits": [],
+                       "defending": True}]}}}
+        return [{k: v for k, v in m.items() if k in ("stat", "unit", "multiplier")}
+                for m in self._builder().build(battle)["a1"]]
+
+    @staticmethod
+    def _economy(engine, player):
+        return {row["id"]: (row["cash"], row["factory"])
+                for row in engine.state["players"][player]["city_economy"]}
+
+    # ── 廣東省長 ──
+    def test_guangdong_governor_is_a_faction_level_province_trait(self):
+        from backend.card_engine import PROVINCE_OUTPUT_TRAITS
+        rule = PROVINCE_OUTPUT_TRAITS["guangdong_governor"]
+        self.assertEqual((rule["province"], rule["cash"], rule["factory"]), ("廣東", 1, 1))
+        self.assertTrue(rule["requires_full_control"])
+        self.assertIn("guangdong_governor", FACTION_LEVEL_TRAITS)
+
+    def test_full_guangdong_gives_every_guangdong_city_one_cash_and_factory(self):
+        engine = GameEngine(seed=5)
+        self.assertIn("guangdong_governor", engine.faction_general_traits("N"))
+        engine._refresh_city_income()
+        with_bonus = self._economy(engine, "N")
+        engine.state["faction_general_traits"]["N"].remove("guangdong_governor")
+        engine._refresh_city_income()
+        without = self._economy(engine, "N")
+        for city in self.GUANGDONG:
+            self.assertEqual(with_bonus[city], (without[city][0] + 1, without[city][1] + 1), city)
+        self.assertEqual(with_bonus["nanning"], without["nanning"], "廣西不受影響")
+
+    def test_opening_income_already_includes_the_guangdong_bonus(self):
+        """開局數字要跟第一次結算一致，不能開局少 6、結算才跳上去。"""
+        engine = GameEngine(seed=5)
+        opening = {code: (p["income"], p["factory_income"], self._economy(engine, code))
+                   for code, p in engine.state["players"].items()}
+        engine._refresh_city_income()
+        for code, p in engine.state["players"].items():
+            self.assertEqual((p["income"], p["factory_income"], self._economy(engine, code)),
+                             opening[code], code)
+
+    def test_losing_one_guangdong_city_switches_it_off_and_retaking_restores_it(self):
+        engine = GameEngine(seed=5)
+        engine._refresh_city_income()
+        full = self._economy(engine, "N")
+        engine.state["city_owners"]["haikou"] = "F"
+        engine._refresh_city_income()
+        partial = self._economy(engine, "N")
+        self.assertEqual(partial["guangzhou"], (full["guangzhou"][0] - 1, full["guangzhou"][1] - 1))
+        engine.state["city_owners"]["haikou"] = "N"
+        engine._refresh_city_income()
+        self.assertEqual(self._economy(engine, "N")["guangzhou"], full["guangzhou"])
+
+    def test_the_bonus_follows_chen_jitang_to_his_new_faction(self):
+        engine = GameEngine(seed=5)
+        engine._refresh_city_income()
+        base = self._economy(engine, "N")["guangzhou"]
+        engine.apply_general_join("W", ["guangdong_governor"])
+        engine._refresh_city_income()
+        self.assertEqual(self._economy(engine, "N")["guangzhou"], (base[0] - 1, base[1] - 1),
+                         "人走了，國軍的廣東加成就停")
+        for city in self.GUANGDONG:
+            engine.state["city_owners"][city] = "W"
+        engine._refresh_city_income()
+        with_bonus = self._economy(engine, "W")["guangzhou"]
+        engine.state["faction_general_traits"]["W"].remove("guangdong_governor")
+        engine._refresh_city_income()
+        without = self._economy(engine, "W")["guangzhou"]
+        self.assertEqual(with_bonus, (without[0] + 1, without[1] + 1),
+                         "直系拿下廣東全境後，陳濟棠在直系手上照樣生效")
+
+    def test_a_new_owner_without_full_guangdong_gets_nothing(self):
+        engine = GameEngine(seed=5)
+        engine.state["city_owners"]["guangzhou"] = "W"
+        engine._refresh_city_income()
+        engine.state["faction_general_traits"].setdefault("W", [])
+        before = self._economy(engine, "W")["guangzhou"]
+        engine.state["faction_general_traits"]["W"].append("guangdong_governor")
+        engine._refresh_city_income()
+        self.assertEqual(self._economy(engine, "W")["guangzhou"], before)
+
+    # ── 身先士卒、東北鐵騎 ──
+    def test_lead_from_front_is_attack_and_harm_taken_plus_seven_percent(self):
+        mods = self._mods("lead_from_front")
+        self.assertIn({"stat": "attack", "multiplier": 1.07}, mods)
+        self.assertIn({"stat": "harm_taken", "multiplier": 1.07}, mods)
+        self.assertEqual(len(mods), 2)
+
+    def test_northeast_iron_cavalry_only_touches_cavalry(self):
+        mods = self._mods("northeast_iron_cavalry")
+        self.assertIn({"stat": "hp", "unit": "cavalry", "multiplier": 1.15}, mods)
+        self.assertIn({"stat": "attack", "unit": "cavalry", "multiplier": 1.1}, mods)
+        self.assertIn({"stat": "harm_taken", "unit": "cavalry", "multiplier": 1.07}, mods)
+        self.assertEqual(len(mods), 3)
+
+    # ── 過橋將軍 ──
+    def test_bridge_general_gets_hp_only_on_yellow_river_or_yangtze_water(self):
+        hp = {"stat": "hp", "multiplier": 1.1}
+        self.assertIn(hp, self._mods("bridge_general", river="長江"))
+        self.assertIn(hp, self._mods("bridge_general", river="黃河"))
+        self.assertNotIn(hp, self._mods("bridge_general", river="珠江"))
+        self.assertNotIn(hp, self._mods("bridge_general", river=None))
+        self.assertEqual(self._mods("lead_from_front", river="長江"),
+                         self._mods("lead_from_front"), "別的技能不吃河道條件")
+
+    def test_liu_yuchun_builds_a_pontoon_in_one_turn_and_others_take_two(self):
+        engine = GameEngine(seed=3)
+        engine.state["players"]["W"]["factory_points"] = 100
+        self.assertEqual(engine.engineering_rules()["pontoon_bridge"]["trait_turns"],
+                         {"bridge_general": 1})
+        fast = engine.pay_engineering("W", "pontoon_bridge", "24,22", general_id="liu_yuchun")
+        self.assertEqual(fast["turns"], 1)
+        slow = engine.pay_engineering("W", "pontoon_bridge", "24,22", general_id="jin_yun_e")
+        self.assertEqual(slow["turns"], 2)
+        self.assertEqual(engine.pay_engineering("W", "pontoon_bridge", "24,22")["turns"], 2)
+        fort = engine.pay_engineering("W", "fortress_builder", "24,22", general_id="liu_yuchun")
+        self.assertEqual(fort["turns"], 3, "縮短工期只限浮橋")
+
+    def test_the_frontend_wires_the_new_facts(self):
+        self.assertIn('"local_supply_boss", "bridge_general",', FRONTEND_SOURCE,
+                      "過橋將軍要能架浮橋")
+        self.assertIn("general_id: army.generalId || null,", FRONTEND_SOURCE,
+                      "架浮橋要告訴後端是誰在施工")
+        facts = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function combatBattleFacts"):]
+        facts = facts[:facts.index("\nfunction ", 10)]
+        self.assertIn("river: cells[army.cellKey]?.river || null", facts)
+        server = (REPO_ROOT / "backend" / "server.py").read_text(encoding="utf-8")
+        self.assertIn('general_id=str(payload.get("general_id") or "") or None', server)
+
+
+class NewspaperFigureTests(unittest.TestCase):
+    """《民國報》每張事件卡都有配圖：圖檔、裁切焦點、來源授權三者對得上，報紙上不印圖說。"""
+
+    EVENTS_DIR = REPO_ROOT / "frontend" / "assets" / "events"
+
+    @classmethod
+    def setUpClass(cls):
+        source = (REPO_ROOT / "frontend" / "eventFigures.js").read_text(encoding="utf-8")
+        cls.figures = dict(re.findall(r'^\s*([a-z0-9_]+): \{ pos: "([^"]+)" \},$', source, re.M))
+        cls.cards = {c["id"]: c for c in json.loads(EVENT_CARDS_PATH.read_text(encoding="utf-8"))["cards"]}
+
+    def test_every_event_card_has_a_figure_and_nothing_extra(self):
+        self.assertEqual(sorted(set(self.cards) - set(self.figures)), [], "這些事件卡沒有配圖")
+        self.assertEqual(sorted(set(self.figures) - set(self.cards)), [], "配圖表裡有不存在的卡")
+
+    def test_every_figure_has_a_real_jpeg_on_disk(self):
+        for card_id in self.figures:
+            path = self.EVENTS_DIR / f"{card_id}.jpg"
+            self.assertTrue(path.exists(), f"缺圖檔 {path.name}")
+            self.assertEqual(path.read_bytes()[:3], b"\xff\xd8\xff", f"{path.name} 不是 JPEG")
+        extra = sorted(p.stem for p in self.EVENTS_DIR.glob("*.jpg") if p.stem not in self.figures)
+        self.assertEqual(extra, [], "資料夾裡有沒被任何卡使用的圖")
+
+    def test_crop_focus_is_a_plain_object_position(self):
+        for card_id, pos in self.figures.items():
+            self.assertRegex(pos, r"^center \d{1,3}%$", card_id)
+
+    def test_every_figure_is_credited(self):
+        credits = (self.EVENTS_DIR / "CREDITS.md").read_text(encoding="utf-8")
+        for card in self.cards.values():
+            self.assertIn(f"| {card['ref']} | {card['name']} |", credits, card["id"])
+
+    def test_the_newspaper_shows_the_photo_and_no_caption_or_placeholder(self):
+        self.assertNotIn("圖 片 待 補", FRONTEND_SOURCE)
+        self.assertIn("${newspaperFigureMarkup(card)}", FRONTEND_SOURCE)
+        body = FRONTEND_SOURCE[FRONTEND_SOURCE.index("function newspaperFigureMarkup"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn("/assets/events/", body)
+        self.assertNotIn("figcaption", body)
+        css = (REPO_ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("mix-blend-mode: multiply", css, "照片要疊上報紙的泛黃紙色")
 
 
 if __name__ == "__main__":

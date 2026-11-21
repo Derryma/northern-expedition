@@ -25,7 +25,7 @@ Default hierarchy:
 
 | Role | Normal Subordinate Slots |
 |---|---:|
-| `great_general` | 3 lieutenant generals |
+| `great_general` | 4 lieutenant generals |
 | `lieutenant_general` | 2 major generals |
 | `major_general` | 0 |
 
