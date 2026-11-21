@@ -116,11 +116,11 @@
       "role": "lieutenant_general",
       "faction": "粵軍",
       "core_faction": false,
-      "loyalty": 5,
+      "loyalty": 6,
       "loyalty_exempt": false,
       "command_cap": 30,
       "traits": [
-        "skill_pending"
+        "guangdong_governor"
       ],
       "skills": [],
       "units": {

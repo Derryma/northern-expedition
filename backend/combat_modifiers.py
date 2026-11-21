@@ -43,6 +43,13 @@ PROVINCE_CONDITIONAL_TRAITS: Dict[str, Dict[str, Any]] = {
                                               {"stat": "attack", "multiplier": 1.05}]},
 }
 
+# 只在部隊所在地格是指定河道的水域時生效（浮橋、鐵路橋、河港城市都算）。
+# 前端只送「這支部隊站的那一格屬於哪條河」（army.river），判斷在這裡。
+RIVER_CONDITIONAL_TRAITS: Dict[str, Dict[str, Any]] = {
+    "bridge_general": {"rivers": {"黃河", "長江"},
+                       "modifiers": [{"stat": "hp", "multiplier": 1.10}]},
+}
+
 # 自家陣營對某列強太親近時，這個技能整個失效（並扣忠誠，忠誠那半在 card_engine）。
 RELATION_DISABLED_TRAITS: Dict[str, Dict[str, Any]] = {
     "white_russian_mercenaries": {"power": "su", "min": 6, "loyalty_penalty": 5},
@@ -101,7 +108,8 @@ class CombatModifierBuilder:
     def trait_modifiers(self, *, traits: Iterable[str], faction: str, province: Optional[str],
                         ally_general_ids: Iterable[str], enemy_general_ids: Iterable[str],
                         own_general_id: Optional[str],
-                        opponent_faction: Optional[str]) -> List[Dict[str, Any]]:
+                        opponent_faction: Optional[str],
+                        river: Optional[str] = None) -> List[Dict[str, Any]]:
         allies = set(ally_general_ids or [])
         enemies = set(enemy_general_ids or [])
         out: List[Dict[str, Any]] = []
@@ -112,6 +120,9 @@ class CombatModifierBuilder:
             province_rule = PROVINCE_CONDITIONAL_TRAITS.get(trait)
             if province_rule and province in province_rule["provinces"]:
                 extra += province_rule["modifiers"]
+            river_rule = RIVER_CONDITIONAL_TRAITS.get(trait)
+            if river_rule and river in river_rule["rivers"]:
+                extra += river_rule["modifiers"]
             ally_rule = ALLY_PRESENCE_TRAITS.get(trait)
             if ally_rule and any(gid != own_general_id and gid in allies
                                  for gid in ally_rule["allies"]):
@@ -295,7 +306,8 @@ class CombatModifierBuilder:
                     traits=army.get("traits") or [], faction=faction, province=province,
                     ally_general_ids=general_ids.get(key) or [],
                     enemy_general_ids=general_ids.get(other) or [],
-                    own_general_id=army.get("general_id"), opponent_faction=opponent)
+                    own_general_id=army.get("general_id"), opponent_faction=opponent,
+                    river=army.get("river"))
                 modifiers += self.aura_modifiers(
                     own_general_id=army.get("general_id"),
                     allies=side.get("armies") or [])

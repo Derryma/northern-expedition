@@ -117,16 +117,16 @@
       "role": "lieutenant_general",
       "faction": "奉系",
       "core_faction": false,
-      "loyalty": 5,
+      "loyalty": 6,
       "loyalty_exempt": false,
       "command_cap": 30,
       "traits": [
-        "skill_pending"
+        "northeast_iron_cavalry"
       ],
       "skills": [],
       "units": {
-        "infantry": 2,
-        "cavalry": 14,
+        "infantry": 6,
+        "cavalry": 10,
         "artillery": 0,
         "machine_gun": 2
       },

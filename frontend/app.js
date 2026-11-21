@@ -1,4 +1,5 @@
 import { FLAG, factionFlagMarkup, flagMarkup, powerFlagMarkup, POWER_NAME } from './flags.js';
+import { EVENT_FIGURES } from './eventFigures.js';
 import { px, unpx, MAPW, MAPH, FACTIONS, CHINA_PROPER, HAINAN, pointInPolygon, hexPts, cells, cellAt, cellNeighbors, ARMY_POSITIONS, COLS, ROWS, hcx, hcy, s, FOREIGN_CITIES, PROVINCE_OWNERSHIP_CLAIMS, CELL_OWNERSHIP_OVERRIDES, applyProvinceOwnershipClaims, factionAt } from './map.js';
 import {
   NAVY_UNIT_META,
@@ -57,6 +58,10 @@ const PORTRAIT_BY_ID = {
   yang_sen: "/assets/portraits/楊森.jpg",
   zhao_hengti: "/assets/portraits/趙恒惕.jpg",
   ma_hongkui: "/assets/portraits/馬鴻逵.jpg",
+  chen_jitang: "/assets/portraits/陳濟棠.jpg",
+  liu_yuchun: "/assets/portraits/劉玉春.jpg",
+  xie_hongxun: "/assets/portraits/謝鴻勳.jpg",
+  wu_junsheng: "/assets/portraits/吳俊升.jpg",
   // 在野將領
   duan_qirui: "/assets/portraits/段祺瑞.jpg",
   chen_jiongming: "/assets/portraits/陳炯明.jpg",
@@ -992,8 +997,11 @@ const TRAIT_LABELS = {
   fire_support_savant: "火力協同",
   local_supply_boss: "地方補給",
   cavalry_screen_commander: "騎兵屏護",
-  // 技能尚未設計的將領先掛這一項，不帶任何效果
-  skill_pending: "待定",
+  // 四強第四位上將的專屬技能
+  guangdong_governor: "廣東省長",
+  lead_from_front: "身先士卒",
+  bridge_general: "過橋將軍",
+  northeast_iron_cavalry: "東北鐵騎",
 };
 
 // 何應欽的光環說明，兩個版本的技能說明共用同一句。
@@ -1043,6 +1051,10 @@ const TRAIT_DESCRIPTIONS = {
   fire_support_savant: "懂得把砲火集中在對方支撐點上。",
   local_supply_boss: "把糧秣、彈藥與補充兵源撐到最後一刻。",
   cavalry_screen_commander: "以騎兵幕掩護主力調動、追擊潰兵。",
+  guangdong_governor: "陳濟棠的廣東地盤。他所屬陣營控制廣東全境時，每座廣東城市每回合現金 +1、工業 +1；他轉投他陣營、或陣營丟掉任何一座廣東城市即失效，條件再次成立就恢復。",
+  lead_from_front: "謝鴻勳親臨火線。所部戰鬥時全體攻擊 +7%，承傷也 +7%。",
+  bridge_general: "劉玉春熟悉渡口攻防。能架設浮橋，且只需 1 回合完工；所部在黃河或長江水域（浮橋、鐵路橋、河港城市）作戰時全體生命 +10%。",
+  northeast_iron_cavalry: "吳俊升的東北騎兵。所部騎兵生命 +15%、攻擊 +10%、承傷 +7%。",
 };
 
 // 光環技能：大帥與名單上的部屬「同戰場」（同一場戰鬥、同一邊）時，
@@ -1161,6 +1173,16 @@ function engineeringRules() {
 function engineeringRule(skill) {
   return engineeringRules()[skill] || null;
 }
+// 某些特質會縮短工期（劉玉春架浮橋只要 1 回合）。對照表 trait_turns 同樣由後端送來，
+// 實際扣款與工期以 /api/pay-engineering 回傳的為準，這裡只用來在按鈕上標示。
+function engineeringTurnsFor(skill, general) {
+  const rule = engineeringRule(skill);
+  if (!rule) return null;
+  const overrides = rule.trait_turns || {};
+  return (general?.traits || []).reduce(
+    (turns, trait) => (trait in overrides ? Math.min(turns, Number(overrides[trait])) : turns),
+    Number(rule.turns));
+}
 // 工程能力除了將領檔案裡的 skills 之外，也可以由特質帶出來。
 // 22 名主要將領的浮橋／要塞是寫在各自的 skills 欄位，這裡保留的是
 // 其他 NPC 與在野將領沿用的通用特質對應。
@@ -1168,7 +1190,7 @@ const ENGINEERING_TRAIT_SKILLS = {
   pontoon_bridge: new Set([
     "young_marshal", "riverine_warfare", "dodging_drift", "central_plains_veteran",
     "whampoa_spirit", "anhui_veteran", "old_cantonese_army",
-    "local_supply_boss",
+    "local_supply_boss", "bridge_general",
   ]),
   fortress_builder: new Set([
     "broadsword_corps", "iron_bulwark", "marshal_zhang", "elite_artillery", "assault_breaker",
@@ -6703,6 +6725,7 @@ async function startEngineeringOperation(army, engineering, targetCellKey) {
       player: currentPlayer,
       operation: engineering,
       cell_key: targetCellKey || null,
+      general_id: army.generalId || null,
     });
   } catch (error) {
     const index = armyOrderHistory.indexOf(action);
@@ -6825,9 +6848,10 @@ function renderArmyDetail() {
       ${joinableBattle ? `<button class="join-battle-command" data-join-battle="${joinableBattle.id}">加入戰鬥</button>` : ""}
       ${engineering.map((skill) => {
         const operation = engineeringRule(skill);
+        const turns = engineeringTurnsFor(skill, general);
         const cost = Number(operation.factory_cost || 0);
         const affordable = Number(state.players[currentPlayer]?.factory_points || 0) >= cost;
-        return `<button data-engineering-operation="${skill}" ${affordable ? "" : "disabled"} title="${operation.label}：需 ${operation.turns} 回合，消耗工業點/FP ${cost}">${operation.label} (${operation.turns} 回合 · 工${cost})</button>`;
+        return `<button data-engineering-operation="${skill}" ${affordable ? "" : "disabled"} title="${operation.label}：需 ${turns} 回合，消耗工業點/FP ${cost}">${operation.label} (${turns} 回合 · 工${cost})</button>`;
       }).join("")}`}
       ${isOwnArmy && !fightingBattle && !army.specialOperation ? forcedMarchButtonMarkup(army) : ""}
       ${canReinforce ? `<button data-army-operation="recruit">補充兵力</button>` : ""}
@@ -8143,7 +8167,7 @@ function fallenMarshals() {
 // 對帳每回合都會收斂，漏送一次也自己修得回來。
 const FACTION_LEVEL_TRAITS = new Set([
   "japanese_comprador", "french_comprador",     // 買辦
-  "tianfu_land", "hunan_governor",              // 地方財源
+  "tianfu_land", "hunan_governor", "guangdong_governor", // 地方財源
   "anticommunist_vanguard", "old_cantonese_army", // 剿共
 ]);
 
@@ -8292,6 +8316,15 @@ function newspaperForCard(card, index) {
   return card.newspaper || {};
 }
 
+// 報紙配圖：frontend/assets/events/<卡片 id>.jpg，裁切焦點記在 EVENT_FIGURES。
+// 泛黃色調由 CSS 統一處理（灰階後以 multiply 疊在紙色上），圖檔本身不另加色。
+function newspaperFigureMarkup(card) {
+  const figure = EVENT_FIGURES[card.id];
+  if (!figure) return `<div class="newspaper-figure"></div>`;
+  const src = `/assets/events/${encodeURIComponent(card.id)}.jpg`;
+  return `<div class="newspaper-figure has-image"><img src="${src}" alt="" style="object-position:${figure.pos || "center"}"></div>`;
+}
+
 function newspaperMarkup(view) {
   const card = view.card;
   const paper = newspaperForCard(card, view.newspaper_index);
@@ -8364,7 +8397,7 @@ function newspaperMarkup(view) {
       <span>民國十五年　第 ${view.turn} 回合</span>
       <span class="newspaper-progress">本期第 ${view.index + 1} 則／共 ${view.total} 則</span>
     </div>
-    <div class="newspaper-figure" data-event-figure="${card.id}"><span>［ 圖 片 待 補 ］${card.id}</span></div>
+    ${newspaperFigureMarkup(card)}
     <div class="newspaper-headline">${newspaperInline(paper.headline || card.name)}</div>
     <div class="newspaper-body">${paragraphs}</div>
     <div class="newspaper-effect"><div class="newspaper-effect-title">本 報 附 誌</div>${effectLines}${notes}</div>
@@ -8713,6 +8746,8 @@ function combatBattleFacts(battle, combatArmies) {
     general_id: army.generalId || null,
     traits: generalTrees[factionForArmy(army)]?.generals?.[army.generalId]?.traits || [],
     defending: side === "B",
+    // 這支部隊站的那一格屬於哪條河（浮橋、鐵路橋、河港城市）；加成由後端判斷。
+    river: cells[army.cellKey]?.river || null,
   });
   const cellKey = battle?.cellKey;
   return {
@@ -9401,7 +9436,8 @@ function setupPendingActions() {
       engineeringMode = engineering;
       moveMode = false;
       const pontoon = engineeringRule("pontoon_bridge");
-      showNotice(`選擇與軍隊相鄰的河流地格架設浮橋。工程需 ${pontoon.turns} 回合，工業點/FP ${pontoon.factory_cost}。`);
+      const pontoonTurns = engineeringTurnsFor("pontoon_bridge", generalById(army.generalId));
+      showNotice(`選擇與軍隊相鄰的河流地格架設浮橋。工程需 ${pontoonTurns} 回合，工業點/FP ${pontoon.factory_cost}。`);
       $("mapStage").classList.add("move-mode");
     } else if (engineering === "fortress_builder") {
       if (!armyCanReceiveOrder(army)) {

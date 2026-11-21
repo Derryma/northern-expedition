@@ -424,6 +424,7 @@ class PlaytestHandler(BaseHTTPRequestHandler):
             str(payload["player"]),
             str(payload["operation"]),
             str(payload.get("cell_key") or "") or None,
+            general_id=str(payload.get("general_id") or "") or None,
         )
 
     def _refund_charge(self, payload: Dict[str, Any]) -> Dict[str, Any]:

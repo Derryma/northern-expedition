@@ -90,7 +90,7 @@
       "role": "lieutenant_general",
       "faction": "五省聯軍",
       "core_faction": false,
-      "loyalty": 5,
+      "loyalty": 6,
       "loyalty_exempt": false,
       "command_cap": 32,
       "traits": [
@@ -120,7 +120,7 @@
       "loyalty_exempt": false,
       "command_cap": 30,
       "traits": [
-        "skill_pending"
+        "lead_from_front"
       ],
       "skills": [],
       "units": {

@@ -118,7 +118,7 @@
       "loyalty_exempt": false,
       "command_cap": 30,
       "traits": [
-        "skill_pending"
+        "bridge_general"
       ],
       "skills": [],
       "units": {
