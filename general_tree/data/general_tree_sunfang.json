@@ -22,11 +22,12 @@
         "machine_gun": 5
       },
       "parent_id": null,
-      "subordinate_slots": 3,
+      "subordinate_slots": 4,
       "subordinates": [
         "lu_xiangting",
         "zhou_yinren",
-        "meng_zhaoyue"
+        "meng_zhaoyue",
+        "xie_hongxun"
       ],
       "status": "active"
     },
@@ -89,7 +90,7 @@
       "role": "lieutenant_general",
       "faction": "五省聯軍",
       "core_faction": false,
-      "loyalty": 5,
+      "loyalty": 6,
       "loyalty_exempt": false,
       "command_cap": 32,
       "traits": [
@@ -103,6 +104,30 @@
         "cavalry": 2,
         "artillery": 1,
         "machine_gun": 2
+      },
+      "parent_id": "sun_chuanfang",
+      "subordinate_slots": 0,
+      "subordinates": [],
+      "status": "active"
+    },
+    "xie_hongxun": {
+      "id": "xie_hongxun",
+      "name": "謝鴻勳",
+      "role": "lieutenant_general",
+      "faction": "五省聯軍",
+      "core_faction": true,
+      "loyalty": 6,
+      "loyalty_exempt": false,
+      "command_cap": 30,
+      "traits": [
+        "lead_from_front"
+      ],
+      "skills": [],
+      "units": {
+        "infantry": 5,
+        "cavalry": 5,
+        "artillery": 1,
+        "machine_gun": 3
       },
       "parent_id": "sun_chuanfang",
       "subordinate_slots": 0,

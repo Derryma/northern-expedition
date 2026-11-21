@@ -2947,12 +2947,20 @@ button, select, input, textarea {
   color: #7a6a4c;
   margin-bottom: 12px;
 }
-.newspaper-figure span {
-  font-size: 13px;
-  letter-spacing: 3px;
-  color: #7a6a4c;
+/* 有配圖時：照片填滿整個圖框；先轉灰階，再以 multiply 疊在泛黃紙色上，
+   所以每張圖都帶著同一種紙色，和報紙融為一體。 */
+.newspaper-figure.has-image {
+  background: #e6dcc4;
+  overflow: hidden;
 }
-.newspaper-figure img { max-width: 100%; max-height: 100%; display: block; }
+.newspaper-figure.has-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: grayscale(1) sepia(0.18) contrast(1.06);
+  mix-blend-mode: multiply;
+}
 .newspaper-headline {
   font-size: 27px;
   font-weight: 700;

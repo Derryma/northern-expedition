@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>民國報配圖檢查</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* 檢查用頁面：把全部事件卡的報紙依序排出來，樣式與配圖沿用遊戲本體。 */
+    body { background: #3a3127; margin: 0; }
+    .review-bar {
+      position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center;
+      padding: 10px 16px; background: #241d16; color: #f2ead6; font-size: 14px;
+    }
+    .review-bar input { flex: 1; max-width: 320px; padding: 6px 8px; font-size: 14px; }
+    .review-list { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 20px 16px 60px; }
+    .review-list .newspaper { max-height: none; overflow: visible; }
+    .review-ref { font-size: 13px; color: #6b5d44; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+  <div class="review-bar">
+    <b>民國報配圖檢查</b>
+    <input id="filter" placeholder="輸入編號或卡名篩選，例如 12.3 或 黃河" autocomplete="off">
+    <span id="count"></span>
+  </div>
+  <div class="review-list" id="list"></div>
+  <script type="module">
+    import { EVENT_FIGURES } from "/eventFigures.js";
+
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const bootstrap = await (await fetch("/api/bootstrap")).json();
+    const cards = bootstrap.cards.event;
+
+    function sheet(card) {
+      const paper = card.newspaper || {};
+      const figure = EVENT_FIGURES[card.id];
+      const img = figure
+        ? `<div class="newspaper-figure has-image"><img loading="lazy" src="/assets/events/${encodeURIComponent(card.id)}.jpg" alt="" style="object-position:${figure.pos}"></div>`
+        : `<div class="newspaper-figure"></div>`;
+      const body = (paper.paragraphs || []).map((p) => `<p>${esc(p)}</p>`).join("");
+      return `
+        <article class="newspaper" data-key="${esc(card.ref)} ${esc(card.name)}">
+          <div class="newspaper-masthead">
+            <h1 class="newspaper-title">民國報</h1>
+            <div class="newspaper-masthead-right"><div class="newspaper-cardname">${esc(card.name)}</div></div>
+          </div>
+          <div class="newspaper-dateline"><span>民國十五年</span><span class="review-ref">事件卡 ${esc(card.ref)}</span></div>
+          ${img}
+          <div class="newspaper-headline">${esc(paper.headline || card.name)}</div>
+          <div class="newspaper-body">${body}</div>
+        </article>`;
+    }
+
+    const list = document.getElementById("list");
+    list.innerHTML = cards.map(sheet).join("");
+    const filter = document.getElementById("filter");
+    const count = document.getElementById("count");
+    function apply() {
+      const q = filter.value.trim();
+      let shown = 0;
+      for (const el of list.children) {
+        const key = el.dataset.key;
+        const hit = !q || key.startsWith(q + " ") || key.includes(q);
+        el.hidden = !hit;
+        if (hit) shown += 1;
+      }
+      count.textContent = `${shown} / ${cards.length} 則`;
+    }
+    filter.addEventListener("input", apply);
+    apply();
+  </script>
+</body>
+</html>

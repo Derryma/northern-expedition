@@ -37,8 +37,8 @@ UNIT_TYPES = ("infantry", "cavalry", "machine_gun", "artillery")
 # 戰力點的唯一真源是 comabt_system/data/unit_stats.json（戰鬥解算器也讀同一份）。
 # 先前這裡是第三份寫死的副本：資料檔一份、combat.py 一份、這裡一份，
 # 三份剛好相同，但沒有任何東西保證它們會一直相同。
-# 將領直屬名額：大將 3、中將 2（可用〈擴編直屬〉加到 3）、少將 0。
-GREAT_GENERAL_SLOTS = 3
+# 將領直屬名額：大將 4、中將 2（可用〈擴編直屬〉加到 3）、少將 0。
+GREAT_GENERAL_SLOTS = 4
 LIEUTENANT_GENERAL_SLOTS = 2
 MAJOR_GENERAL_SLOTS = 0
 LIEUTENANT_SLOT_CAP = 3
@@ -196,9 +196,13 @@ COMPRADOR_TRAITS = {
     "french_comprador": {"power": "fr", "gain": 3, "immunity": 0.30},     # 唐繼堯
 }
 # 地方財源：持有者的陣營，該省每座城市每回合現金與工業各 +1。
+# requires_full_control：持有者的陣營必須控制該省全境（每座城都是自己的）才生效；
+# 丟掉任何一城就停，收復全境再恢復。判準同宣告接管全省（_controlled_provinces）。
 PROVINCE_OUTPUT_TRAITS = {
     "tianfu_land": {"province": "四川", "cash": 1, "factory": 1},         # 劉湘
     "hunan_governor": {"province": "湖南", "cash": 1, "factory": 1},      # 趙恒惕
+    "guangdong_governor": {"province": "廣東", "cash": 1, "factory": 1,   # 陳濟棠
+                           "requires_full_control": True},
 }
 # 剿共：紅軍起義只要駐滿一回合就恢復產出。
 FAST_UPRISING_SUPPRESSION_TRAITS = {
@@ -500,6 +504,10 @@ class GameEngine:
             # 條件卡開局先全部撤出牌庫，條件成立時才由 _sync_conditional_deck_cards 洗回去。
             self._sync_conditional_deck_cards(player)
             self.random.shuffle(self.state["players"][player]["function_deck"])
+        # 開局收入要用跟之後每回合同一套算法：player_state() 只照城市原值加總，
+        # 不含地方財源技能（陳濟棠開局就在國軍、廣東全境在手）。不重算的話，
+        # 開局數字會少一截，第一次結算才突然跳上去。
+        self._refresh_city_income()
         return self.snapshot()
 
     @staticmethod
@@ -1291,12 +1299,15 @@ class GameEngine:
         return bonuses
 
     def _province_output_bonus(self, player: str) -> Dict[str, Dict[str, int]]:
-        """地方財源技能（劉湘的四川、趙恒惕的湖南）帶來的每城每回合加成。"""
+        """地方財源技能（劉湘的四川、趙恒惕的湖南、陳濟棠的廣東）帶來的每城每回合加成。"""
 
         bonus: Dict[str, Dict[str, int]] = {}
         for trait in self.state.get("faction_general_traits", {}).get(player, []):
             rule = PROVINCE_OUTPUT_TRAITS.get(trait)
             if not rule:
+                continue
+            if rule.get("requires_full_control") and \
+                    not self._controlled_provinces(player, [rule["province"]]):
                 continue
             entry = bonus.setdefault(rule["province"], {"cash": 0, "factory": 0})
             entry["cash"] += int(rule["cash"])
@@ -3898,16 +3909,41 @@ class GameEngine:
     #
     # 成本與工期原本只存在前端（ENGINEERING_OPERATIONS），而且扣款完全在前端做，
     # **沒有任何 API 呼叫**——改一行 JS 就能把要塞變免費。規則搬到這裡。
+    # trait_turns：帶著這個特質的將領施工時，工期改為這個數字（劉玉春架浮橋只要 1 回合）。
     ENGINEERING_OPERATIONS = {
-        "pontoon_bridge": {"label": "架設浮橋", "turns": 2, "factory_cost": 10},
+        "pontoon_bridge": {"label": "架設浮橋", "turns": 2, "factory_cost": 10,
+                           "trait_turns": {"bridge_general": 1}},
         "fortress_builder": {"label": "構築要塞", "turns": 3, "factory_cost": 10},
     }
 
     def engineering_rules(self) -> Dict[str, Any]:
-        return {key: dict(value) for key, value in self.ENGINEERING_OPERATIONS.items()}
+        return deepcopy(self.ENGINEERING_OPERATIONS)
+
+    def _static_general_traits(self, general_id: Optional[str]) -> list:
+        """將領檔案上的特質。特質跟著人走、不會在對局中改變，所以查開局資料即可。"""
+        if not general_id:
+            return []
+        trees = list((self.data.get("playable_general_trees") or {}).values()) \
+            + list((self.data.get("npc_general_trees") or {}).values()) \
+            + [self.data.get("generals_in_exile") or {}]
+        for tree in trees:
+            general = (tree.get("generals") or {}).get(str(general_id))
+            if general:
+                return list(general.get("traits") or [])
+        return []
+
+    def engineering_turns(self, operation: str, general_id: Optional[str] = None) -> int:
+        rule = self.ENGINEERING_OPERATIONS[str(operation)]
+        turns = int(rule["turns"])
+        overrides = rule.get("trait_turns") or {}
+        for trait in self._static_general_traits(general_id):
+            if trait in overrides:
+                turns = min(turns, int(overrides[trait]))
+        return turns
 
     def pay_engineering(self, player: str, operation: str,
-                        cell_key: Optional[str] = None) -> Dict[str, Any]:
+                        cell_key: Optional[str] = None,
+                        general_id: Optional[str] = None) -> Dict[str, Any]:
         rule = self.ENGINEERING_OPERATIONS.get(str(operation))
         if not rule:
             raise ValueError(f"unknown engineering operation: {operation!r}")
@@ -3923,7 +3959,7 @@ class GameEngine:
             "factory": cost,
         }
         return {"operation": str(operation), "label": rule["label"],
-                "factory": cost, "turns": int(rule["turns"]),
+                "factory": cost, "turns": self.engineering_turns(operation, general_id),
                 "charge_id": charge_id, "state": self.snapshot()}
 
     # ── 海戰：規則的單一來源 ────────────────────────────────────────────

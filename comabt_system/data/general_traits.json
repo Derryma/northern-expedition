@@ -540,6 +540,51 @@
           "add": 0.05
         }
       ]
+    },
+    "guangdong_governor": {
+      "name": "廣東省長",
+      "background": "陳濟棠。粵軍出身的廣東實力派，只要廣東全境在手，地方稅收與兵工廠就為他所用。",
+      "modifiers": []
+    },
+    "lead_from_front": {
+      "name": "身先士卒",
+      "background": "謝鴻勳。孫傳芳麾下的猛將，親臨火線督戰，部隊打得兇，傷亡也重。",
+      "modifiers": [
+        {
+          "stat": "attack",
+          "multiplier": 1.07
+        },
+        {
+          "stat": "harm_taken",
+          "multiplier": 1.07
+        }
+      ]
+    },
+    "bridge_general": {
+      "name": "過橋將軍",
+      "background": "劉玉春。死守武昌的直系悍將，熟悉長江與黃河兩岸的渡口、橋樑與碼頭攻防。",
+      "modifiers": []
+    },
+    "northeast_iron_cavalry": {
+      "name": "東北鐵騎",
+      "background": "吳俊升。黑龍江督軍，馬賊出身，麾下東北騎兵剽悍善衝，也敢硬碰硬。",
+      "modifiers": [
+        {
+          "stat": "hp",
+          "unit": "cavalry",
+          "multiplier": 1.15
+        },
+        {
+          "stat": "attack",
+          "unit": "cavalry",
+          "multiplier": 1.1
+        },
+        {
+          "stat": "harm_taken",
+          "unit": "cavalry",
+          "multiplier": 1.07
+        }
+      ]
     }
   }
 }

@@ -16,7 +16,7 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 11,
+        "infantry": 16,
         "cavalry": 3,
         "artillery": 2,
         "machine_gun": 2
@@ -45,7 +45,7 @@
         "fortress_builder"
       ],
       "units": {
-        "infantry": 7,
+        "infantry": 10,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 2
@@ -69,7 +69,7 @@
       ],
       "skills": [],
       "units": {
-        "infantry": 6,
+        "infantry": 8,
         "cavalry": 4,
         "artillery": 0,
         "machine_gun": 1
